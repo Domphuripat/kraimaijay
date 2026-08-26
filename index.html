@@ -146,7 +146,7 @@
 
       // Filter & Search State
       const [searchQuery, setSearchQuery] = useState('');
-      const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'settled' | 'ride' | 'food'
+      const [statusFilter, setStatusFilter] = useState('all');
 
       // Bill Form States
       const [editingBillId, setEditingBillId] = useState(null);
@@ -171,7 +171,8 @@
         { id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }
       ]);
 
-      // OCR State
+      // Multi-Image OCR State
+      const [selectedImages, setSelectedImages] = useState([]);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
       const fileInputRef = useRef(null);
@@ -222,12 +223,6 @@
                 if (list.length === 0) {
                   const defaultFriends = [
                     { name: 'Me (Dom)', createdAt: Date.now() },
-                    { name: 'Yaya', createdAt: Date.now() },
-                    { name: 'kamil', createdAt: Date.now() },
-                    { name: 'wakin', createdAt: Date.now() },
-                    { name: 'dom', createdAt: Date.now() },
-                    { name: 'panda', createdAt: Date.now() },
-                    { name: 'ink', createdAt: Date.now() }
                   ];
                   defaultFriends.forEach(df => firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(df));
                 } else {
@@ -279,12 +274,6 @@
         } else {
           setFriends([
             { id: '1', name: 'Me (Dom)', createdAt: Date.now() },
-            { id: '2', name: 'Yaya', createdAt: Date.now() },
-            { id: '3', name: 'kamil', createdAt: Date.now() },
-            { id: '4', name: 'wakin', createdAt: Date.now() },
-            { id: '5', name: 'dom', createdAt: Date.now() },
-            { id: '6', name: 'panda', createdAt: Date.now() },
-            { id: '7', name: 'ink', createdAt: Date.now() }
           ]);
         }
         const savedBills = localStorage.getItem('kraimaijay_local_bills');
@@ -307,6 +296,167 @@
           setActiveTab('dashboard');
         } catch (err) {
           showToast("Invalid JSON Configuration", "error");
+        }
+      };
+
+      // IMAGE PRE-PROCESSING (Grayscale + High Contrast Canvas)
+      const preprocessImage = (file) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              
+              ctx.drawImage(img, 0, 0);
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const d = imgData.data;
+              
+              // Apply High-Contrast Grayscale Filter
+              for (let i = 0; i < d.length; i += 4) {
+                const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                // Contrast stretch
+                const contrast = 1.3;
+                const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+                const adjusted = factor * (gray - 128) + 128;
+                d[i] = adjusted;
+                d[i + 1] = adjusted;
+                d[i + 2] = adjusted;
+              }
+              ctx.putImageData(imgData, 0, 0);
+              resolve(canvas.toDataURL('image/jpeg', 0.9));
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        });
+      };
+
+      // MULTI-IMAGE BATCH OCR SCANNER
+      const handleAddImages = (e) => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        setSelectedImages(prev => [...prev, ...files]);
+      };
+
+      const handleRemoveImage = (index) => {
+        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
+      };
+
+      const handleProcessAllImages = async () => {
+        if (!selectedImages.length) return;
+
+        setOcrProcessing(true);
+        setOcrProgress(0);
+
+        let combinedExtractedItems = [];
+        let extractedRideFare = 0;
+        let detectedToll = 0;
+        let detectedDiscount = 0;
+        let detectedDelivery = 0;
+        let detectedPackaging = 0;
+
+        try {
+          for (let i = 0; i < selectedImages.length; i++) {
+            const file = selectedImages[i];
+            const processedDataUrl = await preprocessImage(file);
+
+            const { data: { text } } = await Tesseract.recognize(
+              processedDataUrl,
+              'eng+tha',
+              {
+                logger: m => {
+                  if (m.status === 'recognizing text') {
+                    const singleProgress = m.progress || 0;
+                    const overall = Math.round(((i + singleProgress) / selectedImages.length) * 100);
+                    setOcrProgress(overall);
+                  }
+                }
+              }
+            );
+
+            const lines = text.split('\n');
+
+            lines.forEach(line => {
+              const trimmed = line.trim();
+              const match = trimmed.match(/(.+?)\s+([0-9]+\.[0-9]{2})$/);
+              if (match) {
+                const nameCandidate = match[1].replace(/^[0-9]+\s+/, '').trim();
+                const priceCandidate = parseFloat(match[2]);
+
+                if (/toll|expressway|highway/i.test(nameCandidate)) {
+                  detectedToll = priceCandidate;
+                  return;
+                }
+                if (/packaging|packing|box|takeaway/i.test(nameCandidate)) {
+                  detectedPackaging = priceCandidate;
+                  return;
+                }
+                if (/delivery|driver|rider/i.test(nameCandidate)) {
+                  detectedDelivery = priceCandidate;
+                  return;
+                }
+                if (/discount|promo|voucher/i.test(nameCandidate)) {
+                  detectedDiscount = priceCandidate;
+                  return;
+                }
+
+                const isNoise = /subtotal|total|service|tax|rounding|visa|net total|invoice|balance|table|change/i.test(nameCandidate);
+
+                if (!isNoise && priceCandidate > 0 && nameCandidate.length > 2) {
+                  // Avoid exact duplicate items from overlapping photo captures
+                  const exists = combinedExtractedItems.some(
+                    item => item.name.toLowerCase() === nameCandidate.toLowerCase() && parseFloat(item.price) === priceCandidate
+                  );
+                  if (!exists) {
+                    combinedExtractedItems.push({
+                      id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                      name: nameCandidate,
+                      price: priceCandidate.toFixed(2),
+                      qty: 1,
+                      taxRate: 0,
+                      sharedWith: [...billFriends]
+                    });
+                  }
+                }
+              }
+            });
+
+            if (billType === 'ride') {
+              const prices = lines.map(l => {
+                const m = l.match(/([0-9]+\.[0-9]{2})/);
+                return m ? parseFloat(m[1]) : 0;
+              }).filter(p => p > 0);
+              if (prices.length > 0) {
+                extractedRideFare = Math.max(extractedRideFare, ...prices);
+              }
+            }
+          }
+
+          if (billType === 'ride' && extractedRideFare > 0) {
+            setRideFare(extractedRideFare);
+            if (detectedToll) setTollFee(detectedToll);
+            if (detectedDiscount) setDiscountAmount(detectedDiscount);
+            showToast("Ride fare scanned successfully");
+          } else if (combinedExtractedItems.length > 0) {
+            setBillItems(combinedExtractedItems);
+            if (detectedPackaging) setPackagingCharge(detectedPackaging);
+            if (detectedDelivery) setDeliveryFee(detectedDelivery);
+            if (detectedDiscount) setDiscountAmount(detectedDiscount);
+            showToast(`Merged & scanned ${combinedExtractedItems.length} items from ${selectedImages.length} photos! 🎉`);
+          } else {
+            showToast("No clear text detected, please enter manually", "error");
+          }
+        } catch (err) {
+          console.error(err);
+          showToast("OCR Error processing image sequence", "error");
+        } finally {
+          setOcrProcessing(false);
+          setSelectedImages([]);
+          if (fileInputRef.current) fileInputRef.current.value = '';
         }
       };
 
@@ -464,7 +614,6 @@
 
       const friendBalances = getFriendBalances();
 
-      // Today's expense for "Me (Dom)"
       const todayDateStr = new Date().toISOString().split('T')[0];
       const todayMyExpense = bills
         .filter(b => b.date === todayDateStr)
@@ -480,7 +629,6 @@
         return { bills: friendBills, adjustments: friendAdjustments };
       };
 
-      // Filtered Bills logic
       const filteredBills = useMemo(() => {
         return bills.filter(bill => {
           const matchesSearch = bill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -515,92 +663,6 @@
           showToast("Image saved successfully");
         } catch (err) {
           showToast("Failed to generate image", "error");
-        }
-      };
-
-      // OCR Scanner
-      const handleImageUpload = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        setOcrProcessing(true);
-        setOcrProgress(0);
-
-        try {
-          const { data: { text } } = await Tesseract.recognize(
-            file,
-            'eng+tha',
-            {
-              logger: m => {
-                if (m.status === 'recognizing text') {
-                  setOcrProgress(Math.round(m.progress * 100));
-                }
-              }
-            }
-          );
-
-          const lines = text.split('\n');
-          const extractedItems = [];
-
-          lines.forEach(line => {
-            const trimmed = line.trim();
-            const match = trimmed.match(/(.+?)\s+([0-9]+\.[0-9]{2})$/);
-            if (match) {
-              const nameCandidate = match[1].replace(/^[0-9]+\s+/, '').trim();
-              const priceCandidate = parseFloat(match[2]);
-              
-              if (/toll|expressway|highway/i.test(nameCandidate)) {
-                setTollFee(priceCandidate);
-                return;
-              }
-              if (/packaging|packing|box|takeaway/i.test(nameCandidate)) {
-                setPackagingCharge(priceCandidate);
-                return;
-              }
-              if (/delivery|driver|rider/i.test(nameCandidate)) {
-                setDeliveryFee(priceCandidate);
-                return;
-              }
-              if (/discount|promo|voucher/i.test(nameCandidate)) {
-                setDiscountAmount(priceCandidate);
-                return;
-              }
-
-              const isNoise = /subtotal|total|service|tax|rounding|visa|net total|invoice/i.test(nameCandidate);
-
-              if (!isNoise && priceCandidate > 0 && nameCandidate.length > 2) {
-                extractedItems.push({
-                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                  name: nameCandidate,
-                  price: priceCandidate.toFixed(2),
-                  qty: 1,
-                  taxRate: 0,
-                  sharedWith: [...billFriends]
-                });
-              }
-            }
-          });
-
-          if (billType === 'ride') {
-            const prices = lines.map(l => {
-              const m = l.match(/([0-9]+\.[0-9]{2})/);
-              return m ? parseFloat(m[1]) : 0;
-            }).filter(p => p > 0);
-            if (prices.length > 0) {
-              setRideFare(Math.max(...prices));
-              showToast("Ride fare extracted successfully");
-            }
-          } else if (extractedItems.length > 0) {
-            setBillItems(extractedItems);
-            showToast(`Found ${extractedItems.length} items`);
-          } else {
-            showToast("No clear text detected, please enter manually", "error");
-          }
-        } catch (err) {
-          showToast("OCR Error processing image", "error");
-        } finally {
-          setOcrProcessing(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
         }
       };
 
@@ -947,7 +1009,7 @@
 
       return (
         <div className="pb-16 min-h-screen">
-          {/* Header with Custom Cat Avatar */}
+          {/* Header with Custom Pilot Cat Avatar */}
           <header className="bg-surface/80 border-b border-line sticky top-0 z-40 backdrop-blur-md">
             <div className="max-w-4xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3">
               <div>
@@ -986,6 +1048,7 @@
                     setRideFare('');
                     setTollFee('');
                     setRideRoute('');
+                    setSelectedImages([]);
                     setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
                     setBillFriends(friends.map(f => f.name));
                     setActiveTab('new-bill');
@@ -1153,23 +1216,59 @@
                   </button>
                 </div>
 
-                {/* OCR */}
-                <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 AI Receipt & Screenshot OCR</p>
-                    <p className="text-xs text-textSecondary mt-0.5">Extract fares, menus, fees, and promo discounts automatically</p>
+                {/* MULTI-IMAGE BATCH OCR SCANNER TOOL */}
+                <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                    <div>
+                      <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Multi-Photo Receipt Scanner (Long Bills)</p>
+                      <p className="text-xs text-textSecondary mt-0.5">Take photos in parts (top, middle, bottom) and scan together without losing details</p>
+                    </div>
+                    <div>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        ref={fileInputRef} 
+                        onChange={handleAddImages} 
+                        className="hidden" 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                        className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
+                      >
+                        + Add Photos ({selectedImages.length})
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
-                    <button
-                      type="button"
-                      disabled={ocrProcessing}
-                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                      className="bg-accent hover:bg-accent-hover text-white font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-2 disabled:opacity-50 transition shadow-md shadow-accent/20"
-                    >
-                      {ocrProcessing ? `Scanning (${ocrProgress}%)...` : 'Upload Receipt / Screenshot'}
-                    </button>
-                  </div>
+
+                  {/* Image Thumbnails Strip */}
+                  {selectedImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-line/40 items-center">
+                      {selectedImages.map((file, index) => (
+                        <div key={index} className="relative group bg-surface border border-line rounded-lg p-1 flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono text-textMuted px-1">#{index + 1}</span>
+                          <span className="text-xs text-textPrimary max-w-[100px] truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveImage(index)}
+                            className="text-coral text-xs px-1 hover:font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      
+                      <button
+                        type="button"
+                        disabled={ocrProcessing}
+                        onClick={handleProcessAllImages}
+                        className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
+                      >
+                        {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1492,14 +1591,13 @@
               </form>
             )}
 
-            {/* --- 3. BILL HISTORY (WITH SEARCH & STATUS FILTERS) --- */}
+            {/* --- 3. BILL HISTORY --- */}
             {activeTab === 'bills' && (
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                   <h2 className="text-lg font-bold text-textPrimary">Transaction History ({bills.length})</h2>
                 </div>
 
-                {/* Search & Filters Toolbar */}
                 <div className="bg-surface p-3 rounded-2xl border border-line space-y-3">
                   <div className="relative">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-textMuted">
@@ -1541,7 +1639,6 @@
                   </div>
                 </div>
 
-                {/* Filtered Bills Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredBills.length === 0 ? (
                     <div className="col-span-full py-12 text-center text-textMuted text-sm bg-surface rounded-2xl border border-line">
