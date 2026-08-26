@@ -1,0 +1,2358 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KraiMaiJayMeeReung - Split & Settle</title>
+  
+  <!-- Web App & Home Screen Icons -->
+  <link rel="apple-touch-icon" href="cat.jpg">
+  <link rel="icon" type="image/jpeg" href="cat.jpg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="KraiMaiJay">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0B0F17',
+            surface: '#151C28',
+            subtle: '#1E293B',
+            line: '#27354A',
+            accent: {
+              DEFAULT: '#6366F1',
+              hover: '#4F46E5',
+              subtle: '#1E1B4B',
+            },
+            mint: {
+              DEFAULT: '#10B981',
+              subtle: '#064E3B',
+            },
+            coral: {
+              DEFAULT: '#F43F5E',
+              subtle: '#4C0519',
+            },
+            amber: {
+              DEFAULT: '#F59E0B',
+              subtle: '#451A03',
+            },
+            grab: '#00B14F',
+            bolt: '#34D186',
+            textPrimary: '#F8FAFC',
+            textSecondary: '#94A3B8',
+            textMuted: '#64748B',
+          },
+          fontFamily: {
+            mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+
+  <!-- React & Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Tesseract.js (OCR) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- html2canvas & jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Firebase Compat -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <!-- IBM Plex Mono Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .tabular {
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.01em;
+    }
+    ::selection {
+      background: #6366F1;
+      color: #FFFFFF;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0B0F17;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #27354A;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3B4E6B;
+    }
+  </style>
+</head>
+<body class="bg-bg text-textPrimary min-h-screen selection:bg-accent selection:text-white">
+
+  <div id="root">
+    <div class="min-h-screen flex items-center justify-center text-textMuted text-sm font-mono">
+      Loading KraiMaiJayMeeReung...
+    </div>
+  </div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    const DEFAULT_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyC4RNzFy2wi7S4ZKN2_DWfHY_hUldwzmRQ",
+      authDomain: "eat-app-eb3f8.firebaseapp.com",
+      projectId: "eat-app-eb3f8",
+      storageBucket: "eat-app-eb3f8.firebasestorage.app",
+      messagingSenderId: "923469695976",
+      appId: "1:923469695976:web:2888ebe9e10097d7c6b25d",
+      measurementId: "G-DJEMGJV6Y6"
+    };
+    const DEFAULT_APP_ID = "eat-app-eb3f8";
+
+    function App() {
+      const [cloudConfig, setCloudConfig] = useState(() => {
+        try {
+          const saved = localStorage.getItem('kraimaijay_cloud_config');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.apiKey && parsed.apiKey !== 'local') return parsed;
+          }
+        } catch (e) {}
+        return DEFAULT_FIREBASE_CONFIG;
+      });
+
+      const [appId, setAppId] = useState(() => {
+        return localStorage.getItem('kraimaijay_cloud_appid') || DEFAULT_APP_ID;
+      });
+
+      const [useCloud, setUseCloud] = useState(true);
+      const [db, setDb] = useState(null);
+      const [toast, setToast] = useState(null);
+      const [activeTab, setActiveTab] = useState('dashboard');
+      
+      const [friends, setFriends] = useState([]);
+      const [bills, setBills] = useState([]);
+      const [adjustments, setAdjustments] = useState([]);
+
+      // Filter & Search State
+      const [searchQuery, setSearchQuery] = useState('');
+      const [statusFilter, setStatusFilter] = useState('all');
+
+      // Bill Form States
+      const [editingBillId, setEditingBillId] = useState(null);
+      const [newBillName, setNewBillName] = useState('');
+      const [billType, setBillType] = useState('delivery');
+      const [newBillDate, setNewBillDate] = useState(new Date().toISOString().split('T')[0]);
+      const [billFriends, setBillFriends] = useState([]);
+      
+      // Ride specific
+      const [rideFare, setRideFare] = useState('');
+      const [tollFee, setTollFee] = useState('');
+      const [rideRoute, setRideRoute] = useState('');
+      
+      // Food & Delivery specific
+      const [taxMode, setTaxMode] = useState('inclusive');
+      const [serviceChargeRate, setServiceChargeRate] = useState(0);
+      const [deliveryFee, setDeliveryFee] = useState(0);
+      const [packagingCharge, setPackagingCharge] = useState(0);
+      const [discountAmount, setDiscountAmount] = useState(0);
+      const [roundingAdj, setRoundingAdj] = useState(0);
+      const [billItems, setBillItems] = useState([
+        { id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }
+      ]);
+
+      // Multi-Image OCR State
+      const [selectedImages, setSelectedImages] = useState([]);
+      const [ocrProcessing, setOcrProcessing] = useState(false);
+      const [ocrProgress, setOcrProgress] = useState(0);
+      const [showRawTextInput, setShowRawTextInput] = useState(false);
+      const [rawOrderText, setRawOrderText] = useState('');
+      const fileInputRef = useRef(null);
+
+      // Friends & Adjustment Modals
+      const [newFriendName, setNewFriendName] = useState('');
+      const [renamingFriendId, setRenamingFriendId] = useState(null);
+      const [renameValue, setRenameValue] = useState('');
+      const [selectedFriendForAdjust, setSelectedFriendForAdjust] = useState(null);
+      const [adjustAmount, setAdjustAmount] = useState('');
+      const [adjustNote, setAdjustNote] = useState('');
+      const [adjustType, setAdjustType] = useState('minus');
+      const [viewingBillId, setViewingBillId] = useState(null);
+
+      // Modals
+      const [activeBreakdown, setActiveBreakdown] = useState(null);
+      const receiptCardRef = useRef(null);
+      const [selectedFriendForHistory, setSelectedFriendForHistory] = useState(null);
+      const friendSlipRef = useRef(null);
+
+      // Settings Inputs
+      const [configInput, setConfigInput] = useState(JSON.stringify(cloudConfig, null, 2));
+      const [appIdInput, setAppIdInput] = useState(appId);
+
+      const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3500);
+      };
+
+      // FIREBASE CLOUD SETUP
+      useEffect(() => {
+        if (!useCloud || !cloudConfig || cloudConfig.apiKey === 'local') {
+          setUseCloud(false);
+          return;
+        }
+
+        try {
+          let firebaseApp = !firebase.apps.length ? firebase.initializeApp(cloudConfig) : firebase.app();
+          const authInstance = firebase.auth(firebaseApp);
+          const firestoreInstance = firebase.firestore(firebaseApp);
+          setDb(firestoreInstance);
+
+          authInstance.signInAnonymously().then(() => {
+            const basePath = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data');
+            
+            const unsubFriends = basePath.collection('friends').onSnapshot(snap => {
+              const list = [];
+              snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+              if (list.length === 0) {
+                const defaultFriends = [
+                  { name: 'Me (Dom)', createdAt: Date.now() },
+                  { name: 'Yaya', createdAt: Date.now() },
+                  { name: 'kamil', createdAt: Date.now() },
+                  { name: 'wakin', createdAt: Date.now() },
+                  { name: 'dom', createdAt: Date.now() },
+                  { name: 'panda', createdAt: Date.now() },
+                  { name: 'ink', createdAt: Date.now() }
+                ];
+                defaultFriends.forEach(df => basePath.collection('friends').add(df));
+              } else {
+                setFriends(list);
+              }
+            });
+
+            const unsubBills = basePath.collection('bills').onSnapshot(snap => {
+              const list = [];
+              snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+              list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              setBills(list);
+            });
+
+            const unsubAdjs = basePath.collection('adjustments').onSnapshot(snap => {
+              const list = [];
+              snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+              list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              setAdjustments(list);
+            });
+
+            return () => {
+              unsubFriends();
+              unsubBills();
+              unsubAdjs();
+            };
+          }).catch(err => {
+            console.warn("Firebase Auth fallback to local:", err);
+            setUseCloud(false);
+          });
+        } catch (err) {
+          console.warn("Firebase Init fallback to local:", err);
+          setUseCloud(false);
+        }
+      }, [useCloud, cloudConfig, appId]);
+
+      // LOCAL FALLBACK
+      useEffect(() => {
+        if (useCloud) return;
+        try {
+          const savedFriends = localStorage.getItem('kraimaijay_local_friends');
+          if (savedFriends) {
+            setFriends(JSON.parse(savedFriends));
+          } else {
+            setFriends([
+              { id: '1', name: 'Me (Dom)', createdAt: Date.now() },
+              { id: '2', name: 'Yaya', createdAt: Date.now() },
+              { id: '3', name: 'kamil', createdAt: Date.now() },
+              { id: '4', name: 'wakin', createdAt: Date.now() },
+              { id: '5', name: 'dom', createdAt: Date.now() },
+              { id: '6', name: 'panda', createdAt: Date.now() },
+              { id: '7', name: 'ink', createdAt: Date.now() }
+            ]);
+          }
+          const savedBills = localStorage.getItem('kraimaijay_local_bills');
+          if (savedBills) setBills(JSON.parse(savedBills));
+          const savedAdjs = localStorage.getItem('kraimaijay_local_adjustments');
+          if (savedAdjs) setAdjustments(JSON.parse(savedAdjs));
+        } catch (e) {}
+      }, [useCloud]);
+
+      const handleSaveSettings = (e) => {
+        e.preventDefault();
+        try {
+          const parsed = JSON.parse(configInput);
+          const cleanAppId = appIdInput.trim() || 'eat-app-eb3f8';
+          setCloudConfig(parsed);
+          setAppId(cleanAppId);
+          localStorage.setItem('kraimaijay_cloud_config', JSON.stringify(parsed));
+          localStorage.setItem('kraimaijay_cloud_appid', cleanAppId);
+          setUseCloud(true);
+          showToast("Settings saved and reconnected");
+          setActiveTab('dashboard');
+        } catch (err) {
+          showToast("Invalid JSON Configuration", "error");
+        }
+      };
+
+      const handleAddImages = (e) => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        setSelectedImages(prev => [...prev, ...files]);
+      };
+
+      const handleRemoveImage = (index) => {
+        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
+      };
+
+      // ROBUST TEXT PARSER FOR GRAB / SHOPEEFOOD / LINEMAN / RECEIPTS
+      const parseTextContent = (fullText) => {
+        const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+        let extractedItems = [];
+        let rFare = 0;
+        let tFee = 0;
+        let dFee = 0;
+        let pCharge = 0;
+        let dAmount = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // 1. Delivery fee
+          if (/delivery\s*fee|rider|driver/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              dFee = parseFloat(matches[0].replace(/RM\s*/i, ''));
+            }
+            continue;
+          }
+
+          // 2. Packaging charge
+          if (/packaging|packing|box|takeaway/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              pCharge = parseFloat(matches[0].replace(/RM\s*/i, ''));
+            }
+            continue;
+          }
+
+          // 3. Discount / Promo
+          if (/off|discount|promo|voucher/i.test(line)) {
+            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+(?:\.[0-9]{2})?)/gi);
+            if (matches && matches.length > 0) {
+              const candidate = matches[matches.length - 1].replace(/[-−\sRM]/gi, '');
+              dAmount = parseFloat(candidate);
+            }
+            continue;
+          }
+
+          // 4. Toll
+          if (/toll|expressway|highway/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
+            if (matches) tFee = parseFloat(matches[1]);
+            continue;
+          }
+
+          // Skip Headers & Noise
+          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery/i.test(line);
+          if (isNoise) continue;
+
+          // 5. Item Matching: Line ends with price
+          const priceMatch = line.match(/(.+?)\s+(?:RM\s*)?([0-9]+\.[0-9]{2})$/i);
+          if (priceMatch) {
+            const itemName = priceMatch[1].replace(/^[0-9]+x?\s*/i, '').trim();
+            const itemPrice = parseFloat(priceMatch[2]);
+
+            // Check if next lines have quantity multiplier like "2x"
+            let itemQty = 1;
+            if (i + 1 < lines.length && /^[0-9]+x$/i.test(lines[i + 1])) {
+              itemQty = parseInt(lines[i + 1]) || 1;
+            } else if (i + 2 < lines.length && /^[0-9]+x$/i.test(lines[i + 2])) {
+              itemQty = parseInt(lines[i + 2]) || 1;
+            }
+
+            if (itemPrice > 0 && itemName.length >= 2) {
+              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
+              if (!exists) {
+                extractedItems.push({
+                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                  name: itemName,
+                  price: itemPrice.toFixed(2),
+                  qty: itemQty,
+                  taxRate: 0,
+                  sharedWith: [...billFriends]
+                });
+              }
+            }
+          }
+        }
+
+        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
+      };
+
+      // DIRECT HIGH-RES OCR PROCESSOR
+      const handleProcessAllImages = async () => {
+        if (!selectedImages.length) return;
+
+        setOcrProcessing(true);
+        setOcrProgress(0);
+
+        let combinedExtractedItems = [];
+        let extractedRideFare = 0;
+        let detectedToll = 0;
+        let detectedDiscount = 0;
+        let detectedDelivery = 0;
+        let detectedPackaging = 0;
+
+        try {
+          for (let i = 0; i < selectedImages.length; i++) {
+            const file = selectedImages[i];
+
+            // Direct pass without destructive canvas filters
+            const { data: { text } } = await Tesseract.recognize(
+              file,
+              'eng+tha',
+              {
+                logger: m => {
+                  if (m.status === 'recognizing text') {
+                    const singleProgress = m.progress || 0;
+                    const overall = Math.round(((i + singleProgress) / selectedImages.length) * 100);
+                    setOcrProgress(overall);
+                  }
+                }
+              }
+            );
+
+            const parsed = parseTextContent(text);
+
+            parsed.extractedItems.forEach(item => {
+              if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
+                combinedExtractedItems.push(item);
+              }
+            });
+
+            if (parsed.dFee) detectedDelivery = parsed.dFee;
+            if (parsed.pCharge) detectedPackaging = parsed.pCharge;
+            if (parsed.dAmount) detectedDiscount = parsed.dAmount;
+            if (parsed.tFee) detectedToll = parsed.tFee;
+
+            if (billType === 'ride') {
+              const prices = text.split('\n').map(l => {
+                const m = l.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
+                return m ? parseFloat(m[1]) : 0;
+              }).filter(p => p > 0);
+              if (prices.length > 0) {
+                extractedRideFare = Math.max(extractedRideFare, ...prices);
+              }
+            }
+          }
+
+          if (billType === 'ride' && extractedRideFare > 0) {
+            setRideFare(extractedRideFare);
+            if (detectedToll) setTollFee(detectedToll);
+            if (detectedDiscount) setDiscountAmount(detectedDiscount);
+            showToast("Ride fare scanned successfully");
+          } else if (combinedExtractedItems.length > 0 || detectedDelivery > 0 || detectedPackaging > 0 || detectedDiscount > 0) {
+            if (combinedExtractedItems.length > 0) setBillItems(combinedExtractedItems);
+            if (detectedPackaging) setPackagingCharge(detectedPackaging);
+            if (detectedDelivery) setDeliveryFee(detectedDelivery);
+            if (detectedDiscount) setDiscountAmount(detectedDiscount);
+            showToast(`Scanned successfully (${combinedExtractedItems.length} items found)! 🎉`);
+          } else {
+            showToast("OCR couldn't extract items clearly. Use 'Paste Text' button below!", "error");
+          }
+        } catch (err) {
+          console.error(err);
+          showToast("OCR scanning error. Please use manual entry or Paste Text.", "error");
+        } finally {
+          setOcrProcessing(false);
+          setSelectedImages([]);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+
+      // FAST MANUAL TEXT PARSER
+      const handleParseRawText = () => {
+        if (!rawOrderText.trim()) return;
+        const parsed = parseTextContent(rawOrderText);
+        if (parsed.extractedItems.length > 0 || parsed.dFee || parsed.pCharge || parsed.dAmount) {
+          if (parsed.extractedItems.length > 0) setBillItems(parsed.extractedItems);
+          if (parsed.dFee) setDeliveryFee(parsed.dFee);
+          if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
+          if (parsed.dAmount) setDiscountAmount(parsed.dAmount);
+          showToast(`Parsed ${parsed.extractedItems.length} items from text! 🎉`);
+          setShowRawTextInput(false);
+          setRawOrderText('');
+        } else {
+          showToast("No clear items detected from text", "error");
+        }
+      };
+
+      // CALCULATION ENGINE
+      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee) => {
+        const splits = {};
+        const friendItemDetails = {};
+        const activeFriendsCount = selectedFriends.length;
+
+        if (currentBillType === 'ride') {
+          const parsedRideFare = parseFloat(rFare) || 0;
+          const parsedToll = parseFloat(tFee) || 0;
+          const parsedDiscount = parseFloat(discount) || 0;
+          const parsedRoundAdj = parseFloat(roundAdj) || 0;
+          
+          const netTotal = Math.max(0, parsedRideFare + parsedToll - parsedDiscount + parsedRoundAdj);
+          const perPerson = activeFriendsCount > 0 ? (netTotal / activeFriendsCount) : 0;
+
+          selectedFriends.forEach(f => {
+            splits[f] = Math.round(perPerson * 100) / 100;
+            friendItemDetails[f] = {
+              baseShare: Math.round((parsedRideFare / (activeFriendsCount || 1)) * 100) / 100,
+              tollShare: Math.round((parsedToll / (activeFriendsCount || 1)) * 100) / 100,
+              discountShare: Math.round((parsedDiscount / (activeFriendsCount || 1)) * 100) / 100,
+            };
+          });
+
+          return {
+            subtotal: parsedRideFare,
+            tollFee: parsedToll,
+            discountAmount: parsedDiscount,
+            total: Math.round(netTotal * 100) / 100,
+            splits,
+            friendItemDetails
+          };
+        }
+
+        const friendBaseShares = {};
+        const friendTaxShares = {};
+        
+        selectedFriends.forEach(f => {
+          friendBaseShares[f] = 0;
+          friendTaxShares[f] = 0;
+        });
+
+        let subtotal = 0;
+        let taxBreakdown = { 0: 0, 6: 0, 7: 0, 8: 0 };
+        let totalTax = 0;
+
+        items.forEach(item => {
+          const price = parseFloat(item.price) || 0;
+          const qty = parseInt(item.qty) || 1;
+          const itemTotal = price * qty;
+          const taxRate = parseFloat(item.taxRate) || 0;
+
+          subtotal += itemTotal;
+
+          let itemTaxAmount = 0;
+          if (currentTaxMode === 'addon') {
+            itemTaxAmount = itemTotal * (taxRate / 100);
+          } else {
+            itemTaxAmount = itemTotal - (itemTotal / (1 + (taxRate / 100)));
+          }
+
+          taxBreakdown[taxRate] = (taxBreakdown[taxRate] || 0) + itemTaxAmount;
+          totalTax += itemTaxAmount;
+
+          const sharedList = (item.sharedWith || []).filter(f => selectedFriends.includes(f));
+          if (sharedList.length > 0) {
+            const shareAmount = itemTotal / sharedList.length;
+            const taxShareAmount = itemTaxAmount / sharedList.length;
+
+            sharedList.forEach(f => {
+              friendBaseShares[f] = (friendBaseShares[f] || 0) + shareAmount;
+              friendTaxShares[f] = (friendTaxShares[f] || 0) + taxShareAmount;
+            });
+          }
+        });
+
+        const totalSc = subtotal * (scRate / 100);
+        const parsedDFee = parseFloat(dFee) || 0;
+        const parsedPackCharge = parseFloat(packCharge) || 0;
+        const parsedDiscount = parseFloat(discount) || 0;
+        const parsedRoundAdj = parseFloat(roundAdj) || 0;
+
+        const perPersonDelivery = activeFriendsCount > 0 ? (parsedDFee / activeFriendsCount) : 0;
+        const perPersonPackaging = activeFriendsCount > 0 ? (parsedPackCharge / activeFriendsCount) : 0;
+
+        selectedFriends.forEach(f => {
+          const base = friendBaseShares[f] || 0;
+          const friendSc = base * (scRate / 100);
+          const friendTax = currentTaxMode === 'addon' ? (friendTaxShares[f] || 0) : 0;
+
+          const userDiscountShare = subtotal > 0 ? (base / subtotal) * parsedDiscount : (parsedDiscount / (activeFriendsCount || 1));
+          
+          const finalPersonAmount = base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare;
+          
+          splits[f] = Math.max(0, Math.round(finalPersonAmount * 100) / 100);
+          friendItemDetails[f] = {
+            baseShare: Math.round(base * 100) / 100,
+            scShare: Math.round(friendSc * 100) / 100,
+            taxShare: Math.round((friendTaxShares[f] || 0) * 100) / 100,
+            deliveryShare: Math.round(perPersonDelivery * 100) / 100,
+            packagingShare: Math.round(perPersonPackaging * 100) / 100,
+            discountShare: Math.round(userDiscountShare * 100) / 100,
+          };
+        });
+
+        const addedTaxToTotal = currentTaxMode === 'addon' ? totalTax : 0;
+        const finalTotal = Math.round((subtotal + totalSc + addedTaxToTotal + parsedDFee + parsedPackCharge - parsedDiscount + parsedRoundAdj) * 100) / 100;
+
+        return {
+          subtotal: Math.round(subtotal * 100) / 100,
+          serviceChargeAmount: Math.round(totalSc * 100) / 100,
+          deliveryFee: parsedDFee,
+          packagingCharge: parsedPackCharge,
+          discountAmount: parsedDiscount,
+          taxMode: currentTaxMode,
+          taxBreakdown,
+          totalTax: Math.round(totalTax * 100) / 100,
+          roundingAdjustment: parsedRoundAdj,
+          total: finalTotal,
+          splits,
+          friendItemDetails
+        };
+      };
+
+      const getFriendBalances = () => {
+        const balances = {};
+        friends.forEach(f => {
+          balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
+        });
+
+        bills.forEach(bill => {
+          Object.keys(bill.splits || {}).forEach(name => {
+            const isSelf = name === 'Me (Dom)' || name === 'ตัวฉันเอง';
+            if (balances[name] && !isSelf && !bill.paidStatus?.[name]) {
+              balances[name].billsOwed += bill.splits[name];
+            }
+          });
+        });
+
+        adjustments.forEach(adj => {
+          if (balances[adj.friendName]) {
+            balances[adj.friendName].adjustedOwed += adj.amount;
+          }
+        });
+
+        Object.keys(balances).forEach(name => {
+          balances[name].totalOwed = balances[name].billsOwed + balances[name].adjustedOwed;
+        });
+
+        return balances;
+      };
+
+      const friendBalances = getFriendBalances();
+
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayMyExpense = bills
+        .filter(b => b.date === todayDateStr)
+        .reduce((sum, b) => {
+          const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
+          return sum + selfAmount;
+        }, 0);
+      const todayBillsCount = bills.filter(b => b.date === todayDateStr).length;
+
+      const getFriendHistory = (friendName) => {
+        const friendBills = bills.filter(b => Object.keys(b.splits || {}).includes(friendName));
+        const friendAdjustments = adjustments.filter(a => a.friendName === friendName);
+        return { bills: friendBills, adjustments: friendAdjustments };
+      };
+
+      const filteredBills = useMemo(() => {
+        return bills.filter(bill => {
+          const matchesSearch = (bill.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (bill.rideRoute && bill.rideRoute.toLowerCase().includes(searchQuery.toLowerCase()));
+
+          if (!matchesSearch) return false;
+
+          const unpaidCount = Object.keys(bill.splits || {}).filter(n => n !== 'Me (Dom)' && n !== 'ตัวฉันเอง' && !bill.paidStatus?.[n]).length;
+
+          if (statusFilter === 'pending') return unpaidCount > 0;
+          if (statusFilter === 'settled') return unpaidCount === 0;
+          if (statusFilter === 'ride') return bill.billType === 'ride';
+          if (statusFilter === 'food') return bill.billType !== 'ride';
+
+          return true;
+        });
+      }, [bills, searchQuery, statusFilter]);
+
+      const handleExportElement = async (ref, filename) => {
+        if (!ref.current) return;
+        try {
+          showToast("Generating image...");
+          const canvas = await html2canvas(ref.current, {
+            scale: 2,
+            backgroundColor: '#0B0F17'
+          });
+          const image = canvas.toDataURL('image/png');
+          const link = document.createElement('a');
+          link.href = image;
+          link.download = `${filename}.png`;
+          link.click();
+          showToast("Image saved successfully");
+        } catch (err) {
+          showToast("Failed to generate image", "error");
+        }
+      };
+
+      const handleStartEditBill = (bill) => {
+        setEditingBillId(bill.id);
+        setNewBillName(bill.name);
+        setBillType(bill.billType || 'delivery');
+        setTaxMode(bill.taxMode || 'inclusive');
+        setNewBillDate(bill.date);
+        setRideFare(bill.rideFare || '');
+        setTollFee(bill.tollFee || '');
+        setRideRoute(bill.rideRoute || '');
+        setServiceChargeRate(bill.serviceChargeRate !== undefined ? bill.serviceChargeRate : 0);
+        setDeliveryFee(bill.deliveryFee || 0);
+        setPackagingCharge(bill.packagingCharge || 0);
+        setDiscountAmount(bill.discountAmount || 0);
+        setRoundingAdj(bill.roundingAdjustment || 0);
+        
+        const existingParticipants = new Set([
+          ...Object.keys(bill.splits || {}),
+          ...(bill.items || []).flatMap(i => i.sharedWith || [])
+        ]);
+        const participantsArray = Array.from(existingParticipants);
+        setBillFriends(participantsArray.length > 0 ? participantsArray : friends.map(f => f.name));
+
+        const loadedItems = (bill.items || []).map(item => ({
+          ...item,
+          id: item.id || Date.now().toString() + Math.random().toString(36).substring(2, 5),
+          taxRate: item.taxRate !== undefined ? item.taxRate : 0,
+          sharedWith: item.sharedWith || []
+        }));
+        setBillItems(loadedItems);
+        setActiveTab('new-bill');
+      };
+
+      const handleSaveBill = async (e) => {
+        e.preventDefault();
+        if (!newBillName.trim()) {
+          showToast("Please enter a transaction title", "error");
+          return;
+        }
+
+        const calculated = calculateBillSplits(
+          billItems,
+          serviceChargeRate,
+          deliveryFee,
+          packagingCharge,
+          discountAmount,
+          roundingAdj,
+          billFriends,
+          taxMode,
+          billType,
+          rideFare,
+          tollFee
+        );
+
+        let initialPaidStatus = {};
+        if (editingBillId) {
+          const oldBill = bills.find(b => b.id === editingBillId);
+          initialPaidStatus = oldBill?.paidStatus || {};
+        }
+        billFriends.forEach(f => {
+          if (initialPaidStatus[f] === undefined) {
+            initialPaidStatus[f] = (f === 'Me (Dom)' || f === 'ตัวฉันเอง');
+          }
+        });
+
+        const billPayload = {
+          name: newBillName,
+          billType,
+          taxMode,
+          date: newBillDate,
+          rideFare: parseFloat(rideFare) || 0,
+          tollFee: parseFloat(tollFee) || 0,
+          rideRoute,
+          subtotal: calculated.subtotal,
+          serviceChargeRate,
+          serviceChargeAmount: calculated.serviceChargeAmount || 0,
+          deliveryFee: calculated.deliveryFee || 0,
+          packagingCharge: calculated.packagingCharge || 0,
+          discountAmount: calculated.discountAmount || 0,
+          taxBreakdown: calculated.taxBreakdown || {},
+          totalTax: calculated.totalTax || 0,
+          roundingAdjustment: calculated.roundingAdjustment || 0,
+          total: calculated.total,
+          items: billType === 'ride' ? [] : billItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            price: parseFloat(item.price) || 0,
+            qty: parseInt(item.qty) || 1,
+            taxRate: parseFloat(item.taxRate || 0),
+            sharedWith: item.sharedWith || []
+          })),
+          splits: calculated.splits,
+          friendItemDetails: calculated.friendItemDetails,
+          paidStatus: initialPaidStatus,
+          updatedAt: Date.now()
+        };
+
+        if (editingBillId) {
+          if (useCloud && db) {
+            try {
+              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(editingBillId).update(billPayload);
+              showToast("Bill updated successfully");
+            } catch (err) {
+              showToast("Update failed", "error");
+            }
+          } else {
+            setBills(prev => prev.map(b => b.id === editingBillId ? { ...b, ...billPayload } : b));
+            showToast("Bill updated locally");
+          }
+        } else {
+          billPayload.createdAt = Date.now();
+          if (useCloud && db) {
+            try {
+              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').add(billPayload);
+              showToast("New transaction saved to cloud");
+            } catch (err) {
+              showToast("Save failed", "error");
+            }
+          } else {
+            setBills(prev => [{ id: Date.now().toString(), ...billPayload }, ...prev]);
+            showToast("New transaction saved locally");
+          }
+        }
+
+        setEditingBillId(null);
+        setViewingBillId(null);
+        setActiveTab('bills');
+      };
+
+      const handleTogglePaid = async (bill, friendName) => {
+        const updatedStatus = { ...bill.paidStatus, [friendName]: !bill.paidStatus?.[friendName] };
+        if (useCloud && db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).update({ paidStatus: updatedStatus });
+          } catch (err) {
+            showToast("Update failed", "error");
+          }
+        } else {
+          setBills(bills.map(b => b.id === bill.id ? { ...b, paidStatus: updatedStatus } : b));
+        }
+      };
+
+      const handleDeleteBill = async (billId) => {
+        if (!confirm("Are you sure you want to delete this bill?")) return;
+        if (useCloud && db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(billId).delete();
+            setViewingBillId(null);
+            showToast("Bill deleted");
+          } catch (err) {
+            showToast("Delete failed", "error");
+          }
+        } else {
+          setBills(bills.filter(b => b.id !== billId));
+          setViewingBillId(null);
+          showToast("Bill deleted locally");
+        }
+      };
+
+      const handleAddFriend = async (e) => {
+        e.preventDefault();
+        const name = newFriendName.trim();
+        if (!name) return;
+        if (friends.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+          showToast("Friend name already exists", "error");
+          return;
+        }
+
+        const newF = { name, createdAt: Date.now() };
+        if (useCloud && db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(newF);
+            showToast("Friend added to cloud");
+          } catch (err) {
+            showToast("Failed to add friend", "error");
+          }
+        } else {
+          setFriends([...friends, { id: Date.now().toString(), ...newF }]);
+          showToast("Friend added locally");
+        }
+        setNewFriendName('');
+      };
+
+      const handleStartRenameFriend = (friend) => {
+        setRenamingFriendId(friend.id);
+        setRenameValue(friend.name);
+      };
+
+      const handleCancelRenameFriend = () => {
+        setRenamingFriendId(null);
+        setRenameValue('');
+      };
+
+      const handleConfirmRenameFriend = async (friend) => {
+        const newName = renameValue.trim();
+        if (!newName) {
+          showToast("Name cannot be empty", "error");
+          return;
+        }
+        if (newName === friend.name) {
+          handleCancelRenameFriend();
+          return;
+        }
+        if (friends.some(f => f.id !== friend.id && f.name.toLowerCase() === newName.toLowerCase())) {
+          showToast("This name already exists", "error");
+          return;
+        }
+
+        const oldName = friend.name;
+
+        const renameInBill = (bill) => {
+          const newItems = (bill.items || []).map(item => ({
+            ...item,
+            sharedWith: (item.sharedWith || []).map(n => n === oldName ? newName : n)
+          }));
+          const newSplits = {};
+          Object.entries(bill.splits || {}).forEach(([k, v]) => {
+            newSplits[k === oldName ? newName : k] = v;
+          });
+          const newPaidStatus = {};
+          Object.entries(bill.paidStatus || {}).forEach(([k, v]) => {
+            newPaidStatus[k === oldName ? newName : k] = v;
+          });
+          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus };
+        };
+
+        try {
+          if (useCloud && db) {
+            const batch = db.batch();
+            const friendRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id);
+            batch.update(friendRef, { name: newName });
+
+            bills.forEach(bill => {
+              const touchesFriend = Object.keys(bill.splits || {}).includes(oldName)
+                || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName));
+              if (touchesFriend) {
+                const updated = renameInBill(bill);
+                const billRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id);
+                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus });
+              }
+            });
+
+            adjustments.forEach(adj => {
+              if (adj.friendName === oldName) {
+                const adjRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id);
+                batch.update(adjRef, { friendName: newName });
+              }
+            });
+
+            await batch.commit();
+          } else {
+            setFriends(prev => prev.map(f => f.id === friend.id ? { ...f, name: newName } : f));
+            setBills(prev => prev.map(b => renameInBill(b)));
+            setAdjustments(prev => prev.map(a => a.friendName === oldName ? { ...a, friendName: newName } : a));
+          }
+          showToast(`Renamed to "${newName}"`);
+        } catch (err) {
+          showToast("Failed to rename", "error");
+        }
+        handleCancelRenameFriend();
+      };
+
+      const handleDeleteFriend = async (friend) => {
+        const balance = friendBalances[friend.name] || { totalOwed: 0 };
+        const warningMsg = balance.totalOwed !== 0
+          ? `⚠️ "${friend.name}" still has an outstanding balance of ${balance.totalOwed.toFixed(2)} RM.\n\nAre you sure you want to delete this friend?`
+          : `Remove "${friend.name}" from your friend list?`;
+        if (!confirm(warningMsg)) return;
+
+        if (useCloud && db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).delete();
+            showToast("Friend removed");
+          } catch (err) {
+            showToast("Delete failed", "error");
+          }
+        } else {
+          setFriends(prev => prev.filter(f => f.id !== friend.id));
+          showToast("Friend removed locally");
+        }
+      };
+
+      const handleDeleteAdjustment = async (adj) => {
+        if (!confirm(`Delete adjustment for "${adj.friendName}" (${adj.amount > 0 ? '+' : ''}${adj.amount.toFixed(2)})?`)) return;
+
+        if (useCloud && db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id).delete();
+            showToast("Adjustment removed");
+          } catch (err) {
+            showToast("Delete failed", "error");
+          }
+        } else {
+          setAdjustments(prev => prev.filter(a => a.id !== adj.id));
+          showToast("Adjustment removed locally");
+        }
+      };
+
+      const handleSaveAdjustment = async (e) => {
+        e.preventDefault();
+        const amount = parseFloat(adjustAmount);
+        if (isNaN(amount) || amount <= 0) {
+          showToast("Please enter a valid amount", "error");
+          return;
+        }
+
+        const finalAmount = adjustType === 'plus' ? amount : -amount;
+        const newAdj = {
+          friendName: selectedFriendForAdjust,
+          amount: finalAmount,
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'Debt Increased' : 'Payment Settled'),
+          date: new Date().toISOString().split('T')[0],
+          createdAt: Date.now()
+        };
+
+        if (useCloud && db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').add(newAdj);
+            showToast("Adjustment saved");
+          } catch (err) {
+            showToast("Failed to save adjustment", "error");
+          }
+        } else {
+          setAdjustments([{ id: Date.now().toString(), ...newAdj }, ...adjustments]);
+          showToast("Adjustment saved locally");
+        }
+        setSelectedFriendForAdjust(null);
+        setAdjustAmount('');
+        setAdjustNote('');
+      };
+
+      const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
+        if (name !== 'Me (Dom)' && name !== 'ตัวฉันเอง') return acc + Math.max(0, friendBalances[name].totalOwed);
+        return acc;
+      }, 0);
+
+      const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
+        return name !== 'Me (Dom)' && name !== 'ตัวฉันเอง' && friendBalances[name].totalOwed > 0;
+      }).length;
+
+      const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
+
+      return (
+        <div className="pb-16 min-h-screen">
+          {/* Header */}
+          <header className="bg-surface/80 border-b border-line sticky top-0 z-40 backdrop-blur-md">
+            <div className="max-w-4xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3">
+              <div>
+                <h1 className="text-lg font-black tracking-tight text-textPrimary flex items-center gap-2.5">
+                  <img 
+                    src="cat.jpg" 
+                    alt="Pilot Cat" 
+                    className="w-9 h-9 rounded-xl object-cover ring-2 ring-coral/40 shadow-md shadow-coral/20"
+                    onError={(e) => { e.target.style.display='none'; }}
+                  />
+                  <div className="flex flex-col">
+                    <span className="leading-none bg-gradient-to-r from-textPrimary via-coral to-amber bg-clip-text text-transparent font-black tracking-wide text-base sm:text-lg">
+                      KraiMaiJayMeeReung
+                    </span>
+                    <span className="text-[10px] text-coral font-bold tracking-widest uppercase mt-0.5">
+                      Made by Dom 🔥
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ml-1 ${useCloud ? 'bg-mint/10 border-mint/30 text-mint' : 'bg-subtle border-line text-textMuted'}`}>
+                    {useCloud ? 'Cloud Sync' : 'Local Only'}
+                  </span>
+                </h1>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button 
+                  onClick={() => {
+                    setEditingBillId(null);
+                    setNewBillName('');
+                    setBillType('delivery');
+                    setTaxMode('inclusive');
+                    setDeliveryFee(0);
+                    setPackagingCharge(0);
+                    setDiscountAmount(0);
+                    setServiceChargeRate(0);
+                    setRoundingAdj(0);
+                    setRideFare('');
+                    setTollFee('');
+                    setRideRoute('');
+                    setSelectedImages([]);
+                    setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
+                    setBillFriends(friends.map(f => f.name));
+                    setActiveTab('new-bill');
+                  }}
+                  className="flex-1 sm:flex-initial bg-accent hover:bg-accent-hover active:scale-[0.98] text-white font-bold px-4 py-2 rounded-xl transition text-sm flex justify-center items-center gap-1.5 shadow-lg shadow-accent/20"
+                >
+                  + Create Transaction
+                </button>
+                <button 
+                  onClick={() => setActiveTab('settings')}
+                  className="bg-surface hover:bg-subtle text-textSecondary hover:text-textPrimary px-3 py-2 rounded-xl border border-line transition text-xs font-medium"
+                  title="Settings"
+                >
+                  ⚙️
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-4xl mx-auto px-4 mt-6">
+            
+            {/* Tabs */}
+            <div className="flex bg-surface p-1 rounded-2xl gap-1 mb-6 border border-line">
+              <button 
+                onClick={() => setActiveTab('dashboard')}
+                className={`flex-1 py-2 px-2 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 ${activeTab === 'dashboard' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+              >
+                Dashboard
+              </button>
+              <button 
+                onClick={() => setActiveTab('bills')}
+                className={`flex-1 py-2 px-2 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 ${activeTab === 'bills' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+              >
+                History ({bills.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('friends')}
+                className={`flex-1 py-2 px-2 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 ${activeTab === 'friends' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+              >
+                Friends / Debtors ({friends.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('adjustments')}
+                className={`flex-1 py-2 px-2 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 ${activeTab === 'adjustments' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+              >
+                Adjustments ({adjustments.length})
+              </button>
+            </div>
+
+            {/* --- 1. DASHBOARD --- */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-surface border border-coral/30 bg-gradient-to-br from-coral-subtle/30 to-surface p-5 rounded-2xl relative overflow-hidden">
+                    <div className="absolute right-2 top-2 text-5xl opacity-10 pointer-events-none select-none">💸</div>
+                    <p className="text-xs text-coral font-bold uppercase tracking-wider font-mono">Total Outstanding (To Collect)</p>
+                    <p className="text-3xl font-black text-coral mt-1 font-mono tabular">{totalOwedAmount.toFixed(2)} <span className="text-sm font-sans font-medium text-coral/80">RM</span></p>
+                    <p className="text-xs text-textSecondary mt-1">Pending from {pendingDebtorsCount} friend(s)</p>
+                  </div>
+
+                  <div className="bg-surface border border-mint/30 bg-gradient-to-br from-mint-subtle/30 to-surface p-5 rounded-2xl relative overflow-hidden">
+                    <div className="absolute right-2 top-2 text-5xl opacity-10 pointer-events-none select-none">💳</div>
+                    <p className="text-xs text-mint font-bold uppercase tracking-wider font-mono">My Expense Today</p>
+                    <p className="text-3xl font-black text-mint mt-1 font-mono tabular">{todayMyExpense.toFixed(2)} <span className="text-sm font-sans font-medium text-mint/80">RM</span></p>
+                    <p className="text-xs text-textSecondary mt-1">Calculated from {todayBillsCount} transaction(s) today</p>
+                  </div>
+                </div>
+
+                <div className="bg-surface rounded-2xl p-6 border border-line">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xs font-bold text-textMuted uppercase tracking-wider font-mono">
+                      Unsettled Friends (Click name for Statement)
+                    </h2>
+                    <span className="text-[11px] text-accent">Tap name to view ledger ↗</span>
+                  </div>
+                  <div className="space-y-3">
+                    {friends.filter(f => f.name !== 'Me (Dom)' && f.name !== 'ตัวฉันเอง' && (friendBalances[f.name]?.totalOwed || 0) > 0).length === 0 ? (
+                      <div className="py-8 text-center text-textMuted text-sm">All debts are cleared! Everything is settled 🎉</div>
+                    ) : (
+                      friends.map(friend => {
+                        const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
+                        if (friend.name === 'Me (Dom)' || friend.name === 'ตัวฉันเอง' || balance.totalOwed <= 0) return null;
+
+                        return (
+                          <div key={friend.id} className="bg-subtle border border-line/80 hover:border-accent/40 p-4 rounded-xl flex justify-between items-center transition duration-150">
+                            <div 
+                              className="cursor-pointer group flex-1"
+                              onClick={() => setSelectedFriendForHistory(friend.name)}
+                            >
+                              <span className="font-bold text-textPrimary group-hover:text-accent transition flex items-center gap-1.5">
+                                {friend.name}
+                                <span className="text-[10px] text-accent font-normal underline group-hover:opacity-100 opacity-80">View History ↗</span>
+                                <span className="text-[10px] text-coral bg-coral-subtle/50 px-1.5 py-0.5 rounded font-mono">Unpaid</span>
+                              </span>
+                              <div className="flex gap-4 mt-1 text-xs text-textSecondary font-mono tabular">
+                                <span>Bills: {balance.billsOwed.toFixed(2)} RM</span>
+                                {balance.adjustedOwed !== 0 && (
+                                  <span className={balance.adjustedOwed > 0 ? 'text-amber' : 'text-mint'}>
+                                    Adj: {balance.adjustedOwed.toFixed(2)} RM
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-extrabold text-coral font-mono tabular">{balance.totalOwed.toFixed(2)} RM</span>
+                              <button
+                                onClick={() => { setSelectedFriendForAdjust(friend.name); setAdjustAmount(''); }}
+                                className="bg-surface hover:bg-line text-textPrimary text-xs font-semibold px-3 py-1.5 rounded-lg border border-line transition"
+                              >
+                                Adjust
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* --- 2. CREATE / EDIT TRANSACTION --- */}
+            {activeTab === 'new-bill' && (
+              <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-6 border border-line space-y-6">
+                <div className="flex justify-between items-center pb-4 border-b border-line">
+                  <h2 className="text-lg font-bold text-textPrimary flex items-center gap-2">
+                    {editingBillId ? 'Edit Transaction' : 'Create New Transaction'}
+                  </h2>
+                  <button type="button" onClick={() => setActiveTab('bills')} className="text-textSecondary hover:text-textPrimary text-sm">✕ Cancel</button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBillType('delivery');
+                      setTaxMode('inclusive');
+                      setServiceChargeRate(0);
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'delivery' ? 'bg-grab/15 border-grab text-emerald-400 shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
+                  >
+                    🛵 Food Delivery
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBillType('ride');
+                      setDiscountAmount(0);
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'ride' ? 'bg-bolt/15 border-bolt text-bolt shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
+                  >
+                    🚗 Ride (Grab/Bolt)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBillType('dinein');
+                      setTaxMode('addon');
+                      setDeliveryFee(0);
+                      setPackagingCharge(0);
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'dinein' ? 'bg-accent/15 border-accent text-accent shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
+                  >
+                    🍽️ Dine-in
+                  </button>
+                </div>
+
+                {/* MULTI-IMAGE BATCH OCR SCANNER + PASTE TEXT */}
+                <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                    <div>
+                      <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Direct Smart Scanner (Grab / Bills)</p>
+                      <p className="text-xs text-textSecondary mt-0.5">Upload screenshot/photo or paste receipt text directly</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        ref={fileInputRef} 
+                        onChange={handleAddImages} 
+                        className="hidden" 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                        className="bg-accent hover:bg-accent-hover text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
+                      >
+                        + Select Photo ({selectedImages.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowRawTextInput(!showRawTextInput)}
+                        className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
+                      >
+                        📝 Paste Text
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Paste Text Area */}
+                  {showRawTextInput && (
+                    <div className="pt-2 border-t border-line/40 space-y-2">
+                      <textarea
+                        value={rawOrderText}
+                        onChange={(e) => setRawOrderText(e.target.value)}
+                        placeholder="Paste order text summary from Grab / Email receipt here..."
+                        className="w-full h-24 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowRawTextInput(false)}
+                          className="px-3 py-1 text-xs text-textSecondary"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleParseRawText}
+                          className="bg-mint text-bg font-bold px-4 py-1 rounded-lg text-xs"
+                        >
+                          Extract Items From Text
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Image Thumbnails Strip */}
+                  {selectedImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-line/40 items-center">
+                      {selectedImages.map((file, index) => (
+                        <div key={index} className="relative group bg-surface border border-line rounded-lg p-1 flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono text-textMuted px-1">#{index + 1}</span>
+                          <span className="text-xs text-textPrimary max-w-[100px] truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveImage(index)}
+                            className="text-coral text-xs px-1 hover:font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      
+                      <button
+                        type="button"
+                        disabled={ocrProcessing}
+                        onClick={handleProcessAllImages}
+                        className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
+                      >
+                        {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
+                      {billType === 'ride' ? 'Trip / Ride Title' : 'Merchant / Order Title'}
+                    </label>
+                    <input 
+                      type="text" 
+                      value={newBillName}
+                      onChange={(e) => setNewBillName(e.target.value)}
+                      className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent focus:ring-1 focus:ring-accent outline-none"
+                      placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : 'e.g., KFC GrabFood, Baby Cami'}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">Date</label>
+                    <input 
+                      type="date" 
+                      value={newBillDate}
+                      onChange={(e) => setNewBillDate(e.target.value)}
+                      className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none color-scheme-dark"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
+                    Participants ({billFriends.length} people)
+                  </label>
+                  <div className="flex flex-wrap gap-2 bg-subtle p-3 rounded-xl border border-line">
+                    {friends.map(friend => {
+                      const isSelected = billFriends.includes(friend.name);
+                      return (
+                        <button
+                          key={friend.id}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setBillFriends(billFriends.filter(f => f !== friend.name));
+                            } else {
+                              setBillFriends([...billFriends, friend.name]);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 ${isSelected ? 'bg-accent text-white shadow-md shadow-accent/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                        >
+                          {isSelected ? '✓ ' : '+ '} {friend.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {billType === 'ride' ? (
+                  <div className="bg-subtle p-4 rounded-xl border border-bolt/30 space-y-4">
+                    <div className="flex items-center gap-2 text-bolt text-xs font-bold uppercase tracking-wider">
+                      <span>🚗 Ride Hailing Details</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-xs text-textSecondary mb-1 font-bold">Base Ride Fare (RM)</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          value={rideFare}
+                          onChange={(e) => setRideFare(e.target.value)}
+                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-bolt outline-none font-mono"
+                          placeholder="0.00"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-amber mb-1 font-bold">Toll / Surcharge (RM)</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          value={tollFee}
+                          onChange={(e) => setTollFee(e.target.value)}
+                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-amber outline-none font-mono"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-coral mb-1 font-bold">Discount / Promo (RM)</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          value={discountAmount}
+                          onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-coral outline-none font-mono"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-textSecondary mb-1 font-bold">Rounding (+/- RM)</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          value={roundingAdj}
+                          onChange={(e) => setRoundingAdj(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-textSecondary mb-1 font-bold">Route / Destination Details</label>
+                      <input 
+                        type="text" 
+                        value={rideRoute}
+                        onChange={(e) => setRideRoute(e.target.value)}
+                        className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-bolt outline-none"
+                        placeholder="e.g., Pavilion KL -> KL Sentral"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="bg-subtle p-4 rounded-xl border border-line space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-3 border-b border-line">
+                        <div>
+                          <p className="text-xs font-bold text-textPrimary">Tax Mode</p>
+                          <p className="text-[11px] text-textSecondary">Delivery apps usually include tax inside item prices</p>
+                        </div>
+                        <div className="flex bg-surface p-1 rounded-lg border border-line">
+                          <button
+                            type="button"
+                            onClick={() => setTaxMode('inclusive')}
+                            className={`px-3 py-1 text-xs font-bold rounded-md transition ${taxMode === 'inclusive' ? 'bg-accent text-white' : 'text-textSecondary'}`}
+                          >
+                            ✓ Incl. Tax (Included)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTaxMode('addon')}
+                            className={`px-3 py-1 text-xs font-bold rounded-md transition ${taxMode === 'addon' ? 'bg-accent text-white' : 'text-textSecondary'}`}
+                          >
+                            + Add-on Tax (Added on top)
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                        <div>
+                          <label className="block text-xs text-emerald-400 mb-1 font-bold">🛵 Delivery Fee</label>
+                          <input 
+                            type="number" 
+                            step="0.01"
+                            value={deliveryFee}
+                            onChange={(e) => setDeliveryFee(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-grab outline-none font-mono"
+                            placeholder="0.00"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-amber mb-1 font-bold">📦 Packaging Charge</label>
+                          <input 
+                            type="number" 
+                            step="0.01"
+                            value={packagingCharge}
+                            onChange={(e) => setPackagingCharge(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-amber outline-none font-mono"
+                            placeholder="0.00"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-coral mb-1 font-bold">🏷️ Discount (-)</label>
+                          <input 
+                            type="number" 
+                            step="0.01"
+                            value={discountAmount}
+                            onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-coral outline-none font-mono"
+                            placeholder="0.00"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-textSecondary mb-1 font-bold">Service Charge (%)</label>
+                          <input 
+                            type="number" 
+                            step="0.1"
+                            value={serviceChargeRate}
+                            onChange={(e) => setServiceChargeRate(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
+                            placeholder="0"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-textSecondary mb-1 font-bold">Rounding (+/-)</label>
+                          <input 
+                            type="number" 
+                            step="0.01"
+                            value={roundingAdj}
+                            onChange={(e) => setRoundingAdj(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider">Itemized Breakdown</label>
+                        <button
+                          type="button"
+                          onClick={() => setBillItems([...billItems, { id: Date.now().toString(), name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }])}
+                          className="bg-accent/15 text-accent hover:bg-accent hover:text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
+                        >
+                          + Add Item
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {billItems.map((item, index) => (
+                          <div key={item.id} className="bg-subtle border border-line p-4 rounded-xl space-y-3">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-bold text-textMuted font-mono">#{index + 1}</span>
+                              {billItems.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setBillItems(billItems.filter(i => i.id !== item.id))}
+                                  className="text-xs text-coral hover:underline font-semibold"
+                                >
+                                  Delete Item
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-12 gap-2">
+                              <div className="col-span-12 sm:col-span-5">
+                                <input
+                                  type="text"
+                                  value={item.name}
+                                  onChange={(e) => setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, name: e.target.value } : bi))}
+                                  className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none"
+                                  placeholder="Item Name"
+                                  required
+                                />
+                              </div>
+                              <div className="col-span-4 sm:col-span-2">
+                                <input
+                                  type="number"
+                                  step="0.001"
+                                  value={item.price}
+                                  onChange={(e) => setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, price: e.target.value } : bi))}
+                                  className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
+                                  placeholder="Price"
+                                  required
+                                />
+                              </div>
+                              <div className="col-span-3 sm:col-span-2">
+                                <input
+                                  type="number"
+                                  value={item.qty}
+                                  onChange={(e) => setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, qty: parseInt(e.target.value) || 1 } : bi))}
+                                  className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
+                                  placeholder="Qty"
+                                  required
+                                />
+                              </div>
+                              <div className="col-span-5 sm:col-span-3">
+                                <select
+                                  value={item.taxRate}
+                                  onChange={(e) => setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, taxRate: parseFloat(e.target.value) } : bi))}
+                                  className="w-full bg-surface border border-line rounded-xl px-2 py-2 text-xs text-textPrimary focus:border-accent outline-none font-medium"
+                                >
+                                  <option value="0">No Tax (0%)</option>
+                                  <option value="6">SST / Tax 6%</option>
+                                  <option value="7">VAT 7%</option>
+                                  <option value="8">Tax 8%</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div>
+                              <p className="text-[11px] text-textSecondary mb-1.5 font-bold">Shared By:</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {billFriends.map(fName => {
+                                  const isShared = (item.sharedWith || []).includes(fName);
+                                  return (
+                                    <button
+                                      key={fName}
+                                      type="button"
+                                      onClick={() => {
+                                        const currentShared = item.sharedWith || [];
+                                        const nextShared = isShared ? currentShared.filter(sn => sn !== fName) : [...currentShared, fName];
+                                        setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, sharedWith: nextShared } : bi));
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${isShared ? 'bg-mint text-bg font-bold shadow-sm' : 'bg-surface text-textSecondary border border-line'}`}
+                                    >
+                                      {fName}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="pt-4 border-t border-line">
+                  <button type="submit" className="w-full bg-mint hover:bg-emerald-600 text-bg font-bold py-3 rounded-xl transition text-sm shadow-md shadow-mint/20">
+                    Save and Calculate Splits
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* --- 3. BILL HISTORY --- */}
+            {activeTab === 'bills' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                  <h2 className="text-lg font-bold text-textPrimary">Transaction History ({bills.length})</h2>
+                </div>
+
+                <div className="bg-surface p-3 rounded-2xl border border-line space-y-3">
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-textMuted">
+                      🔍
+                    </span>
+                    <input 
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by merchant, place, or route..."
+                      className="w-full bg-subtle border border-line rounded-xl pl-9 pr-4 py-2 text-sm text-textPrimary focus:border-accent outline-none"
+                    />
+                    {searchQuery && (
+                      <button 
+                        onClick={() => setSearchQuery('')}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-textMuted hover:text-textPrimary"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'all', label: `All (${bills.length})` },
+                      { id: 'pending', label: 'Pending Only' },
+                      { id: 'settled', label: 'Settled' },
+                      { id: 'ride', label: '🚗 Rides Only' },
+                      { id: 'food', label: '🛵 Food / Orders' },
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        onClick={() => setStatusFilter(f.id)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${statusFilter === f.id ? 'bg-accent text-white shadow-sm' : 'bg-subtle text-textSecondary hover:text-textPrimary border border-line'}`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredBills.length === 0 ? (
+                    <div className="col-span-full py-12 text-center text-textMuted text-sm bg-surface rounded-2xl border border-line">
+                      No transactions match your search or filter.
+                    </div>
+                  ) : (
+                    filteredBills.map(bill => {
+                      const isCollapsed = viewingBillId === bill.id;
+                      const unpaidCount = Object.keys(bill.splits || {}).filter(n => n !== 'Me (Dom)' && n !== 'ตัวฉันเอง' && !bill.paidStatus?.[n]).length;
+
+                      return (
+                        <div 
+                          key={bill.id}
+                          onClick={() => setViewingBillId(isCollapsed ? null : bill.id)}
+                          className="bg-surface border border-line hover:border-accent/40 rounded-2xl p-5 cursor-pointer transition shadow-sm"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] bg-subtle text-textSecondary px-2 py-0.5 rounded-md font-mono">{bill.date}</span>
+                                {bill.billType === 'ride' && (
+                                  <span className="text-[10px] bg-bolt/20 text-bolt font-bold px-1.5 py-0.5 rounded">🚗 Ride</span>
+                                )}
+                                {bill.deliveryFee > 0 && (
+                                  <span className="text-[10px] bg-grab/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded">Delivery</span>
+                                )}
+                                {bill.packagingCharge > 0 && (
+                                  <span className="text-[10px] bg-amber/20 text-amber font-bold px-1.5 py-0.5 rounded">+Packaging</span>
+                                )}
+                              </div>
+                              <h3 className="font-bold text-textPrimary mt-1.5 text-base">{bill.name}</h3>
+                              {bill.rideRoute && <p className="text-xs text-textSecondary mt-0.5 font-mono">📍 {bill.rideRoute}</p>}
+                            </div>
+                            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${unpaidCount === 0 ? 'bg-mint/15 text-mint' : 'bg-coral/15 text-coral'}`}>
+                              {unpaidCount === 0 ? '✓ Settled' : `${unpaidCount} Pending`}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 mt-4 bg-subtle p-3 rounded-xl">
+                            <div>
+                              <p className="text-[10px] text-textMuted uppercase font-bold">{bill.billType === 'ride' ? 'Fare' : 'Subtotal'}</p>
+                              <p className="text-sm font-semibold text-textSecondary font-mono">{bill.subtotal?.toFixed(2)} RM</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-textMuted uppercase font-bold">Net Total</p>
+                              <p className="text-sm font-extrabold text-mint font-mono">{bill.total?.toFixed(2)} RM</p>
+                            </div>
+                          </div>
+
+                          {isCollapsed && (
+                            <div className="pt-4 border-t border-line space-y-4 mt-3 cursor-default" onClick={e => e.stopPropagation()}>
+                              <div className="bg-accent-subtle/20 p-3 rounded-xl border border-accent/20 flex flex-wrap justify-between items-center gap-2">
+                                <div>
+                                  <p className="text-xs font-bold text-accent">Receipt & Split Details</p>
+                                  <p className="text-[10px] text-textSecondary">Export individual or total receipts as Image / PDF</p>
+                                </div>
+                                <button
+                                  onClick={() => setActiveBreakdown({ bill, selectedFriend: null })}
+                                  className="bg-accent hover:bg-accent-hover text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95 shadow-sm shadow-accent/20"
+                                >
+                                  → View / Export Slip
+                                </button>
+                              </div>
+
+                              <div className="space-y-2">
+                                <p className="font-bold text-textMuted text-[11px] uppercase">Individual Breakdown (Tap name to view items):</p>
+                                {Object.keys(bill.splits || {}).map(fName => {
+                                  const isPaid = bill.paidStatus?.[fName];
+                                  const isSelf = fName === 'Me (Dom)' || fName === 'ตัวฉันเอง';
+                                  return (
+                                    <div key={fName} className="flex justify-between items-center bg-subtle p-2.5 rounded-xl text-xs">
+                                      <div 
+                                        className="cursor-pointer hover:text-accent transition"
+                                        onClick={() => setActiveBreakdown({ bill, selectedFriend: fName })}
+                                      >
+                                        <p className="font-bold flex items-center gap-1.5 text-textPrimary">
+                                          {fName}
+                                          <span className="text-[10px] text-accent underline font-normal">→ Items</span>
+                                        </p>
+                                        <p className="text-textSecondary text-[11px] font-mono mt-0.5">{bill.splits[fName]?.toFixed(2)} RM</p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {isSelf ? (
+                                          <span className="text-[11px] text-textMuted font-medium bg-surface px-2 py-1 rounded-md border border-line">Payer</span>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleTogglePaid(bill, fName)}
+                                            className={`px-3 py-1.5 rounded-lg font-bold transition text-xs ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                          >
+                                            {isPaid ? '✓ Paid' : '⌛ Pending'}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="flex justify-between pt-2 border-t border-line">
+                                <button onClick={() => handleStartEditBill(bill)} className="text-accent text-xs font-bold hover:underline">Edit Transaction</button>
+                                <button onClick={() => handleDeleteBill(bill.id)} className="text-coral text-xs font-medium hover:underline">Delete</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* --- 4. FRIENDS TAB --- */}
+            {activeTab === 'friends' && (
+              <div className="space-y-6">
+                <div className="bg-surface rounded-2xl p-6 border border-line space-y-4">
+                  <h2 className="text-md font-bold text-textPrimary">Manage Friends & Debtors</h2>
+                  <form onSubmit={handleAddFriend} className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Friend's name" 
+                      value={newFriendName}
+                      onChange={(e) => setNewFriendName(e.target.value)}
+                      className="flex-1 bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
+                    />
+                    <button type="submit" className="bg-accent hover:bg-accent-hover text-white font-bold px-5 py-2.5 rounded-xl text-sm transition shadow-md shadow-accent/20">+ Add</button>
+                  </form>
+                </div>
+
+                <div className="bg-surface rounded-2xl p-6 border border-line divide-y divide-line">
+                  {friends.map(friend => {
+                    const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
+                    const isRenaming = renamingFriendId === friend.id;
+                    const isSelf = friend.name === 'Me (Dom)' || friend.name === 'ตัวฉันเอง';
+                    return (
+                      <div key={friend.id} className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-center gap-3">
+                        {isRenaming ? (
+                          <div className="flex-1 flex gap-2 items-center">
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmRenameFriend(friend); if (e.key === 'Escape') handleCancelRenameFriend(); }}
+                              autoFocus
+                              className="flex-1 bg-subtle border border-accent rounded-xl px-3 py-2 text-textPrimary text-sm outline-none"
+                            />
+                            <button onClick={() => handleConfirmRenameFriend(friend)} className="text-mint text-xs font-bold px-2 py-1.5">✓ Save</button>
+                            <button onClick={handleCancelRenameFriend} className="text-textMuted text-xs px-2 py-1.5">✕</button>
+                          </div>
+                        ) : (
+                          <div 
+                            className="cursor-pointer group flex-1"
+                            onClick={() => setSelectedFriendForHistory(friend.name)}
+                          >
+                            <span className="font-bold text-textPrimary group-hover:text-accent transition flex items-center gap-1.5">
+                              {friend.name}
+                              <span className="text-[10px] text-accent underline font-normal">View Ledger ↗</span>
+                            </span>
+                            {!isSelf && (
+                              <p className="text-xs text-textSecondary mt-0.5">Total Balance: <span className="font-bold text-coral font-mono">{balance.totalOwed?.toFixed(2)} RM</span></p>
+                            )}
+                          </div>
+                        )}
+                        {!isRenaming && !isSelf && (
+                          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                            <button 
+                              onClick={() => setSelectedFriendForHistory(friend.name)} 
+                              className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
+                            >
+                              Ledger
+                            </button>
+                            <button 
+                              onClick={() => { setSelectedFriendForAdjust(friend.name); setAdjustAmount(''); }} 
+                              className="bg-accent/15 text-accent hover:bg-accent hover:text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
+                            >
+                              Adjust
+                            </button>
+                            <button
+                              onClick={() => handleStartRenameFriend(friend)}
+                              className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
+                            >
+                              Rename
+                            </button>
+                            <button
+                              onClick={() => handleDeleteFriend(friend)}
+                              className="bg-subtle hover:bg-coral/20 text-coral text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* --- 5. ADJUSTMENTS TAB --- */}
+            {activeTab === 'adjustments' && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-bold text-textPrimary">Adjustment Logs ({adjustments.length})</h2>
+                <div className="bg-surface rounded-2xl p-6 border border-line divide-y divide-line">
+                  {adjustments.length === 0 ? (
+                    <div className="py-6 text-center text-textMuted text-sm">No adjustment logs recorded yet</div>
+                  ) : (
+                    adjustments.map(adj => (
+                      <div key={adj.id} className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-center text-sm gap-3">
+                        <div>
+                          <span className="font-bold text-textPrimary">{adj.friendName}</span>
+                          <span className="text-[10px] bg-subtle text-textSecondary px-2 py-0.5 rounded font-mono ml-2 border border-line">{adj.date}</span>
+                          <p className="text-xs text-textSecondary mt-0.5">Note: {adj.note}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                            {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
+                          </span>
+                          <button
+                            onClick={() => handleDeleteAdjustment(adj)}
+                            className="text-textMuted hover:text-coral text-xs underline"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* --- 6. SETTINGS TAB --- */}
+            {activeTab === 'settings' && (
+              <div className="space-y-6">
+                <form onSubmit={handleSaveSettings} className="bg-surface rounded-2xl p-6 border border-line space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-md font-bold text-textPrimary flex items-center gap-2">⚙️ Firebase Cloud Settings</h2>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${useCloud ? 'bg-mint/10 border-mint/30 text-mint' : 'bg-subtle border-line text-textMuted'}`}>
+                      {useCloud ? '✓ Connected' : 'Local Mode'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-textSecondary mb-1">Firebase Configuration JSON</label>
+                    <textarea 
+                      value={configInput}
+                      onChange={(e) => setConfigInput(e.target.value)}
+                      className="w-full h-36 bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary font-mono text-xs focus:border-accent outline-none"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-textSecondary mb-1">App ID</label>
+                    <input 
+                      type="text" 
+                      value={appIdInput}
+                      onChange={(e) => setAppIdInput(e.target.value)}
+                      className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none font-mono"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-3 rounded-xl transition text-sm shadow-md shadow-accent/20"
+                  >
+                    💾 Save & Sync Cloud
+                  </button>
+                </form>
+              </div>
+            )}
+
+          </main>
+
+          {/* --- INDIVIDUAL STATEMENT MODAL --- */}
+          {selectedFriendForHistory && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 overflow-y-auto">
+              <div className="bg-surface border border-line rounded-3xl max-w-xl w-full p-6 space-y-5 my-8 shadow-2xl">
+                
+                <div className="flex justify-between items-center pb-2 border-b border-line">
+                  <div>
+                    <h3 className="font-bold text-textPrimary text-lg flex items-center gap-2">
+                      👤 Ledger: <span className="text-accent">{selectedFriendForHistory}</span>
+                    </h3>
+                    <p className="text-xs text-textSecondary">Complete history of orders, rides, and adjustments</p>
+                  </div>
+                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-textSecondary hover:text-textPrimary text-lg">✕</button>
+                </div>
+
+                <div ref={friendSlipRef} className="bg-[#0B0F17] border border-line/60 p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
+                  <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
+                    <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
+                    <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 KraiMaiJayMeeReung • Statement</p>
+                    <p className="text-base font-bold text-textPrimary font-sans">{selectedFriendForHistory}</p>
+                    <p className="text-xs text-textMuted">Cumulative Debt Statement</p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 bg-subtle p-3 rounded-xl text-center">
+                    <div>
+                      <p className="text-[10px] text-textMuted uppercase font-bold">From Bills</p>
+                      <p className="text-sm font-bold text-textPrimary mt-0.5 tabular font-mono">
+                        {(friendBalances[selectedFriendForHistory]?.billsOwed || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-textMuted uppercase font-bold">Adjusted</p>
+                      <p className={`text-sm font-bold mt-0.5 tabular font-mono ${(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0) > 0 ? 'text-amber' : 'text-mint'}`}>
+                        {(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-coral uppercase font-bold">Net Balance</p>
+                      <p className="text-base font-black text-coral mt-0.5 tabular font-mono">
+                        {(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-textSecondary uppercase font-sans">📋 Transaction History ({getFriendHistory(selectedFriendForHistory).bills.length}):</p>
+                    
+                    {getFriendHistory(selectedFriendForHistory).bills.length === 0 ? (
+                      <p className="text-center py-3 text-textMuted">No transactions on record</p>
+                    ) : (
+                      <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                        {getFriendHistory(selectedFriendForHistory).bills.map(b => {
+                          const isPaid = b.paidStatus?.[selectedFriendForHistory];
+                          const userShare = b.splits[selectedFriendForHistory] || 0;
+                          return (
+                            <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
+                              <div>
+                                <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
+                                  {b.billType === 'ride' ? '🚗 ' : '🛵 '} {b.name}
+                                </p>
+                                <p className="text-[10px] text-textMuted">
+                                  {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : (b.items?.filter(i => (i.sharedWith || []).includes(selectedFriendForHistory)).map(i => i.name).join(', ') || 'General split')}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-sm text-textPrimary font-mono tabular">{userShare.toFixed(2)} RM</p>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
+                                  {isPaid ? 'Paid' : 'Unpaid'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {getFriendHistory(selectedFriendForHistory).adjustments.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-dashed border-line">
+                      <p className="text-xs font-bold text-textSecondary uppercase font-sans">⚙️ Adjustments ({getFriendHistory(selectedFriendForHistory).adjustments.length}):</p>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        {getFriendHistory(selectedFriendForHistory).adjustments.map(adj => (
+                          <div key={adj.id} className="bg-subtle/50 p-2 rounded-lg flex justify-between items-center text-[11px]">
+                            <div>
+                              <span className="text-textPrimary">{adj.note}</span>
+                              <span className="text-textMuted ml-1.5 font-mono">({adj.date})</span>
+                            </div>
+                            <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                              {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    onClick={() => handleExportElement(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
+                    className="bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
+                  >
+                    📸 Save Statement Image (PNG)
+                  </button>
+                  <button
+                    onClick={() => {
+                      const fName = selectedFriendForHistory;
+                      setSelectedFriendForHistory(null);
+                      setSelectedFriendForAdjust(fName);
+                    }}
+                    className="bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
+                  >
+                    ⚖️ Adjust Balance
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- DETAILED RECEIPT MODAL --- */}
+          {activeBreakdown && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 overflow-y-auto">
+              <div className="bg-surface border border-line rounded-3xl max-w-lg w-full p-6 space-y-4 my-8 shadow-2xl">
+                
+                <div className="flex justify-between items-center pb-2 border-b border-line">
+                  <h3 className="font-bold text-textPrimary text-base">
+                    {activeBreakdown.selectedFriend ? `Breakdown: ${activeBreakdown.selectedFriend}` : 'Transaction Summary'}
+                  </h3>
+                  <button onClick={() => setActiveBreakdown(null)} className="text-textSecondary hover:text-textPrimary text-lg">✕</button>
+                </div>
+
+                <div ref={receiptCardRef} className="bg-[#0B0F17] border border-line/60 p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
+                  <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
+                    <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
+                    <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 KraiMaiJayMeeReung</p>
+                    <p className="text-base font-bold text-textPrimary font-sans">
+                      {activeBreakdown.bill.billType === 'ride' ? '🚗 ' : '🛵 '} {activeBreakdown.bill.name}
+                    </p>
+                    {activeBreakdown.bill.rideRoute && <p className="text-[11px] text-textSecondary font-sans">📍 {activeBreakdown.bill.rideRoute}</p>}
+                    <p className="text-textMuted">{activeBreakdown.bill.date}</p>
+                    {activeBreakdown.selectedFriend && (
+                      <p className="text-emerald-400 font-bold font-sans text-sm mt-1">
+                        Participant: {activeBreakdown.selectedFriend}
+                      </p>
+                    )}
+                  </div>
+
+                  {activeBreakdown.bill.billType === 'ride' ? (
+                    <div className="space-y-2">
+                      <div className="flex justify-between py-1">
+                        <span className="text-textSecondary">Base Fare</span>
+                        <span className="font-bold font-mono">{activeBreakdown.bill.subtotal?.toFixed(2)} RM</span>
+                      </div>
+                      {activeBreakdown.bill.tollFee > 0 && (
+                        <div className="flex justify-between py-1 text-amber">
+                          <span>Toll / Surcharge</span>
+                          <span className="font-bold font-mono">+{activeBreakdown.bill.tollFee?.toFixed(2)} RM</span>
+                        </div>
+                      )}
+                      {activeBreakdown.bill.discountAmount > 0 && (
+                        <div className="flex justify-between py-1 text-coral">
+                          <span>Promo Discount</span>
+                          <span className="font-bold font-mono">-{activeBreakdown.bill.discountAmount?.toFixed(2)} RM</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between py-1 text-textMuted text-[10px]">
+                        <span>Total Split Across</span>
+                        <span>{Object.keys(activeBreakdown.bill.splits || {}).length} People</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex justify-between font-bold text-textMuted uppercase text-[10px] pb-1 border-b border-line">
+                        <span>Item Name</span>
+                        <span>Share (RM)</span>
+                      </div>
+
+                      {activeBreakdown.bill.items?.filter(item => {
+                        if (!activeBreakdown.selectedFriend) return true;
+                        return (item.sharedWith || []).includes(activeBreakdown.selectedFriend);
+                      }).map((item, idx) => {
+                        const shareCount = (item.sharedWith || []).length || 1;
+                        const userShareCost = (item.price * item.qty) / shareCount;
+
+                        return (
+                          <div key={idx} className="flex justify-between items-center py-1">
+                            <div className="pr-2">
+                              <p className="text-textPrimary font-sans font-medium">{item.name}</p>
+                              <p className="text-[10px] text-textMuted">
+                                {item.qty > 1 && `${item.qty}x `}{item.price.toFixed(2)} RM
+                                {activeBreakdown.selectedFriend && shareCount > 1 && ` (Split ${shareCount} pax)`}
+                                {activeBreakdown.bill.taxMode === 'inclusive' ? ` [Incl. Tax ${item.taxRate || 0}%]` : ` [Addon Tax ${item.taxRate || 0}%]`}
+                              </p>
+                            </div>
+                            <span className="font-bold text-textPrimary tabular">{userShareCost.toFixed(2)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="pt-3 border-t border-dashed border-line space-y-1.5 text-[11px]">
+                    {activeBreakdown.bill.packagingCharge > 0 && (
+                      <div className="flex justify-between text-amber">
+                        <span>Packaging Charge</span>
+                        <span className="tabular font-mono">+{activeBreakdown.bill.packagingCharge.toFixed(2)} RM</span>
+                      </div>
+                    )}
+
+                    {activeBreakdown.bill.deliveryFee > 0 && (
+                      <div className="flex justify-between text-emerald-400">
+                        <span>Delivery Fee</span>
+                        <span className="tabular font-mono">+{activeBreakdown.bill.deliveryFee.toFixed(2)} RM</span>
+                      </div>
+                    )}
+
+                    {activeBreakdown.selectedFriend ? (
+                      <div className="flex justify-between items-center text-sm font-bold text-textPrimary pt-2 border-t border-line font-sans">
+                        <span>Net Payable Amount:</span>
+                        <span className="text-base text-mint font-mono tabular">{activeBreakdown.bill.splits[activeBreakdown.selectedFriend]?.toFixed(2)} RM</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-center text-sm font-bold text-textPrimary pt-2 border-t border-line font-sans">
+                        <span>Total Net Bill:</span>
+                        <span className="text-base text-mint font-mono tabular">{activeBreakdown.bill.total?.toFixed(2)} RM</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    onClick={() => handleExportElement(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
+                    className="bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
+                  >
+                    📸 Save Receipt Image (PNG)
+                  </button>
+                  <button
+                    onClick={() => handleExportElement(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
+                    className="bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
+                  >
+                    📄 Download PDF
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- ADJUSTMENT MODAL --- */}
+          {selectedFriendForAdjust && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <form onSubmit={handleSaveAdjustment} className="bg-surface border border-line rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center pb-2 border-b border-line">
+                  <div>
+                    <h3 className="font-bold text-md text-textPrimary flex items-center gap-1.5">
+                      Adjust Balance: <span className="text-accent">{selectedFriendForAdjust}</span>
+                    </h3>
+                  </div>
+                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-textSecondary">✕</button>
+                </div>
+
+                {currentSelectedBalance && (
+                  <div className="bg-subtle border border-line/80 rounded-2xl p-3.5 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-textSecondary">Current Balance Owed:</span>
+                      <span className={`text-lg font-black font-mono tabular ${currentSelectedBalance.totalOwed > 0 ? 'text-coral' : currentSelectedBalance.totalOwed < 0 ? 'text-mint' : 'text-textMuted'}`}>
+                        {currentSelectedBalance.totalOwed.toFixed(2)} RM
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-line/50 text-textMuted font-mono">
+                      <div>Bills Owed: {currentSelectedBalance.billsOwed.toFixed(2)} RM</div>
+                      <div className="text-right">Previous Adj: {currentSelectedBalance.adjustedOwed > 0 ? '+' : ''}{currentSelectedBalance.adjustedOwed.toFixed(2)} RM</div>
+                    </div>
+
+                    {currentSelectedBalance.totalOwed > 0 && (
+                      <div className="pt-2 border-t border-line/50 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdjustType('minus');
+                            setAdjustAmount(currentSelectedBalance.totalOwed.toFixed(2));
+                            setAdjustNote('Payment settled in full');
+                          }}
+                          className="flex-1 bg-mint/15 hover:bg-mint text-mint hover:text-bg font-bold py-1.5 px-2 rounded-lg text-xs transition text-center"
+                        >
+                          ⚡ Settle Full Balance ({currentSelectedBalance.totalOwed.toFixed(2)} RM)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 bg-subtle p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('minus')}
+                    className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-bg shadow-sm' : 'text-textSecondary'}`}
+                  >
+                    Deduct / Settle (-)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('plus')}
+                    className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'plus' ? 'bg-coral text-white shadow-sm' : 'text-textSecondary'}`}
+                  >
+                    Add Debt (+)
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-textSecondary font-bold mb-1">Adjustment Amount (RM)</label>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={adjustAmount}
+                    onChange={(e) => setAdjustAmount(e.target.value)}
+                    className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm font-mono focus:border-accent outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-textSecondary font-bold mb-1">Note</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g., Transfer via DuitNow, Cash"
+                    value={adjustNote}
+                    onChange={(e) => setAdjustNote(e.target.value)}
+                    className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button type="submit" className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-accent/20">Save</button>
+                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="bg-subtle border border-line text-textPrimary py-2.5 px-4 rounded-xl text-sm hover:bg-line">Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Toast Notification */}
+          {toast && (
+            <div className={`fixed bottom-5 right-5 z-50 bg-surface border px-4 py-3 rounded-xl text-sm shadow-xl ${toast.type === 'error' ? 'border-coral/40 text-coral bg-coral-subtle/80' : 'border-mint/40 text-mint bg-mint-subtle/80'}`}>
+              {toast.message}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
