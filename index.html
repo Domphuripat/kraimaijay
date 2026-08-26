@@ -223,6 +223,12 @@
                 if (list.length === 0) {
                   const defaultFriends = [
                     { name: 'Me (Dom)', createdAt: Date.now() },
+                    { name: 'Yaya', createdAt: Date.now() },
+                    { name: 'kamil', createdAt: Date.now() },
+                    { name: 'wakin', createdAt: Date.now() },
+                    { name: 'dom', createdAt: Date.now() },
+                    { name: 'panda', createdAt: Date.now() },
+                    { name: 'ink', createdAt: Date.now() }
                   ];
                   defaultFriends.forEach(df => firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(df));
                 } else {
@@ -247,7 +253,7 @@
               });
 
             setLoading(false);
-            showToast("Cloud Firebase Synced Successfully! 🚀");
+            showToast("Cloud Firebase Synced! 🚀");
 
             return () => {
               unsubFriends();
@@ -274,6 +280,12 @@
         } else {
           setFriends([
             { id: '1', name: 'Me (Dom)', createdAt: Date.now() },
+            { id: '2', name: 'Yaya', createdAt: Date.now() },
+            { id: '3', name: 'kamil', createdAt: Date.now() },
+            { id: '4', name: 'wakin', createdAt: Date.now() },
+            { id: '5', name: 'dom', createdAt: Date.now() },
+            { id: '6', name: 'panda', createdAt: Date.now() },
+            { id: '7', name: 'ink', createdAt: Date.now() }
           ]);
         }
         const savedBills = localStorage.getItem('kraimaijay_local_bills');
@@ -315,10 +327,8 @@
               const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
               const d = imgData.data;
               
-              // Apply High-Contrast Grayscale Filter
               for (let i = 0; i < d.length; i += 4) {
                 const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                // Contrast stretch
                 const contrast = 1.3;
                 const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
                 const adjusted = factor * (gray - 128) + 128;
@@ -335,7 +345,6 @@
         });
       };
 
-      // MULTI-IMAGE BATCH OCR SCANNER
       const handleAddImages = (e) => {
         const files = Array.from(e.target.files);
         if (!files.length) return;
@@ -346,6 +355,7 @@
         setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
       };
 
+      // SMART PARSER (GRAB / DELIVERY / RECEIPT COMPATIBLE)
       const handleProcessAllImages = async () => {
         if (!selectedImages.length) return;
 
@@ -383,45 +393,44 @@
             for (let j = 0; j < lines.length; j++) {
               const line = lines[j];
 
-              // 1. ตรวจจับ Delivery fee (เช่น "Delivery fee 0.30 3.30" หรือ "Delivery fee RM 0.30")
+              // 1. Delivery fee
               if (/delivery\s*fee|rider|driver/i.test(line)) {
                 const numMatch = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
                 if (numMatch) detectedDelivery = parseFloat(numMatch[1]);
                 continue;
               }
 
-              // 2. ตรวจจับ Packaging charge (เช่น "Restaurant packaging charge 2.99")
+              // 2. Packaging charge
               if (/packaging|packing|box|takeaway/i.test(line)) {
                 const numMatch = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
                 if (numMatch) detectedPackaging = parseFloat(numMatch[1]);
                 continue;
               }
 
-              // 3. ตรวจจับส่วนลด / Promo (เช่น "RM7 off -7.00" หรือ "Discount -7.00")
+              // 3. Discount / Promo
               if (/off|discount|promo|voucher/i.test(line)) {
                 const numMatch = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+(?:\.[0-9]{2})?)/i);
                 if (numMatch) detectedDiscount = parseFloat(numMatch[1]);
                 continue;
               }
 
-              // 4. ตรวจจับค่าทางด่วน (Toll)
+              // 4. Toll
               if (/toll|expressway|highway/i.test(line)) {
                 const numMatch = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
                 if (numMatch) detectedToll = parseFloat(numMatch[1]);
                 continue;
               }
 
-              // กรองคำที่ไม่ใช่รายการอาหาร
+              // Skip Summary Headers
               const isNoise = /subtotal|total|incl\.\s*tax|tax|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact/i.test(line);
               if (isNoise) continue;
 
-              // 5. ตรวจจับชื่อเมนูและราคา (รองรับ RM นำหน้า และตัวเลขทศนิยม)
+              // 5. Menu item & price
               const priceMatch = line.match(/(.+?)\s+(?:RM\s*)?([0-9]+\.[0-9]{2})$/i);
               if (priceMatch) {
                 const itemName = priceMatch[1].replace(/^[0-9]+x?\s*/i, '').trim();
                 const itemPrice = parseFloat(priceMatch[2]);
 
-                // ตรวจดูบรรทัดถัดไปว่ามีจำนวนคูณ (เช่น 2x, 3x) หรือไม่
                 let itemQty = 1;
                 if (j + 1 < lines.length && /^[0-9]+x$/i.test(lines[j + 1])) {
                   itemQty = parseInt(lines[j + 1]) || 1;
@@ -445,7 +454,6 @@
               }
             }
 
-            // ถ้าเป็น Ride ให้ดึงราคาสูงสุด
             if (billType === 'ride') {
               const prices = lines.map(l => {
                 const m = l.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
@@ -467,95 +475,13 @@
             if (detectedPackaging) setPackagingCharge(detectedPackaging);
             if (detectedDelivery) setDeliveryFee(detectedDelivery);
             if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast(`Scanned ${combinedExtractedItems.length} items from Grab order! 🎉`);
+            showToast(`Scanned ${combinedExtractedItems.length} items from receipt/order! 🎉`);
           } else {
             showToast("No clear text detected, please enter manually", "error");
           }
         } catch (err) {
           console.error(err);
           showToast("OCR Error processing image", "error");
-        } finally {
-          setOcrProcessing(false);
-          setSelectedImages([]);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-      };
-
-            const lines = text.split('\n');
-
-            lines.forEach(line => {
-              const trimmed = line.trim();
-              const match = trimmed.match(/(.+?)\s+([0-9]+\.[0-9]{2})$/);
-              if (match) {
-                const nameCandidate = match[1].replace(/^[0-9]+\s+/, '').trim();
-                const priceCandidate = parseFloat(match[2]);
-
-                if (/toll|expressway|highway/i.test(nameCandidate)) {
-                  detectedToll = priceCandidate;
-                  return;
-                }
-                if (/packaging|packing|box|takeaway/i.test(nameCandidate)) {
-                  detectedPackaging = priceCandidate;
-                  return;
-                }
-                if (/delivery|driver|rider/i.test(nameCandidate)) {
-                  detectedDelivery = priceCandidate;
-                  return;
-                }
-                if (/discount|promo|voucher/i.test(nameCandidate)) {
-                  detectedDiscount = priceCandidate;
-                  return;
-                }
-
-                const isNoise = /subtotal|total|service|tax|rounding|visa|net total|invoice|balance|table|change/i.test(nameCandidate);
-
-                if (!isNoise && priceCandidate > 0 && nameCandidate.length > 2) {
-                  // Avoid exact duplicate items from overlapping photo captures
-                  const exists = combinedExtractedItems.some(
-                    item => item.name.toLowerCase() === nameCandidate.toLowerCase() && parseFloat(item.price) === priceCandidate
-                  );
-                  if (!exists) {
-                    combinedExtractedItems.push({
-                      id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                      name: nameCandidate,
-                      price: priceCandidate.toFixed(2),
-                      qty: 1,
-                      taxRate: 0,
-                      sharedWith: [...billFriends]
-                    });
-                  }
-                }
-              }
-            });
-
-            if (billType === 'ride') {
-              const prices = lines.map(l => {
-                const m = l.match(/([0-9]+\.[0-9]{2})/);
-                return m ? parseFloat(m[1]) : 0;
-              }).filter(p => p > 0);
-              if (prices.length > 0) {
-                extractedRideFare = Math.max(extractedRideFare, ...prices);
-              }
-            }
-          }
-
-          if (billType === 'ride' && extractedRideFare > 0) {
-            setRideFare(extractedRideFare);
-            if (detectedToll) setTollFee(detectedToll);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast("Ride fare scanned successfully");
-          } else if (combinedExtractedItems.length > 0) {
-            setBillItems(combinedExtractedItems);
-            if (detectedPackaging) setPackagingCharge(detectedPackaging);
-            if (detectedDelivery) setDeliveryFee(detectedDelivery);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast(`Merged & scanned ${combinedExtractedItems.length} items from ${selectedImages.length} photos! 🎉`);
-          } else {
-            showToast("No clear text detected, please enter manually", "error");
-          }
-        } catch (err) {
-          console.error(err);
-          showToast("OCR Error processing image sequence", "error");
         } finally {
           setOcrProcessing(false);
           setSelectedImages([]);
@@ -1323,8 +1249,8 @@
                 <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
                   <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                     <div>
-                      <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Multi-Photo Receipt Scanner (Long Bills)</p>
-                      <p className="text-xs text-textSecondary mt-0.5">Take photos in parts (top, middle, bottom) and scan together without losing details</p>
+                      <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Multi-Photo Receipt Scanner (Grab / Bills)</p>
+                      <p className="text-xs text-textSecondary mt-0.5">Take photos in parts (top, middle, bottom) and scan together seamlessly</p>
                     </div>
                     <div>
                       <input 
