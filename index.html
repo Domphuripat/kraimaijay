@@ -107,7 +107,11 @@
 </head>
 <body class="bg-bg text-textPrimary min-h-screen selection:bg-accent selection:text-white">
 
-  <div id="root"></div>
+  <div id="root">
+    <div class="min-h-screen flex items-center justify-center text-textMuted text-sm font-mono">
+      Loading KraiMaiJayMeeReung...
+    </div>
+  </div>
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useMemo } = React;
@@ -125,8 +129,14 @@
 
     function App() {
       const [cloudConfig, setCloudConfig] = useState(() => {
-        const saved = localStorage.getItem('kraimaijay_cloud_config');
-        return saved ? JSON.parse(saved) : DEFAULT_FIREBASE_CONFIG;
+        try {
+          const saved = localStorage.getItem('kraimaijay_cloud_config');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.apiKey && parsed.apiKey !== 'local') return parsed;
+          }
+        } catch (e) {}
+        return DEFAULT_FIREBASE_CONFIG;
       });
 
       const [appId, setAppId] = useState(() => {
@@ -134,9 +144,7 @@
       });
 
       const [useCloud, setUseCloud] = useState(true);
-      const [user, setUser] = useState(null);
       const [db, setDb] = useState(null);
-      const [loading, setLoading] = useState(false);
       const [toast, setToast] = useState(null);
       const [activeTab, setActiveTab] = useState('dashboard');
       
@@ -175,6 +183,8 @@
       const [selectedImages, setSelectedImages] = useState([]);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
+      const [showRawTextInput, setShowRawTextInput] = useState(false);
+      const [rawOrderText, setRawOrderText] = useState('');
       const fileInputRef = useRef(null);
 
       // Friends & Adjustment Modals
@@ -204,56 +214,52 @@
 
       // FIREBASE CLOUD SETUP
       useEffect(() => {
-        if (!useCloud || !cloudConfig) return;
+        if (!useCloud || !cloudConfig || cloudConfig.apiKey === 'local') {
+          setUseCloud(false);
+          return;
+        }
 
-        setLoading(true);
         try {
           let firebaseApp = !firebase.apps.length ? firebase.initializeApp(cloudConfig) : firebase.app();
           const authInstance = firebase.auth(firebaseApp);
           const firestoreInstance = firebase.firestore(firebaseApp);
           setDb(firestoreInstance);
 
-          authInstance.signInAnonymously().then((cred) => {
-            setUser(cred.user);
+          authInstance.signInAnonymously().then(() => {
+            const basePath = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data');
             
-            const unsubFriends = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends')
-              .onSnapshot(snap => {
-                const list = [];
-                snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-                if (list.length === 0) {
-                  const defaultFriends = [
-                    { name: 'Me (Dom)', createdAt: Date.now() },
-                    { name: 'Yaya', createdAt: Date.now() },
-                    { name: 'kamil', createdAt: Date.now() },
-                    { name: 'wakin', createdAt: Date.now() },
-                    { name: 'dom', createdAt: Date.now() },
-                    { name: 'panda', createdAt: Date.now() },
-                    { name: 'ink', createdAt: Date.now() }
-                  ];
-                  defaultFriends.forEach(df => firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(df));
-                } else {
-                  setFriends(list);
-                }
-              });
+            const unsubFriends = basePath.collection('friends').onSnapshot(snap => {
+              const list = [];
+              snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+              if (list.length === 0) {
+                const defaultFriends = [
+                  { name: 'Me (Dom)', createdAt: Date.now() },
+                  { name: 'Yaya', createdAt: Date.now() },
+                  { name: 'kamil', createdAt: Date.now() },
+                  { name: 'wakin', createdAt: Date.now() },
+                  { name: 'dom', createdAt: Date.now() },
+                  { name: 'panda', createdAt: Date.now() },
+                  { name: 'ink', createdAt: Date.now() }
+                ];
+                defaultFriends.forEach(df => basePath.collection('friends').add(df));
+              } else {
+                setFriends(list);
+              }
+            });
 
-            const unsubBills = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills')
-              .onSnapshot(snap => {
-                const list = [];
-                snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-                list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                setBills(list);
-              });
+            const unsubBills = basePath.collection('bills').onSnapshot(snap => {
+              const list = [];
+              snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+              list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              setBills(list);
+            });
 
-            const unsubAdjs = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments')
-              .onSnapshot(snap => {
-                const list = [];
-                snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-                list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                setAdjustments(list);
-              });
-
-            setLoading(false);
-            showToast("Cloud Firebase Synced! 🚀");
+            const unsubAdjs = basePath.collection('adjustments').onSnapshot(snap => {
+              const list = [];
+              snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+              list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              setAdjustments(list);
+            });
 
             return () => {
               unsubFriends();
@@ -261,37 +267,38 @@
               unsubAdjs();
             };
           }).catch(err => {
-            console.error("Firebase Error:", err);
+            console.warn("Firebase Auth fallback to local:", err);
             setUseCloud(false);
-            setLoading(false);
           });
         } catch (err) {
+          console.warn("Firebase Init fallback to local:", err);
           setUseCloud(false);
-          setLoading(false);
         }
       }, [useCloud, cloudConfig, appId]);
 
-      // LOCAL STORAGE FALLBACK
+      // LOCAL FALLBACK
       useEffect(() => {
         if (useCloud) return;
-        const savedFriends = localStorage.getItem('kraimaijay_local_friends');
-        if (savedFriends) {
-          setFriends(JSON.parse(savedFriends));
-        } else {
-          setFriends([
-            { id: '1', name: 'Me (Dom)', createdAt: Date.now() },
-            { id: '2', name: 'Yaya', createdAt: Date.now() },
-            { id: '3', name: 'kamil', createdAt: Date.now() },
-            { id: '4', name: 'wakin', createdAt: Date.now() },
-            { id: '5', name: 'dom', createdAt: Date.now() },
-            { id: '6', name: 'panda', createdAt: Date.now() },
-            { id: '7', name: 'ink', createdAt: Date.now() }
-          ]);
-        }
-        const savedBills = localStorage.getItem('kraimaijay_local_bills');
-        if (savedBills) setBills(JSON.parse(savedBills));
-        const savedAdjs = localStorage.getItem('kraimaijay_local_adjustments');
-        if (savedAdjs) setAdjustments(JSON.parse(savedAdjs));
+        try {
+          const savedFriends = localStorage.getItem('kraimaijay_local_friends');
+          if (savedFriends) {
+            setFriends(JSON.parse(savedFriends));
+          } else {
+            setFriends([
+              { id: '1', name: 'Me (Dom)', createdAt: Date.now() },
+              { id: '2', name: 'Yaya', createdAt: Date.now() },
+              { id: '3', name: 'kamil', createdAt: Date.now() },
+              { id: '4', name: 'wakin', createdAt: Date.now() },
+              { id: '5', name: 'dom', createdAt: Date.now() },
+              { id: '6', name: 'panda', createdAt: Date.now() },
+              { id: '7', name: 'ink', createdAt: Date.now() }
+            ]);
+          }
+          const savedBills = localStorage.getItem('kraimaijay_local_bills');
+          if (savedBills) setBills(JSON.parse(savedBills));
+          const savedAdjs = localStorage.getItem('kraimaijay_local_adjustments');
+          if (savedAdjs) setAdjustments(JSON.parse(savedAdjs));
+        } catch (e) {}
       }, [useCloud]);
 
       const handleSaveSettings = (e) => {
@@ -311,40 +318,6 @@
         }
       };
 
-      // IMAGE PRE-PROCESSING (Grayscale + High Contrast Canvas)
-      const preprocessImage = (file) => {
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              const ctx = canvas.getContext('2d');
-              canvas.width = img.width;
-              canvas.height = img.height;
-              
-              ctx.drawImage(img, 0, 0);
-              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const d = imgData.data;
-              
-              for (let i = 0; i < d.length; i += 4) {
-                const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                const contrast = 1.3;
-                const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-                const adjusted = factor * (gray - 128) + 128;
-                d[i] = adjusted;
-                d[i + 1] = adjusted;
-                d[i + 2] = adjusted;
-              }
-              ctx.putImageData(imgData, 0, 0);
-              resolve(canvas.toDataURL('image/jpeg', 0.9));
-            };
-            img.src = e.target.result;
-          };
-          reader.readAsDataURL(file);
-        });
-      };
-
       const handleAddImages = (e) => {
         const files = Array.from(e.target.files);
         if (!files.length) return;
@@ -355,7 +328,92 @@
         setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
       };
 
-      // SMART PARSER (GRAB / DELIVERY / RECEIPT COMPATIBLE)
+      // ROBUST TEXT PARSER FOR GRAB / SHOPEEFOOD / LINEMAN / RECEIPTS
+      const parseTextContent = (fullText) => {
+        const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+        let extractedItems = [];
+        let rFare = 0;
+        let tFee = 0;
+        let dFee = 0;
+        let pCharge = 0;
+        let dAmount = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // 1. Delivery fee
+          if (/delivery\s*fee|rider|driver/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              dFee = parseFloat(matches[0].replace(/RM\s*/i, ''));
+            }
+            continue;
+          }
+
+          // 2. Packaging charge
+          if (/packaging|packing|box|takeaway/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              pCharge = parseFloat(matches[0].replace(/RM\s*/i, ''));
+            }
+            continue;
+          }
+
+          // 3. Discount / Promo
+          if (/off|discount|promo|voucher/i.test(line)) {
+            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+(?:\.[0-9]{2})?)/gi);
+            if (matches && matches.length > 0) {
+              const candidate = matches[matches.length - 1].replace(/[-−\sRM]/gi, '');
+              dAmount = parseFloat(candidate);
+            }
+            continue;
+          }
+
+          // 4. Toll
+          if (/toll|expressway|highway/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
+            if (matches) tFee = parseFloat(matches[1]);
+            continue;
+          }
+
+          // Skip Headers & Noise
+          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery/i.test(line);
+          if (isNoise) continue;
+
+          // 5. Item Matching: Line ends with price
+          const priceMatch = line.match(/(.+?)\s+(?:RM\s*)?([0-9]+\.[0-9]{2})$/i);
+          if (priceMatch) {
+            const itemName = priceMatch[1].replace(/^[0-9]+x?\s*/i, '').trim();
+            const itemPrice = parseFloat(priceMatch[2]);
+
+            // Check if next lines have quantity multiplier like "2x"
+            let itemQty = 1;
+            if (i + 1 < lines.length && /^[0-9]+x$/i.test(lines[i + 1])) {
+              itemQty = parseInt(lines[i + 1]) || 1;
+            } else if (i + 2 < lines.length && /^[0-9]+x$/i.test(lines[i + 2])) {
+              itemQty = parseInt(lines[i + 2]) || 1;
+            }
+
+            if (itemPrice > 0 && itemName.length >= 2) {
+              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
+              if (!exists) {
+                extractedItems.push({
+                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                  name: itemName,
+                  price: itemPrice.toFixed(2),
+                  qty: itemQty,
+                  taxRate: 0,
+                  sharedWith: [...billFriends]
+                });
+              }
+            }
+          }
+        }
+
+        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
+      };
+
+      // DIRECT HIGH-RES OCR PROCESSOR
       const handleProcessAllImages = async () => {
         if (!selectedImages.length) return;
 
@@ -372,10 +430,10 @@
         try {
           for (let i = 0; i < selectedImages.length; i++) {
             const file = selectedImages[i];
-            const processedDataUrl = await preprocessImage(file);
 
+            // Direct pass without destructive canvas filters
             const { data: { text } } = await Tesseract.recognize(
-              processedDataUrl,
+              file,
               'eng+tha',
               {
                 logger: m => {
@@ -388,74 +446,21 @@
               }
             );
 
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+            const parsed = parseTextContent(text);
 
-            for (let j = 0; j < lines.length; j++) {
-              const line = lines[j];
-
-              // 1. Delivery fee
-              if (/delivery\s*fee|rider|driver/i.test(line)) {
-                const numMatch = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
-                if (numMatch) detectedDelivery = parseFloat(numMatch[1]);
-                continue;
+            parsed.extractedItems.forEach(item => {
+              if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
+                combinedExtractedItems.push(item);
               }
+            });
 
-              // 2. Packaging charge
-              if (/packaging|packing|box|takeaway/i.test(line)) {
-                const numMatch = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
-                if (numMatch) detectedPackaging = parseFloat(numMatch[1]);
-                continue;
-              }
-
-              // 3. Discount / Promo
-              if (/off|discount|promo|voucher/i.test(line)) {
-                const numMatch = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+(?:\.[0-9]{2})?)/i);
-                if (numMatch) detectedDiscount = parseFloat(numMatch[1]);
-                continue;
-              }
-
-              // 4. Toll
-              if (/toll|expressway|highway/i.test(line)) {
-                const numMatch = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
-                if (numMatch) detectedToll = parseFloat(numMatch[1]);
-                continue;
-              }
-
-              // Skip Summary Headers
-              const isNoise = /subtotal|total|incl\.\s*tax|tax|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact/i.test(line);
-              if (isNoise) continue;
-
-              // 5. Menu item & price
-              const priceMatch = line.match(/(.+?)\s+(?:RM\s*)?([0-9]+\.[0-9]{2})$/i);
-              if (priceMatch) {
-                const itemName = priceMatch[1].replace(/^[0-9]+x?\s*/i, '').trim();
-                const itemPrice = parseFloat(priceMatch[2]);
-
-                let itemQty = 1;
-                if (j + 1 < lines.length && /^[0-9]+x$/i.test(lines[j + 1])) {
-                  itemQty = parseInt(lines[j + 1]) || 1;
-                }
-
-                if (itemPrice > 0 && itemName.length > 2) {
-                  const exists = combinedExtractedItems.some(
-                    it => it.name.toLowerCase() === itemName.toLowerCase() && parseFloat(it.price) === itemPrice
-                  );
-                  if (!exists) {
-                    combinedExtractedItems.push({
-                      id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                      name: itemName,
-                      price: itemPrice.toFixed(2),
-                      qty: itemQty,
-                      taxRate: 0,
-                      sharedWith: [...billFriends]
-                    });
-                  }
-                }
-              }
-            }
+            if (parsed.dFee) detectedDelivery = parsed.dFee;
+            if (parsed.pCharge) detectedPackaging = parsed.pCharge;
+            if (parsed.dAmount) detectedDiscount = parsed.dAmount;
+            if (parsed.tFee) detectedToll = parsed.tFee;
 
             if (billType === 'ride') {
-              const prices = lines.map(l => {
+              const prices = text.split('\n').map(l => {
                 const m = l.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
                 return m ? parseFloat(m[1]) : 0;
               }).filter(p => p > 0);
@@ -470,22 +475,39 @@
             if (detectedToll) setTollFee(detectedToll);
             if (detectedDiscount) setDiscountAmount(detectedDiscount);
             showToast("Ride fare scanned successfully");
-          } else if (combinedExtractedItems.length > 0) {
-            setBillItems(combinedExtractedItems);
+          } else if (combinedExtractedItems.length > 0 || detectedDelivery > 0 || detectedPackaging > 0 || detectedDiscount > 0) {
+            if (combinedExtractedItems.length > 0) setBillItems(combinedExtractedItems);
             if (detectedPackaging) setPackagingCharge(detectedPackaging);
             if (detectedDelivery) setDeliveryFee(detectedDelivery);
             if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast(`Scanned ${combinedExtractedItems.length} items from receipt/order! 🎉`);
+            showToast(`Scanned successfully (${combinedExtractedItems.length} items found)! 🎉`);
           } else {
-            showToast("No clear text detected, please enter manually", "error");
+            showToast("OCR couldn't extract items clearly. Use 'Paste Text' button below!", "error");
           }
         } catch (err) {
           console.error(err);
-          showToast("OCR Error processing image", "error");
+          showToast("OCR scanning error. Please use manual entry or Paste Text.", "error");
         } finally {
           setOcrProcessing(false);
           setSelectedImages([]);
           if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+
+      // FAST MANUAL TEXT PARSER
+      const handleParseRawText = () => {
+        if (!rawOrderText.trim()) return;
+        const parsed = parseTextContent(rawOrderText);
+        if (parsed.extractedItems.length > 0 || parsed.dFee || parsed.pCharge || parsed.dAmount) {
+          if (parsed.extractedItems.length > 0) setBillItems(parsed.extractedItems);
+          if (parsed.dFee) setDeliveryFee(parsed.dFee);
+          if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
+          if (parsed.dAmount) setDiscountAmount(parsed.dAmount);
+          showToast(`Parsed ${parsed.extractedItems.length} items from text! 🎉`);
+          setShowRawTextInput(false);
+          setRawOrderText('');
+        } else {
+          showToast("No clear items detected from text", "error");
         }
       };
 
@@ -660,7 +682,7 @@
 
       const filteredBills = useMemo(() => {
         return bills.filter(bill => {
-          const matchesSearch = bill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          const matchesSearch = (bill.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
             (bill.rideRoute && bill.rideRoute.toLowerCase().includes(searchQuery.toLowerCase()));
 
           if (!matchesSearch) return false;
@@ -1038,7 +1060,7 @@
 
       return (
         <div className="pb-16 min-h-screen">
-          {/* Header with Custom Pilot Cat Avatar */}
+          {/* Header */}
           <header className="bg-surface/80 border-b border-line sticky top-0 z-40 backdrop-blur-md">
             <div className="max-w-4xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3">
               <div>
@@ -1245,14 +1267,14 @@
                   </button>
                 </div>
 
-                {/* MULTI-IMAGE BATCH OCR SCANNER TOOL */}
+                {/* MULTI-IMAGE BATCH OCR SCANNER + PASTE TEXT */}
                 <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
                   <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                     <div>
-                      <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Multi-Photo Receipt Scanner (Grab / Bills)</p>
-                      <p className="text-xs text-textSecondary mt-0.5">Take photos in parts (top, middle, bottom) and scan together seamlessly</p>
+                      <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Direct Smart Scanner (Grab / Bills)</p>
+                      <p className="text-xs text-textSecondary mt-0.5">Upload screenshot/photo or paste receipt text directly</p>
                     </div>
-                    <div>
+                    <div className="flex gap-2">
                       <input 
                         type="file" 
                         accept="image/*" 
@@ -1264,12 +1286,47 @@
                       <button
                         type="button"
                         onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                        className="bg-accent hover:bg-accent-hover text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
+                      >
+                        + Select Photo ({selectedImages.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowRawTextInput(!showRawTextInput)}
                         className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
                       >
-                        + Add Photos ({selectedImages.length})
+                        📝 Paste Text
                       </button>
                     </div>
                   </div>
+
+                  {/* Paste Text Area */}
+                  {showRawTextInput && (
+                    <div className="pt-2 border-t border-line/40 space-y-2">
+                      <textarea
+                        value={rawOrderText}
+                        onChange={(e) => setRawOrderText(e.target.value)}
+                        placeholder="Paste order text summary from Grab / Email receipt here..."
+                        className="w-full h-24 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowRawTextInput(false)}
+                          className="px-3 py-1 text-xs text-textSecondary"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleParseRawText}
+                          className="bg-mint text-bg font-bold px-4 py-1 rounded-lg text-xs"
+                        >
+                          Extract Items From Text
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Image Thumbnails Strip */}
                   {selectedImages.length > 0 && (
