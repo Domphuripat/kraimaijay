@@ -116,9 +116,8 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useMemo } = React;
 
-    // ใส่อีเมลแอดมินของคุณตรงนี้ (Email ที่มีสิทธิ์แก้ไข)
     const ADMIN_EMAILS = [
-      "phuripat26dom@gmail.com" // <-- เปลี่ยนเป็นอีเมล Google ของคุณ
+      "your-email@gmail.com"
     ];
 
     const DEFAULT_FIREBASE_CONFIG = {
@@ -210,7 +209,6 @@
           const firestoreInstance = firebase.firestore(firebaseApp);
           setDb(firestoreInstance);
 
-          // Listen for Auth changes
           const unsubAuth = authInstance.onAuthStateChanged(user => {
             setCurrentUser(user);
             if (user && user.email) {
@@ -221,7 +219,6 @@
             }
           });
 
-          // Public Read: Everyone gets realtime updates
           const basePath = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data');
           
           const unsubFriends = basePath.collection('friends').onSnapshot(snap => {
@@ -255,22 +252,21 @@
         }
       }, [cloudConfig, appId]);
 
-      // AUTH HANDLERS
       const handleGoogleLogin = async () => {
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
           await firebase.auth().signInWithPopup(provider);
-          showToast("Signed in with Google successfully!");
+          showToast("Signed in successfully!");
         } catch (err) {
           console.error(err);
-          showToast("Failed to sign in", "error");
+          showToast("Sign in failed", "error");
         }
       };
 
       const handleLogout = async () => {
         try {
           await firebase.auth().signOut();
-          showToast("Signed out. Now in View-Only mode.");
+          showToast("Signed out");
         } catch (err) {
           showToast("Sign out failed", "error");
         }
@@ -286,7 +282,6 @@
         setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
       };
 
-      // TEXT PARSER
       const parseTextContent = (fullText) => {
         const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
         let extractedItems = [];
@@ -360,7 +355,6 @@
         return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
       };
 
-      // DIRECT OCR PROCESSOR
       const handleProcessAllImages = async () => {
         if (!selectedImages.length) return;
         setOcrProcessing(true);
@@ -423,7 +417,7 @@
             if (detectedDiscount) setDiscountAmount(detectedDiscount);
             showToast(`Scanned successfully (${combinedExtractedItems.length} items)! 🎉`);
           } else {
-            showToast("OCR couldn't extract items clearly. Use 'Paste Text' button!", "error");
+            showToast("OCR couldn't extract items. Use 'Paste Text' button!", "error");
           }
         } catch (err) {
           showToast("OCR scanning error", "error");
@@ -539,7 +533,6 @@
           const base = friendBaseShares[f] || 0;
           const friendSc = base * (scRate / 100);
           const friendTax = currentTaxMode === 'addon' ? (friendTaxShares[f] || 0) : 0;
-
           const userDiscountShare = subtotal > 0 ? (base / subtotal) * parsedDiscount : (parsedDiscount / (activeFriendsCount || 1));
           
           const finalPersonAmount = base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare;
@@ -1222,7 +1215,6 @@
                     </button>
                   </div>
 
-                  {/* MULTI-IMAGE BATCH OCR SCANNER + PASTE TEXT */}
                   <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                       <div>
@@ -1934,107 +1926,123 @@
 
           </main>
 
-          {/* --- INDIVIDUAL STATEMENT MODAL --- */}
+          {/* --- FIX: SCROLLABLE INDIVIDUAL STATEMENT MODAL WITH STICKY CLOSE BUTTON --- */}
           {selectedFriendForHistory && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 overflow-y-auto">
-              <div className="bg-surface border border-line rounded-3xl max-w-xl w-full p-6 space-y-5 my-8 shadow-2xl">
-                
-                <div className="flex justify-between items-center pb-2 border-b border-line">
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
+              onClick={() => setSelectedFriendForHistory(null)}
+            >
+              <div 
+                className="bg-surface border border-line rounded-3xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Sticky Header with Always-Visible Close Button */}
+                <div className="p-4 sm:p-5 border-b border-line flex justify-between items-center bg-surface sticky top-0 z-20">
                   <div>
-                    <h3 className="font-bold text-textPrimary text-lg flex items-center gap-2">
+                    <h3 className="font-bold text-textPrimary text-base sm:text-lg flex items-center gap-2">
                       👤 Ledger: <span className="text-accent">{selectedFriendForHistory}</span>
                     </h3>
-                    <p className="text-xs text-textSecondary">Complete history of orders, rides, and adjustments</p>
+                    <p className="text-[11px] text-textSecondary">Complete history of orders, rides, and adjustments</p>
                   </div>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-textSecondary hover:text-textPrimary text-lg">✕</button>
+                  <button 
+                    onClick={() => setSelectedFriendForHistory(null)} 
+                    className="w-9 h-9 rounded-full bg-subtle hover:bg-line text-textSecondary hover:text-textPrimary flex items-center justify-center text-lg font-bold transition active:scale-95"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                <div ref={friendSlipRef} className="bg-[#0B0F17] border border-line/60 p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
-                  <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
-                    <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
-                    <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 KraiMaiJayMeeReung • Statement</p>
-                    <p className="text-base font-bold text-textPrimary font-sans">{selectedFriendForHistory}</p>
-                    <p className="text-xs text-textMuted">Cumulative Debt Statement</p>
-                  </div>
+                {/* Scrollable Modal Content */}
+                <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+                  <div ref={friendSlipRef} className="bg-[#0B0F17] border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
+                    <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
+                      <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
+                      <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 KraiMaiJayMeeReung • Statement</p>
+                      <p className="text-base font-bold text-textPrimary font-sans">{selectedFriendForHistory}</p>
+                      <p className="text-xs text-textMuted">Cumulative Debt Statement</p>
+                    </div>
 
-                  <div className="grid grid-cols-3 gap-2 bg-subtle p-3 rounded-xl text-center">
-                    <div>
-                      <p className="text-[10px] text-textMuted uppercase font-bold">From Bills</p>
-                      <p className="text-sm font-bold text-textPrimary mt-0.5 tabular font-mono">
-                        {(friendBalances[selectedFriendForHistory]?.billsOwed || 0).toFixed(2)}
-                      </p>
+                    <div className="grid grid-cols-3 gap-2 bg-subtle p-3 rounded-xl text-center">
+                      <div>
+                        <p className="text-[10px] text-textMuted uppercase font-bold">From Bills</p>
+                        <p className="text-sm font-bold text-textPrimary mt-0.5 tabular font-mono">
+                          {(friendBalances[selectedFriendForHistory]?.billsOwed || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-textMuted uppercase font-bold">Adjusted</p>
+                        <p className={`text-sm font-bold mt-0.5 tabular font-mono ${(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0) > 0 ? 'text-amber' : 'text-mint'}`}>
+                          {(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-coral uppercase font-bold">Net Balance</p>
+                        <p className="text-base font-black text-coral mt-0.5 tabular font-mono">
+                          {(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[10px] text-textMuted uppercase font-bold">Adjusted</p>
-                      <p className={`text-sm font-bold mt-0.5 tabular font-mono ${(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0) > 0 ? 'text-amber' : 'text-mint'}`}>
-                        {(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0).toFixed(2)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-coral uppercase font-bold">Net Balance</p>
-                      <p className="text-base font-black text-coral mt-0.5 tabular font-mono">
-                        {(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold text-textSecondary uppercase font-sans">📋 Transaction History ({getFriendHistory(selectedFriendForHistory).bills.length}):</p>
-                    
-                    {getFriendHistory(selectedFriendForHistory).bills.length === 0 ? (
-                      <p className="text-center py-3 text-textMuted">No transactions on record</p>
-                    ) : (
-                      <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                        {getFriendHistory(selectedFriendForHistory).bills.map(b => {
-                          const isPaid = b.paidStatus?.[selectedFriendForHistory];
-                          const userShare = b.splits[selectedFriendForHistory] || 0;
-                          return (
-                            <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-textSecondary uppercase font-sans">📋 Transaction History ({getFriendHistory(selectedFriendForHistory).bills.length}):</p>
+                      
+                      {getFriendHistory(selectedFriendForHistory).bills.length === 0 ? (
+                        <p className="text-center py-3 text-textMuted">No transactions on record</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {getFriendHistory(selectedFriendForHistory).bills.map(b => {
+                            const isPaid = b.paidStatus?.[selectedFriendForHistory];
+                            const userShare = b.splits[selectedFriendForHistory] || 0;
+                            return (
+                              <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
+                                <div>
+                                  <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
+                                    {b.billType === 'ride' ? '🚗 ' : '🛵 '} {b.name}
+                                  </p>
+                                  <p className="text-[10px] text-textMuted">
+                                    {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : (b.items?.filter(i => (i.sharedWith || []).includes(selectedFriendForHistory)).map(i => i.name).join(', ') || 'General split')}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-bold text-sm text-textPrimary font-mono tabular">{userShare.toFixed(2)} RM</p>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
+                                    {isPaid ? 'Paid' : 'Unpaid'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {getFriendHistory(selectedFriendForHistory).adjustments.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-dashed border-line">
+                        <p className="text-xs font-bold text-textSecondary uppercase font-sans">⚙️ Adjustments ({getFriendHistory(selectedFriendForHistory).adjustments.length}):</p>
+                        <div className="space-y-1.5">
+                          {getFriendHistory(selectedFriendForHistory).adjustments.map(adj => (
+                            <div key={adj.id} className="bg-subtle/50 p-2 rounded-lg flex justify-between items-center text-[11px]">
                               <div>
-                                <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
-                                  {b.billType === 'ride' ? '🚗 ' : '🛵 '} {b.name}
-                                </p>
-                                <p className="text-[10px] text-textMuted">
-                                  {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : (b.items?.filter(i => (i.sharedWith || []).includes(selectedFriendForHistory)).map(i => i.name).join(', ') || 'General split')}
-                                </p>
+                                <span className="text-textPrimary">{adj.note}</span>
+                                <span className="text-textMuted ml-1.5 font-mono">({adj.date})</span>
                               </div>
-                              <div className="text-right">
-                                <p className="font-bold text-sm text-textPrimary font-mono tabular">{userShare.toFixed(2)} RM</p>
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
-                                  {isPaid ? 'Paid' : 'Unpaid'}
-                                </span>
-                              </div>
+                              <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                                {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                              </span>
                             </div>
-                          );
-                        })}
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
-
-                  {getFriendHistory(selectedFriendForHistory).adjustments.length > 0 && (
-                    <div className="space-y-2 pt-2 border-t border-dashed border-line">
-                      <p className="text-xs font-bold text-textSecondary uppercase font-sans">⚙️ Adjustments ({getFriendHistory(selectedFriendForHistory).adjustments.length}):</p>
-                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                        {getFriendHistory(selectedFriendForHistory).adjustments.map(adj => (
-                          <div key={adj.id} className="bg-subtle/50 p-2 rounded-lg flex justify-between items-center text-[11px]">
-                            <div>
-                              <span className="text-textPrimary">{adj.note}</span>
-                              <span className="text-textMuted ml-1.5 font-mono">({adj.date})</span>
-                            </div>
-                            <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
-                              {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-2">
+                {/* Fixed Footer Buttons */}
+                <div className="p-4 border-t border-line bg-surface flex gap-3">
                   <button
                     onClick={() => handleExportElement(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
-                    className="bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
+                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
                   >
                     📸 Save Statement Image (PNG)
                   </button>
@@ -2045,9 +2053,9 @@
                         setSelectedFriendForHistory(null);
                         setSelectedFriendForAdjust(fName);
                       }}
-                      className="bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
+                      className="bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 px-4 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
                     >
-                      ⚖️ Adjust Balance
+                      ⚖️ Adjust
                     </button>
                   )}
                 </div>
@@ -2055,127 +2063,143 @@
             </div>
           )}
 
-          {/* --- DETAILED RECEIPT MODAL --- */}
+          {/* --- FIX: SCROLLABLE DETAILED RECEIPT MODAL --- */}
           {activeBreakdown && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 overflow-y-auto">
-              <div className="bg-surface border border-line rounded-3xl max-w-lg w-full p-6 space-y-4 my-8 shadow-2xl">
-                
-                <div className="flex justify-between items-center pb-2 border-b border-line">
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
+              onClick={() => setActiveBreakdown(null)}
+            >
+              <div 
+                className="bg-surface border border-line rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Sticky Header */}
+                <div className="p-4 sm:p-5 border-b border-line flex justify-between items-center bg-surface sticky top-0 z-20">
                   <h3 className="font-bold text-textPrimary text-base">
                     {activeBreakdown.selectedFriend ? `Breakdown: ${activeBreakdown.selectedFriend}` : 'Transaction Summary'}
                   </h3>
-                  <button onClick={() => setActiveBreakdown(null)} className="text-textSecondary hover:text-textPrimary text-lg">✕</button>
+                  <button 
+                    onClick={() => setActiveBreakdown(null)} 
+                    className="w-9 h-9 rounded-full bg-subtle hover:bg-line text-textSecondary hover:text-textPrimary flex items-center justify-center text-lg font-bold transition active:scale-95"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                <div ref={receiptCardRef} className="bg-[#0B0F17] border border-line/60 p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
-                  <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
-                    <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
-                    <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 KraiMaiJayMeeReung</p>
-                    <p className="text-base font-bold text-textPrimary font-sans">
-                      {activeBreakdown.bill.billType === 'ride' ? '🚗 ' : '🛵 '} {activeBreakdown.bill.name}
-                    </p>
-                    {activeBreakdown.bill.rideRoute && <p className="text-[11px] text-textSecondary font-sans">📍 {activeBreakdown.bill.rideRoute}</p>}
-                    <p className="text-textMuted">{activeBreakdown.bill.date}</p>
-                    {activeBreakdown.selectedFriend && (
-                      <p className="text-emerald-400 font-bold font-sans text-sm mt-1">
-                        Participant: {activeBreakdown.selectedFriend}
+                {/* Scrollable Content */}
+                <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+                  <div ref={receiptCardRef} className="bg-[#0B0F17] border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
+                    <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
+                      <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
+                      <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 KraiMaiJayMeeReung</p>
+                      <p className="text-base font-bold text-textPrimary font-sans">
+                        {activeBreakdown.bill.billType === 'ride' ? '🚗 ' : '🛵 '} {activeBreakdown.bill.name}
                       </p>
-                    )}
-                  </div>
-
-                  {activeBreakdown.bill.billType === 'ride' ? (
-                    <div className="space-y-2">
-                      <div className="flex justify-between py-1">
-                        <span className="text-textSecondary">Base Fare</span>
-                        <span className="font-bold font-mono">{activeBreakdown.bill.subtotal?.toFixed(2)} RM</span>
-                      </div>
-                      {activeBreakdown.bill.tollFee > 0 && (
-                        <div className="flex justify-between py-1 text-amber">
-                          <span>Toll / Surcharge</span>
-                          <span className="font-bold font-mono">+{activeBreakdown.bill.tollFee?.toFixed(2)} RM</span>
-                        </div>
+                      {activeBreakdown.bill.rideRoute && <p className="text-[11px] text-textSecondary font-sans">📍 {activeBreakdown.bill.rideRoute}</p>}
+                      <p className="text-textMuted">{activeBreakdown.bill.date}</p>
+                      {activeBreakdown.selectedFriend && (
+                        <p className="text-emerald-400 font-bold font-sans text-sm mt-1">
+                          Participant: {activeBreakdown.selectedFriend}
+                        </p>
                       )}
-                      {activeBreakdown.bill.discountAmount > 0 && (
-                        <div className="flex justify-between py-1 text-coral">
-                          <span>Promo Discount</span>
-                          <span className="font-bold font-mono">-{activeBreakdown.bill.discountAmount?.toFixed(2)} RM</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between py-1 text-textMuted text-[10px]">
-                        <span>Total Split Across</span>
-                        <span>{Object.keys(activeBreakdown.bill.splits || {}).length} People</span>
-                      </div>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="flex justify-between font-bold text-textMuted uppercase text-[10px] pb-1 border-b border-line">
-                        <span>Item Name</span>
-                        <span>Share (RM)</span>
-                      </div>
 
-                      {activeBreakdown.bill.items?.filter(item => {
-                        if (!activeBreakdown.selectedFriend) return true;
-                        return (item.sharedWith || []).includes(activeBreakdown.selectedFriend);
-                      }).map((item, idx) => {
-                        const shareCount = (item.sharedWith || []).length || 1;
-                        const userShareCost = (item.price * item.qty) / shareCount;
-
-                        return (
-                          <div key={idx} className="flex justify-between items-center py-1">
-                            <div className="pr-2">
-                              <p className="text-textPrimary font-sans font-medium">{item.name}</p>
-                              <p className="text-[10px] text-textMuted">
-                                {item.qty > 1 && `${item.qty}x `}{item.price.toFixed(2)} RM
-                                {activeBreakdown.selectedFriend && shareCount > 1 && ` (Split ${shareCount} pax)`}
-                                {activeBreakdown.bill.taxMode === 'inclusive' ? ` [Incl. Tax ${item.taxRate || 0}%]` : ` [Addon Tax ${item.taxRate || 0}%]`}
-                              </p>
-                            </div>
-                            <span className="font-bold text-textPrimary tabular">{userShareCost.toFixed(2)}</span>
+                    {activeBreakdown.bill.billType === 'ride' ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between py-1">
+                          <span className="text-textSecondary">Base Fare</span>
+                          <span className="font-bold font-mono">{activeBreakdown.bill.subtotal?.toFixed(2)} RM</span>
+                        </div>
+                        {activeBreakdown.bill.tollFee > 0 && (
+                          <div className="flex justify-between py-1 text-amber">
+                            <span>Toll / Surcharge</span>
+                            <span className="font-bold font-mono">+{activeBreakdown.bill.tollFee?.toFixed(2)} RM</span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <div className="pt-3 border-t border-dashed border-line space-y-1.5 text-[11px]">
-                    {activeBreakdown.bill.packagingCharge > 0 && (
-                      <div className="flex justify-between text-amber">
-                        <span>Packaging Charge</span>
-                        <span className="tabular font-mono">+{activeBreakdown.bill.packagingCharge.toFixed(2)} RM</span>
-                      </div>
-                    )}
-
-                    {activeBreakdown.bill.deliveryFee > 0 && (
-                      <div className="flex justify-between text-emerald-400">
-                        <span>Delivery Fee</span>
-                        <span className="tabular font-mono">+{activeBreakdown.bill.deliveryFee.toFixed(2)} RM</span>
-                      </div>
-                    )}
-
-                    {activeBreakdown.selectedFriend ? (
-                      <div className="flex justify-between items-center text-sm font-bold text-textPrimary pt-2 border-t border-line font-sans">
-                        <span>Net Payable Amount:</span>
-                        <span className="text-base text-mint font-mono tabular">{activeBreakdown.bill.splits[activeBreakdown.selectedFriend]?.toFixed(2)} RM</span>
+                        )}
+                        {activeBreakdown.bill.discountAmount > 0 && (
+                          <div className="flex justify-between py-1 text-coral">
+                            <span>Promo Discount</span>
+                            <span className="font-bold font-mono">-{activeBreakdown.bill.discountAmount?.toFixed(2)} RM</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between py-1 text-textMuted text-[10px]">
+                          <span>Total Split Across</span>
+                          <span>{Object.keys(activeBreakdown.bill.splits || {}).length} People</span>
+                        </div>
                       </div>
                     ) : (
-                      <div className="flex justify-between items-center text-sm font-bold text-textPrimary pt-2 border-t border-line font-sans">
-                        <span>Total Net Bill:</span>
-                        <span className="text-base text-mint font-mono tabular">{activeBreakdown.bill.total?.toFixed(2)} RM</span>
+                      <div className="space-y-2">
+                        <div className="flex justify-between font-bold text-textMuted uppercase text-[10px] pb-1 border-b border-line">
+                          <span>Item Name</span>
+                          <span>Share (RM)</span>
+                        </div>
+
+                        {activeBreakdown.bill.items?.filter(item => {
+                          if (!activeBreakdown.selectedFriend) return true;
+                          return (item.sharedWith || []).includes(activeBreakdown.selectedFriend);
+                        }).map((item, idx) => {
+                          const shareCount = (item.sharedWith || []).length || 1;
+                          const userShareCost = (item.price * item.qty) / shareCount;
+
+                          return (
+                            <div key={idx} className="flex justify-between items-center py-1">
+                              <div className="pr-2">
+                                <p className="text-textPrimary font-sans font-medium">{item.name}</p>
+                                <p className="text-[10px] text-textMuted">
+                                  {item.qty > 1 && `${item.qty}x `}{item.price.toFixed(2)} RM
+                                  {activeBreakdown.selectedFriend && shareCount > 1 && ` (Split ${shareCount} pax)`}
+                                  {activeBreakdown.bill.taxMode === 'inclusive' ? ` [Incl. Tax ${item.taxRate || 0}%]` : ` [Addon Tax ${item.taxRate || 0}%]`}
+                                </p>
+                              </div>
+                              <span className="font-bold text-textPrimary tabular">{userShareCost.toFixed(2)}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
+
+                    <div className="pt-3 border-t border-dashed border-line space-y-1.5 text-[11px]">
+                      {activeBreakdown.bill.packagingCharge > 0 && (
+                        <div className="flex justify-between text-amber">
+                          <span>Packaging Charge</span>
+                          <span className="tabular font-mono">+{activeBreakdown.bill.packagingCharge.toFixed(2)} RM</span>
+                        </div>
+                      )}
+
+                      {activeBreakdown.bill.deliveryFee > 0 && (
+                        <div className="flex justify-between text-emerald-400">
+                          <span>Delivery Fee</span>
+                          <span className="tabular font-mono">+{activeBreakdown.bill.deliveryFee.toFixed(2)} RM</span>
+                        </div>
+                      )}
+
+                      {activeBreakdown.selectedFriend ? (
+                        <div className="flex justify-between items-center text-sm font-bold text-textPrimary pt-2 border-t border-line font-sans">
+                          <span>Net Payable Amount:</span>
+                          <span className="text-base text-mint font-mono tabular">{activeBreakdown.bill.splits[activeBreakdown.selectedFriend]?.toFixed(2)} RM</span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between items-center text-sm font-bold text-textPrimary pt-2 border-t border-line font-sans">
+                          <span>Total Net Bill:</span>
+                          <span className="text-base text-mint font-mono tabular">{activeBreakdown.bill.total?.toFixed(2)} RM</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-2">
+                {/* Fixed Footer Buttons */}
+                <div className="p-4 border-t border-line bg-surface flex gap-3">
                   <button
                     onClick={() => handleExportElement(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
-                    className="bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
+                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
                   >
                     📸 Save Receipt Image (PNG)
                   </button>
                   <button
                     onClick={() => handleExportElement(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
-                    className="bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
+                    className="flex-1 bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
                   >
                     📄 Download PDF
                   </button>
@@ -2186,15 +2210,22 @@
 
           {/* --- ADJUSTMENT MODAL (ADMIN ONLY) --- */}
           {selectedFriendForAdjust && isAdmin && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <form onSubmit={handleSaveAdjustment} className="bg-surface border border-line rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+              onClick={() => setSelectedFriendForAdjust(null)}
+            >
+              <form 
+                onSubmit={handleSaveAdjustment} 
+                className="bg-surface border border-line rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+                onClick={e => e.stopPropagation()}
+              >
                 <div className="flex justify-between items-center pb-2 border-b border-line">
                   <div>
                     <h3 className="font-bold text-md text-textPrimary flex items-center gap-1.5">
                       Adjust Balance: <span className="text-accent">{selectedFriendForAdjust}</span>
                     </h3>
                   </div>
-                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-textSecondary">✕</button>
+                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-textSecondary text-lg font-bold">✕</button>
                 </div>
 
                 {currentSelectedBalance && (
