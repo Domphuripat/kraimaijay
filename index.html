@@ -43,6 +43,8 @@
             },
             grab: '#00B14F',
             bolt: '#34D186',
+            whatsapp: '#25D366',
+            instagram: '#E1306C',
             textPrimary: '#F8FAFC',
             textSecondary: '#94A3B8',
             textMuted: '#64748B',
@@ -117,8 +119,10 @@
     const { useState, useEffect, useRef, useMemo } = React;
 
     const ADMIN_EMAILS = [
-      "your-email@gmail.com"
+      "phuripat26dom@gmail.com"
     ];
+
+    const ADMIN_PIN = "2323";
 
     const DEFAULT_FIREBASE_CONFIG = {
       apiKey: "AIzaSyC4RNzFy2wi7S4ZKN2_DWfHY_hUldwzmRQ",
@@ -136,7 +140,24 @@
       const [appId] = useState(DEFAULT_APP_ID);
 
       const [currentUser, setCurrentUser] = useState(null);
-      const [isAdmin, setIsAdmin] = useState(false);
+      const [isAdminByGoogle, setIsAdminByGoogle] = useState(false);
+      
+      // ตรวจสอบ Secret URL (?admin=true หรือ ?dom=2323) หรือจำสิทธิ์เดิม
+      const [isAdminBySecret, setIsAdminBySecret] = useState(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const hasSecretKey = urlParams.get('admin') === 'true' || urlParams.get('dom') === '2323';
+        if (hasSecretKey) {
+          localStorage.setItem('kraimaijay_secret_admin', 'true');
+          return true;
+        }
+        return localStorage.getItem('kraimaijay_secret_admin') === 'true';
+      });
+
+      const isAdmin = isAdminByGoogle || isAdminBySecret;
+
+      const [showAuthModal, setShowAuthModal] = useState(false);
+      const [inputPin, setInputPin] = useState('');
+
       const [db, setDb] = useState(null);
       const [toast, setToast] = useState(null);
       const [activeTab, setActiveTab] = useState('dashboard');
@@ -144,8 +165,9 @@
       const [friends, setFriends] = useState([]);
       const [bills, setBills] = useState([]);
       const [adjustments, setAdjustments] = useState([]);
+      const [showArchivedFriends, setShowArchivedFriends] = useState(false);
 
-      // Filter & Search State
+      // Search & Filters
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
 
@@ -172,7 +194,7 @@
         { id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }
       ]);
 
-      // Multi-Image OCR State
+      // OCR & Paste Text
       const [selectedImages, setSelectedImages] = useState([]);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
@@ -190,7 +212,7 @@
       const [adjustType, setAdjustType] = useState('minus');
       const [viewingBillId, setViewingBillId] = useState(null);
 
-      // Modals
+      // Statement & Receipt Modals
       const [activeBreakdown, setActiveBreakdown] = useState(null);
       const receiptCardRef = useRef(null);
       const [selectedFriendForHistory, setSelectedFriendForHistory] = useState(null);
@@ -201,7 +223,19 @@
         setTimeout(() => setToast(null), 3500);
       };
 
-      // FIREBASE & AUTH SETUP
+      const shareToSocial = (text, platform = 'whatsapp') => {
+        if (platform === 'whatsapp') {
+          window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+        } else if (platform === 'ig') {
+          navigator.clipboard.writeText(text).then(() => {
+            showToast("Copied text to clipboard! Opening Instagram...");
+            window.open('https://instagram.com/direct/inbox/', '_blank');
+          }).catch(() => {
+            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+          });
+        }
+      };
+
       useEffect(() => {
         try {
           let firebaseApp = !firebase.apps.length ? firebase.initializeApp(cloudConfig) : firebase.app();
@@ -213,9 +247,9 @@
             setCurrentUser(user);
             if (user && user.email) {
               const hasAdminRole = ADMIN_EMAILS.some(e => e.toLowerCase() === user.email.toLowerCase());
-              setIsAdmin(hasAdminRole);
+              setIsAdminByGoogle(hasAdminRole);
             } else {
-              setIsAdmin(false);
+              setIsAdminByGoogle(false);
             }
           });
 
@@ -224,7 +258,20 @@
           const unsubFriends = basePath.collection('friends').onSnapshot(snap => {
             const list = [];
             snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-            setFriends(list);
+            if (list.length === 0) {
+              const defaultFriends = [
+                { name: 'Me (Dom)', isSelf: true, isArchived: false, createdAt: Date.now() },
+                { name: 'Yaya', isSelf: false, isArchived: false, createdAt: Date.now() },
+                { name: 'kamil', isSelf: false, isArchived: false, createdAt: Date.now() },
+                { name: 'wakin', isSelf: false, isArchived: false, createdAt: Date.now() },
+                { name: 'dom', isSelf: false, isArchived: false, createdAt: Date.now() },
+                { name: 'panda', isSelf: false, isArchived: false, createdAt: Date.now() },
+                { name: 'ink', isSelf: false, isArchived: false, createdAt: Date.now() }
+              ];
+              defaultFriends.forEach(df => basePath.collection('friends').add(df));
+            } else {
+              setFriends(list);
+            }
           });
 
           const unsubBills = basePath.collection('bills').onSnapshot(snap => {
@@ -255,31 +302,102 @@
       const handleGoogleLogin = async () => {
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
-          await firebase.auth().signInWithPopup(provider);
-          showToast("Signed in successfully!");
+          provider.setCustomParameters({ prompt: 'select_account' });
+          const result = await firebase.auth().signInWithPopup(provider);
+          if (result && result.user) {
+            const userEmail = (result.user.email || '').toLowerCase();
+            const hasAdminRole = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+            setIsAdminByGoogle(hasAdminRole);
+            setShowAuthModal(false);
+            if (hasAdminRole) {
+              showToast("👑 Signed in as Admin Dom!");
+            } else {
+              showToast(`Logged in as ${userEmail} (View Only)`);
+            }
+          }
         } catch (err) {
-          console.error(err);
-          showToast("Sign in failed", "error");
+          console.warn(err);
+          showToast("Google sign-in failed. Please use PIN below!", "error");
         }
       };
 
-      const handleLogout = async () => {
+      const handleVerifyPin = (e) => {
+        e.preventDefault();
+        if (inputPin === ADMIN_PIN) {
+          setIsAdminBySecret(true);
+          localStorage.setItem('kraimaijay_secret_admin', 'true');
+          setShowAuthModal(false);
+          setInputPin('');
+          showToast("👑 PIN Correct: Admin mode unlocked!");
+        } else {
+          showToast("รหัส PIN ไม่ถูกต้อง", "error");
+          setInputPin('');
+        }
+      };
+
+      const handleLogoutAdmin = async () => {
+        setIsAdminBySecret(false);
+        setIsAdminByGoogle(false);
+        localStorage.removeItem('kraimaijay_secret_admin');
         try {
           await firebase.auth().signOut();
-          showToast("Signed out");
+        } catch (e) {}
+        showToast("Logged out. Returned to View-Only mode");
+      };
+
+      const handleExportPDF = async (ref, filename) => {
+        if (!ref.current) return;
+        try {
+          showToast("Generating PDF document...");
+          const canvas = await html2canvas(ref.current, {
+            scale: 2,
+            backgroundColor: '#0B0F17'
+          });
+          const imgData = canvas.toDataURL('image/png');
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgWidth = 210;
+          const pageHeight = 297;
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+          let heightLeft = imgHeight;
+          let position = 0;
+
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+
+          while (heightLeft > 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+          }
+
+          pdf.save(`${filename}.pdf`);
+          showToast("PDF Downloaded successfully!");
         } catch (err) {
-          showToast("Sign out failed", "error");
+          console.error(err);
+          showToast("Failed to generate PDF", "error");
         }
       };
 
-      const handleAddImages = (e) => {
-        const files = Array.from(e.target.files);
-        if (!files.length) return;
-        setSelectedImages(prev => [...prev, ...files]);
-      };
-
-      const handleRemoveImage = (index) => {
-        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
+      const handleExportElement = async (ref, filename) => {
+        if (!ref.current) return;
+        try {
+          showToast("Generating image...");
+          const canvas = await html2canvas(ref.current, {
+            scale: 2,
+            backgroundColor: '#0B0F17'
+          });
+          const image = canvas.toDataURL('image/png');
+          const link = document.createElement('a');
+          link.href = image;
+          link.download = `${filename}.png`;
+          link.click();
+          showToast("Image saved successfully");
+        } catch (err) {
+          showToast("Failed to generate image", "error");
+        }
       };
 
       const parseTextContent = (fullText) => {
@@ -353,6 +471,16 @@
         }
 
         return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
+      };
+
+      const handleAddImages = (e) => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        setSelectedImages(prev => [...prev, ...files]);
+      };
+
+      const handleRemoveImage = (index) => {
+        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
       };
 
       const handleProcessAllImages = async () => {
@@ -444,7 +572,6 @@
         }
       };
 
-      // CALCULATION ENGINE
       const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee) => {
         const splits = {};
         const friendItemDetails = {};
@@ -457,10 +584,15 @@
           const parsedRoundAdj = parseFloat(roundAdj) || 0;
           
           const netTotal = Math.max(0, parsedRideFare + parsedToll - parsedDiscount + parsedRoundAdj);
-          const perPerson = activeFriendsCount > 0 ? (netTotal / activeFriendsCount) : 0;
+          const totalCents = Math.round(netTotal * 100);
+          const baseCents = activeFriendsCount > 0 ? Math.floor(totalCents / activeFriendsCount) : 0;
+          let remainderCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
 
           selectedFriends.forEach(f => {
-            splits[f] = Math.round(perPerson * 100) / 100;
+            const shareCents = baseCents + (remainderCents > 0 ? 1 : 0);
+            if (remainderCents > 0) remainderCents--;
+            splits[f] = shareCents / 100;
+
             friendItemDetails[f] = {
               baseShare: Math.round((parsedRideFare / (activeFriendsCount || 1)) * 100) / 100,
               tollShare: Math.round((parsedToll / (activeFriendsCount || 1)) * 100) / 100,
@@ -510,12 +642,22 @@
 
           const sharedList = (item.sharedWith || []).filter(f => selectedFriends.includes(f));
           if (sharedList.length > 0) {
-            const shareAmount = itemTotal / sharedList.length;
-            const taxShareAmount = itemTaxAmount / sharedList.length;
+            const itemTotalCents = Math.round(itemTotal * 100);
+            const baseShareCents = Math.floor(itemTotalCents / sharedList.length);
+            let remShareCents = itemTotalCents % sharedList.length;
+
+            const itemTaxCents = Math.round(itemTaxAmount * 100);
+            const baseTaxCents = Math.floor(itemTaxCents / sharedList.length);
+            let remTaxCents = itemTaxCents % sharedList.length;
 
             sharedList.forEach(f => {
-              friendBaseShares[f] = (friendBaseShares[f] || 0) + shareAmount;
-              friendTaxShares[f] = (friendTaxShares[f] || 0) + taxShareAmount;
+              const allocatedCents = baseShareCents + (remShareCents > 0 ? 1 : 0);
+              if (remShareCents > 0) remShareCents--;
+              friendBaseShares[f] = (friendBaseShares[f] || 0) + (allocatedCents / 100);
+
+              const allocatedTaxCents = baseTaxCents + (remTaxCents > 0 ? 1 : 0);
+              if (remTaxCents > 0) remTaxCents--;
+              friendTaxShares[f] = (friendTaxShares[f] || 0) + (allocatedTaxCents / 100);
             });
           }
         });
@@ -529,15 +671,19 @@
         const perPersonDelivery = activeFriendsCount > 0 ? (parsedDFee / activeFriendsCount) : 0;
         const perPersonPackaging = activeFriendsCount > 0 ? (parsedPackCharge / activeFriendsCount) : 0;
 
+        let totalDistributedCents = 0;
+
         selectedFriends.forEach(f => {
           const base = friendBaseShares[f] || 0;
           const friendSc = base * (scRate / 100);
           const friendTax = currentTaxMode === 'addon' ? (friendTaxShares[f] || 0) : 0;
           const userDiscountShare = subtotal > 0 ? (base / subtotal) * parsedDiscount : (parsedDiscount / (activeFriendsCount || 1));
           
-          const finalPersonAmount = base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare;
-          
-          splits[f] = Math.max(0, Math.round(finalPersonAmount * 100) / 100);
+          const finalPersonAmount = Math.max(0, base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare);
+          const personCents = Math.round(finalPersonAmount * 100);
+          splits[f] = personCents / 100;
+          totalDistributedCents += personCents;
+
           friendItemDetails[f] = {
             baseShare: Math.round(base * 100) / 100,
             scShare: Math.round(friendSc * 100) / 100,
@@ -550,6 +696,13 @@
 
         const addedTaxToTotal = currentTaxMode === 'addon' ? totalTax : 0;
         const finalTotal = Math.round((subtotal + totalSc + addedTaxToTotal + parsedDFee + parsedPackCharge - parsedDiscount + parsedRoundAdj) * 100) / 100;
+        const targetTotalCents = Math.round(finalTotal * 100);
+
+        if (activeFriendsCount > 0 && totalDistributedCents !== targetTotalCents) {
+          const diffCents = targetTotalCents - totalDistributedCents;
+          const lastPerson = selectedFriends[selectedFriends.length - 1];
+          splits[lastPerson] = Math.max(0, Math.round((splits[lastPerson] + (diffCents / 100)) * 100) / 100);
+        }
 
         return {
           subtotal: Math.round(subtotal * 100) / 100,
@@ -575,7 +728,8 @@
 
         bills.forEach(bill => {
           Object.keys(bill.splits || {}).forEach(name => {
-            const isSelf = name === 'Me (Dom)' || name === 'ตัวฉันเอง';
+            const fObj = friends.find(f => f.name === name);
+            const isSelf = fObj?.isSelf || name === 'Me (Dom)' || name === 'ตัวฉันเอง';
             if (balances[name] && !isSelf && !bill.paidStatus?.[name]) {
               balances[name].billsOwed += bill.splits[name];
             }
@@ -613,13 +767,18 @@
       };
 
       const filteredBills = useMemo(() => {
+        const term = searchQuery.trim().toLowerCase();
         return bills.filter(bill => {
-          const matchesSearch = (bill.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (bill.rideRoute && bill.rideRoute.toLowerCase().includes(searchQuery.toLowerCase()));
+          const matchTitle = (bill.name || '').toLowerCase().includes(term);
+          const matchRoute = (bill.rideRoute || '').toLowerCase().includes(term);
+          const matchItem = (bill.items || []).some(item => (item.name || '').toLowerCase().includes(term));
+          
+          if (term && !matchTitle && !matchRoute && !matchItem) return false;
 
-          if (!matchesSearch) return false;
-
-          const unpaidCount = Object.keys(bill.splits || {}).filter(n => n !== 'Me (Dom)' && n !== 'ตัวฉันเอง' && !bill.paidStatus?.[n]).length;
+          const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
+            const fObj = friends.find(f => f.name === n);
+            return !(fObj?.isSelf) && !bill.paidStatus?.[n];
+          }).length;
 
           if (statusFilter === 'pending') return unpaidCount > 0;
           if (statusFilter === 'settled') return unpaidCount === 0;
@@ -628,26 +787,7 @@
 
           return true;
         });
-      }, [bills, searchQuery, statusFilter]);
-
-      const handleExportElement = async (ref, filename) => {
-        if (!ref.current) return;
-        try {
-          showToast("Generating image...");
-          const canvas = await html2canvas(ref.current, {
-            scale: 2,
-            backgroundColor: '#0B0F17'
-          });
-          const image = canvas.toDataURL('image/png');
-          const link = document.createElement('a');
-          link.href = image;
-          link.download = `${filename}.png`;
-          link.click();
-          showToast("Image saved successfully");
-        } catch (err) {
-          showToast("Failed to generate image", "error");
-        }
-      };
+      }, [bills, searchQuery, statusFilter, friends]);
 
       const handleStartEditBill = (bill) => {
         if (!isAdmin) {
@@ -673,7 +813,7 @@
           ...(bill.items || []).flatMap(i => i.sharedWith || [])
         ]);
         const participantsArray = Array.from(existingParticipants);
-        setBillFriends(participantsArray.length > 0 ? participantsArray : friends.map(f => f.name));
+        setBillFriends(participantsArray.length > 0 ? participantsArray : friends.filter(f => !f.isArchived).map(f => f.name));
 
         const loadedItems = (bill.items || []).map(item => ({
           ...item,
@@ -717,7 +857,8 @@
         }
         billFriends.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
-            initialPaidStatus[f] = (f === 'Me (Dom)' || f === 'ตัวฉันเอง');
+            const fObj = friends.find(fr => fr.name === f);
+            initialPaidStatus[f] = fObj?.isSelf || false;
           }
         });
 
@@ -824,16 +965,36 @@
           return;
         }
 
-        const newF = { name, createdAt: Date.now() };
+        const newF = { name, isSelf: false, isArchived: false, createdAt: Date.now() };
         if (db) {
           try {
             await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(newF);
             showToast("Friend added");
           } catch (err) {
-            showToast("Failed: Permission denied", "error");
+            showToast("Failed to add friend", "error");
           }
         }
         setNewFriendName('');
+      };
+
+      const handleToggleArchiveFriend = async (friend) => {
+        if (!isAdmin) {
+          showToast("Only Admin can archive friends", "error");
+          return;
+        }
+        const actionText = friend.isArchived ? "Restore" : "Archive";
+        if (!confirm(`${actionText} friend "${friend.name}"? (Past records remain safe)`)) return;
+
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({
+              isArchived: !friend.isArchived
+            });
+            showToast(`Friend ${actionText.toLowerCase()}d successfully`);
+          } catch (err) {
+            showToast("Action failed: Permission denied", "error");
+          }
+        }
       };
 
       const handleStartRenameFriend = (friend) => {
@@ -907,27 +1068,6 @@
         handleCancelRenameFriend();
       };
 
-      const handleDeleteFriend = async (friend) => {
-        if (!isAdmin) {
-          showToast("Only Admin can delete friends", "error");
-          return;
-        }
-        const balance = friendBalances[friend.name] || { totalOwed: 0 };
-        const warningMsg = balance.totalOwed !== 0
-          ? `⚠️ "${friend.name}" still has an outstanding balance of ${balance.totalOwed.toFixed(2)} RM.\n\nAre you sure you want to delete?`
-          : `Remove "${friend.name}" from your friend list?`;
-        if (!confirm(warningMsg)) return;
-
-        if (db) {
-          try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).delete();
-            showToast("Friend removed");
-          } catch (err) {
-            showToast("Delete failed: Permission denied", "error");
-          }
-        }
-      };
-
       const handleDeleteAdjustment = async (adj) => {
         if (!isAdmin) {
           showToast("Only Admin can delete adjustments", "error");
@@ -980,12 +1120,14 @@
       };
 
       const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
-        if (name !== 'Me (Dom)' && name !== 'ตัวฉันเอง') return acc + Math.max(0, friendBalances[name].totalOwed);
+        const fObj = friends.find(f => f.name === name);
+        if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
         return acc;
       }, 0);
 
       const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
-        return name !== 'Me (Dom)' && name !== 'ตัวฉันเอง' && friendBalances[name].totalOwed > 0;
+        const fObj = friends.find(f => f.name === name);
+        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
       }).length;
 
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
@@ -1012,12 +1154,12 @@
                     </span>
                   </div>
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ml-1 ${isAdmin ? 'bg-mint/15 border-mint/40 text-mint' : 'bg-subtle border-line text-textMuted'}`}>
-                    {isAdmin ? '👑 Admin (Dom)' : '👀 View Only'}
+                    {isAdmin ? '👑 Admin Mode' : '👀 View Only'}
                   </span>
                 </h1>
               </div>
 
-              {/* Action Buttons & Auth */}
+              {/* Action Buttons & Unified Auth Button */}
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 {isAdmin ? (
                   <>
@@ -1037,7 +1179,7 @@
                         setRideRoute('');
                         setSelectedImages([]);
                         setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
-                        setBillFriends(friends.map(f => f.name));
+                        setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
                         setActiveTab('new-bill');
                       }}
                       className="flex-1 sm:flex-initial bg-accent hover:bg-accent-hover active:scale-[0.98] text-white font-bold px-4 py-2 rounded-xl transition text-sm flex justify-center items-center gap-1.5 shadow-lg shadow-accent/20"
@@ -1045,19 +1187,19 @@
                       + Create Transaction
                     </button>
                     <button 
-                      onClick={handleLogout}
+                      onClick={handleLogoutAdmin}
                       className="bg-subtle hover:bg-coral/20 text-textSecondary hover:text-coral border border-line px-3 py-2 rounded-xl text-xs font-semibold transition"
-                      title={`Logged in as ${currentUser?.email}`}
+                      title="Lock Admin Mode"
                     >
-                      Sign Out
+                      Lock 🔒
                     </button>
                   </>
                 ) : (
                   <button 
-                    onClick={handleGoogleLogin}
-                    className="flex-1 sm:flex-initial bg-subtle hover:bg-line border border-line text-textPrimary hover:border-accent font-semibold px-4 py-2 rounded-xl transition text-xs flex justify-center items-center gap-2"
+                    onClick={() => setShowAuthModal(true)}
+                    className="flex-1 sm:flex-initial bg-accent/15 hover:bg-accent text-accent hover:text-white border border-accent/40 font-semibold px-4 py-2 rounded-xl transition text-xs flex justify-center items-center gap-1.5 shadow-sm"
                   >
-                    <span>🔑 Admin Sign-In (Google)</span>
+                    <span>🔑 Admin Sign-In</span>
                   </button>
                 )}
               </div>
@@ -1084,7 +1226,7 @@
                 onClick={() => setActiveTab('friends')}
                 className={`flex-1 py-2 px-2 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 ${activeTab === 'friends' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
               >
-                Friends ({friends.length})
+                Friends ({friends.filter(f => !f.isArchived).length})
               </button>
               <button 
                 onClick={() => setActiveTab('adjustments')}
@@ -1121,12 +1263,12 @@
                     <span className="text-[11px] text-accent">Tap name to view ledger ↗</span>
                   </div>
                   <div className="space-y-3">
-                    {friends.filter(f => f.name !== 'Me (Dom)' && f.name !== 'ตัวฉันเอง' && (friendBalances[f.name]?.totalOwed || 0) > 0).length === 0 ? (
+                    {friends.filter(f => !f.isSelf && (friendBalances[f.name]?.totalOwed || 0) > 0).length === 0 ? (
                       <div className="py-8 text-center text-textMuted text-sm">All debts are cleared! Everything is settled 🎉</div>
                     ) : (
                       friends.map(friend => {
                         const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
-                        if (friend.name === 'Me (Dom)' || friend.name === 'ตัวฉันเอง' || balance.totalOwed <= 0) return null;
+                        if (friend.isSelf || balance.totalOwed <= 0) return null;
 
                         return (
                           <div key={friend.id} className="bg-subtle border border-line/80 hover:border-accent/40 p-4 rounded-xl flex justify-between items-center transition duration-150">
@@ -1136,6 +1278,7 @@
                             >
                               <span className="font-bold text-textPrimary group-hover:text-accent transition flex items-center gap-1.5">
                                 {friend.name}
+                                {friend.isArchived && <span className="text-[10px] bg-line text-textMuted px-1.5 py-0.2 rounded">Archived</span>}
                                 <span className="text-[10px] text-accent font-normal underline group-hover:opacity-100 opacity-80">View History ↗</span>
                                 <span className="text-[10px] text-coral bg-coral-subtle/50 px-1.5 py-0.5 rounded font-mono">Unpaid</span>
                               </span>
@@ -1150,6 +1293,7 @@
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="text-lg font-extrabold text-coral font-mono tabular">{balance.totalOwed.toFixed(2)} RM</span>
+                              
                               {isAdmin && (
                                 <button
                                   onClick={() => { setSelectedFriendForAdjust(friend.name); setAdjustAmount(''); }}
@@ -1215,6 +1359,7 @@
                     </button>
                   </div>
 
+                  {/* SMART SCANNER + PASTE TEXT */}
                   <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                       <div>
@@ -1332,7 +1477,7 @@
                       Participants ({billFriends.length} people)
                     </label>
                     <div className="flex flex-wrap gap-2 bg-subtle p-3 rounded-xl border border-line">
-                      {friends.map(friend => {
+                      {friends.filter(f => !f.isArchived).map(friend => {
                         const isSelected = billFriends.includes(friend.name);
                         return (
                           <button
@@ -1588,7 +1733,8 @@
                               <div>
                                 <p className="text-[11px] text-textSecondary mb-1.5 font-bold">Shared By:</p>
                                 <div className="flex flex-wrap gap-1.5">
-                                  {billFriends.map(fName => {
+                                  {friends.filter(f => !f.isArchived).map(f => {
+                                    const fName = f.name;
                                     const isShared = (item.sharedWith || []).includes(fName);
                                     return (
                                       <button
@@ -1623,9 +1769,9 @@
               ) : (
                 <div className="bg-surface rounded-2xl p-8 border border-line text-center space-y-3">
                   <p className="text-coral text-lg font-bold">🔒 View Only Mode</p>
-                  <p className="text-textSecondary text-sm">Please Sign in with Google as Admin to create or modify transactions.</p>
-                  <button onClick={handleGoogleLogin} className="bg-accent text-white font-bold px-5 py-2.5 rounded-xl text-xs">
-                    Sign in with Google
+                  <p className="text-textSecondary text-sm">Please Sign in to manage transactions.</p>
+                  <button onClick={() => setShowAuthModal(true)} className="bg-accent text-white font-bold px-5 py-2.5 rounded-xl text-xs">
+                    Admin Sign-In
                   </button>
                 </div>
               )
@@ -1647,7 +1793,7 @@
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search by merchant, place, or route..."
+                      placeholder="Search title, route, or item names..."
                       className="w-full bg-subtle border border-line rounded-xl pl-9 pr-4 py-2 text-sm text-textPrimary focus:border-accent outline-none"
                     />
                     {searchQuery && (
@@ -1687,7 +1833,10 @@
                   ) : (
                     filteredBills.map(bill => {
                       const isCollapsed = viewingBillId === bill.id;
-                      const unpaidCount = Object.keys(bill.splits || {}).filter(n => n !== 'Me (Dom)' && n !== 'ตัวฉันเอง' && !bill.paidStatus?.[n]).length;
+                      const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
+                        const fObj = friends.find(f => f.name === n);
+                        return !fObj?.isSelf && !bill.paidStatus?.[n];
+                      }).length;
 
                       return (
                         <div 
@@ -1735,19 +1884,44 @@
                                   <p className="text-xs font-bold text-accent">Receipt & Split Details</p>
                                   <p className="text-[10px] text-textSecondary">Export individual or total receipts as Image / PDF</p>
                                 </div>
-                                <button
-                                  onClick={() => setActiveBreakdown({ bill, selectedFriend: null })}
-                                  className="bg-accent hover:bg-accent-hover text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95 shadow-sm shadow-accent/20"
-                                >
-                                  → View / Export Slip
-                                </button>
+                                <div className="flex gap-1.5">
+                                  <button
+                                    onClick={() => {
+                                      const text = `🧾 รายละเอียดบิล: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
+                                        (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n');
+                                      shareToSocial(text, 'whatsapp');
+                                    }}
+                                    className="bg-whatsapp/20 hover:bg-whatsapp text-emerald-400 hover:text-bg text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
+                                    title="แชร์เข้า WhatsApp"
+                                  >
+                                    💬 WA
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const text = `🧾 รายละเอียดบิล: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
+                                        (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n');
+                                      shareToSocial(text, 'ig');
+                                    }}
+                                    className="bg-instagram/20 hover:bg-instagram text-coral hover:text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
+                                    title="Copy และเปิด IG Direct"
+                                  >
+                                    📸 IG
+                                  </button>
+                                  <button
+                                    onClick={() => setActiveBreakdown({ bill, selectedFriend: null })}
+                                    className="bg-accent hover:bg-accent-hover text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95 shadow-sm shadow-accent/20"
+                                  >
+                                    → View / Export
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="space-y-2">
                                 <p className="font-bold text-textMuted text-[11px] uppercase">Individual Breakdown (Tap name to view items):</p>
                                 {Object.keys(bill.splits || {}).map(fName => {
                                   const isPaid = bill.paidStatus?.[fName];
-                                  const isSelf = fName === 'Me (Dom)' || fName === 'ตัวฉันเอง';
+                                  const fObj = friends.find(f => f.name === fName);
+                                  const isSelf = fObj?.isSelf;
                                   return (
                                     <div key={fName} className="flex justify-between items-center bg-subtle p-2.5 rounded-xl text-xs">
                                       <div 
@@ -1797,7 +1971,7 @@
               </div>
             )}
 
-            {/* --- 4. FRIENDS TAB --- */}
+            {/* --- 4. FRIENDS TAB (WITH ARCHIVE / RESTORE) --- */}
             {activeTab === 'friends' && (
               <div className="space-y-6">
                 {isAdmin && (
@@ -1816,75 +1990,89 @@
                   </div>
                 )}
 
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-xs text-textMuted font-mono">List of Friends & Balances</span>
+                  <button
+                    onClick={() => setShowArchivedFriends(!showArchivedFriends)}
+                    className="text-xs text-accent underline"
+                  >
+                    {showArchivedFriends ? "Hide Archived Friends" : "Show Archived Friends"}
+                  </button>
+                </div>
+
                 <div className="bg-surface rounded-2xl p-6 border border-line divide-y divide-line">
-                  {friends.map(friend => {
-                    const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
-                    const isRenaming = renamingFriendId === friend.id;
-                    const isSelf = friend.name === 'Me (Dom)' || friend.name === 'ตัวฉันเอง';
-                    return (
-                      <div key={friend.id} className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-center gap-3">
-                        {isRenaming ? (
-                          <div className="flex-1 flex gap-2 items-center">
-                            <input
-                              type="text"
-                              value={renameValue}
-                              onChange={(e) => setRenameValue(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmRenameFriend(friend); if (e.key === 'Escape') handleCancelRenameFriend(); }}
-                              autoFocus
-                              className="flex-1 bg-subtle border border-accent rounded-xl px-3 py-2 text-textPrimary text-sm outline-none"
-                            />
-                            <button onClick={() => handleConfirmRenameFriend(friend)} className="text-mint text-xs font-bold px-2 py-1.5">✓ Save</button>
-                            <button onClick={handleCancelRenameFriend} className="text-textMuted text-xs px-2 py-1.5">✕</button>
-                          </div>
-                        ) : (
-                          <div 
-                            className="cursor-pointer group flex-1"
-                            onClick={() => setSelectedFriendForHistory(friend.name)}
-                          >
-                            <span className="font-bold text-textPrimary group-hover:text-accent transition flex items-center gap-1.5">
-                              {friend.name}
-                              <span className="text-[10px] text-accent underline font-normal">View Ledger ↗</span>
-                            </span>
-                            {!isSelf && (
-                              <p className="text-xs text-textSecondary mt-0.5">Total Balance: <span className="font-bold text-coral font-mono">{balance.totalOwed?.toFixed(2)} RM</span></p>
-                            )}
-                          </div>
-                        )}
-                        {!isRenaming && !isSelf && (
-                          <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                            <button 
-                              onClick={() => setSelectedFriendForHistory(friend.name)} 
-                              className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
+                  {friends
+                    .filter(f => showArchivedFriends ? true : !f.isArchived)
+                    .map(friend => {
+                      const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
+                      const isRenaming = renamingFriendId === friend.id;
+                      return (
+                        <div key={friend.id} className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-center gap-3">
+                          {isRenaming ? (
+                            <div className="flex-1 flex gap-2 items-center">
+                              <input
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmRenameFriend(friend); if (e.key === 'Escape') handleCancelRenameFriend(); }}
+                                autoFocus
+                                className="flex-1 bg-subtle border border-accent rounded-xl px-3 py-2 text-textPrimary text-sm outline-none"
+                              />
+                              <button onClick={() => handleConfirmRenameFriend(friend)} className="text-mint text-xs font-bold px-2 py-1.5">✓ Save</button>
+                              <button onClick={handleCancelRenameFriend} className="text-textMuted text-xs px-2 py-1.5">✕</button>
+                            </div>
+                          ) : (
+                            <div 
+                              className="cursor-pointer group flex-1"
+                              onClick={() => setSelectedFriendForHistory(friend.name)}
                             >
-                              Ledger
-                            </button>
-                            {isAdmin && (
-                              <>
-                                <button 
-                                  onClick={() => { setSelectedFriendForAdjust(friend.name); setAdjustAmount(''); }} 
-                                  className="bg-accent/15 text-accent hover:bg-accent hover:text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
-                                >
-                                  Adjust
-                                </button>
-                                <button
-                                  onClick={() => handleStartRenameFriend(friend)}
-                                  className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
-                                >
-                                  Rename
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteFriend(friend)}
-                                  className="bg-subtle hover:bg-coral/20 text-coral text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
-                                >
-                                  Delete
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                              <span className="font-bold text-textPrimary group-hover:text-accent transition flex items-center gap-1.5">
+                                {friend.name}
+                                {friend.isSelf && <span className="text-[10px] bg-accent/20 text-accent px-1.5 py-0.5 rounded font-mono">Me</span>}
+                                {friend.isArchived && <span className="text-[10px] bg-subtle text-textMuted px-1.5 py-0.5 rounded border border-line">Archived</span>}
+                                <span className="text-[10px] text-accent underline font-normal">View Ledger ↗</span>
+                              </span>
+                              {!friend.isSelf && (
+                                <p className="text-xs text-textSecondary mt-0.5">Total Balance: <span className="font-bold text-coral font-mono">{balance.totalOwed?.toFixed(2)} RM</span></p>
+                              )}
+                            </div>
+                          )}
+                          {!isRenaming && !friend.isSelf && (
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <button 
+                                onClick={() => setSelectedFriendForHistory(friend.name)} 
+                                className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
+                              >
+                                Ledger
+                              </button>
+                              {isAdmin && (
+                                <>
+                                  <button 
+                                    onClick={() => { setSelectedFriendForAdjust(friend.name); setAdjustAmount(''); }} 
+                                    className="bg-accent/15 text-accent hover:bg-accent hover:text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
+                                  >
+                                    Adjust
+                                  </button>
+                                  <button
+                                    onClick={() => handleStartRenameFriend(friend)}
+                                    className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
+                                  >
+                                    Rename
+                                  </button>
+                                  <button
+                                    onClick={() => handleToggleArchiveFriend(friend)}
+                                    className="bg-subtle hover:bg-coral/20 text-coral text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
+                                    title="Soft delete to preserve records"
+                                  >
+                                    {friend.isArchived ? "Restore" : "Archive"}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
             )}
@@ -1926,7 +2114,70 @@
 
           </main>
 
-          {/* --- FIX: SCROLLABLE INDIVIDUAL STATEMENT MODAL WITH STICKY CLOSE BUTTON --- */}
+          {/* --- UNIFIED ADMIN AUTH MODAL --- */}
+          {showAuthModal && (
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+              onClick={() => setShowAuthModal(false)}
+            >
+              <div 
+                className="bg-surface border border-line rounded-3xl p-6 w-full max-w-sm space-y-5 shadow-2xl"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center pb-2 border-b border-line">
+                  <h3 className="font-bold text-md text-textPrimary flex items-center gap-2">
+                    🔑 Admin Authentication
+                  </h3>
+                  <button type="button" onClick={() => setShowAuthModal(false)} className="text-textSecondary text-lg font-bold">✕</button>
+                </div>
+
+                {/* Option 1: Google Login */}
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  className="w-full bg-subtle hover:bg-line border border-line hover:border-accent text-textPrimary font-semibold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span>Sign in with Google</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-[1px] bg-line"></div>
+                  <span className="text-[10px] text-textMuted uppercase font-mono">OR USE PIN</span>
+                  <div className="flex-1 h-[1px] bg-line"></div>
+                </div>
+
+                {/* Option 2: PIN Login */}
+                <form onSubmit={handleVerifyPin} className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-textSecondary mb-1 font-medium">กรุณากรอกรหัส PIN สำหรับผู้ดูแลระบบ</label>
+                    <input 
+                      type="password"
+                      pattern="[0-9]*"
+                      inputMode="numeric"
+                      maxLength="6"
+                      placeholder="Enter PIN"
+                      value={inputPin}
+                      onChange={(e) => setInputPin(e.target.value)}
+                      className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-center text-lg tracking-widest font-mono focus:border-accent outline-none"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button type="submit" className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2 rounded-xl text-xs transition shadow-md shadow-accent/20">ปลดล็อก</button>
+                    <button type="button" onClick={() => setShowAuthModal(false)} className="bg-subtle border border-line text-textPrimary py-2 px-3 rounded-xl text-xs hover:bg-line">ยกเลิก</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* --- SCROLLABLE STATEMENT MODAL --- */}
           {selectedFriendForHistory && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
@@ -1936,24 +2187,21 @@
                 className="bg-surface border border-line rounded-3xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
               >
-                {/* Sticky Header with Always-Visible Close Button */}
                 <div className="p-4 sm:p-5 border-b border-line flex justify-between items-center bg-surface sticky top-0 z-20">
                   <div>
                     <h3 className="font-bold text-textPrimary text-base sm:text-lg flex items-center gap-2">
                       👤 Ledger: <span className="text-accent">{selectedFriendForHistory}</span>
                     </h3>
-                    <p className="text-[11px] text-textSecondary">Complete history of orders, rides, and adjustments</p>
+                    <p className="text-[11px] text-textSecondary">Complete statement and split details</p>
                   </div>
                   <button 
                     onClick={() => setSelectedFriendForHistory(null)} 
                     className="w-9 h-9 rounded-full bg-subtle hover:bg-line text-textSecondary hover:text-textPrimary flex items-center justify-center text-lg font-bold transition active:scale-95"
-                    title="Close"
                   >
                     ✕
                   </button>
                 </div>
 
-                {/* Scrollable Modal Content */}
                 <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
                   <div ref={friendSlipRef} className="bg-[#0B0F17] border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
                     <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
@@ -1986,7 +2234,6 @@
 
                     <div className="space-y-2">
                       <p className="text-xs font-bold text-textSecondary uppercase font-sans">📋 Transaction History ({getFriendHistory(selectedFriendForHistory).bills.length}):</p>
-                      
                       {getFriendHistory(selectedFriendForHistory).bills.length === 0 ? (
                         <p className="text-center py-3 text-textMuted">No transactions on record</p>
                       ) : (
@@ -2038,13 +2285,36 @@
                   </div>
                 </div>
 
-                {/* Fixed Footer Buttons */}
-                <div className="p-4 border-t border-line bg-surface flex gap-3">
+                <div className="p-4 border-t border-line bg-surface flex flex-wrap gap-2">
                   <button
                     onClick={() => handleExportElement(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
-                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
+                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 shadow-md shadow-accent/20"
                   >
-                    📸 Save Statement Image (PNG)
+                    📸 PNG
+                  </button>
+                  <button
+                    onClick={() => handleExportPDF(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
+                    className="flex-1 bg-coral hover:bg-coral/90 text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 shadow-md shadow-coral/20"
+                  >
+                    📄 PDF
+                  </button>
+                  <button
+                    onClick={() => {
+                      const bal = (friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2);
+                      shareToSocial(`แจ้งยอดค้างชำระ: ${selectedFriendForHistory} มียอดคงเหลือ ${bal} RM`, 'whatsapp');
+                    }}
+                    className="bg-whatsapp/15 hover:bg-whatsapp text-emerald-400 hover:text-bg font-bold py-2.5 px-3 rounded-xl text-xs transition border border-whatsapp/30 flex items-center gap-1"
+                  >
+                    💬 WhatsApp
+                  </button>
+                  <button
+                    onClick={() => {
+                      const bal = (friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2);
+                      shareToSocial(`แจ้งยอดค้างชำระ: ${selectedFriendForHistory} มียอดคงเหลือ ${bal} RM`, 'ig');
+                    }}
+                    className="bg-instagram/15 hover:bg-instagram text-coral hover:text-white font-bold py-2.5 px-3 rounded-xl text-xs transition border border-instagram/30 flex items-center gap-1"
+                  >
+                    📸 IG
                   </button>
                   {isAdmin && (
                     <button
@@ -2053,7 +2323,7 @@
                         setSelectedFriendForHistory(null);
                         setSelectedFriendForAdjust(fName);
                       }}
-                      className="bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 px-4 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
+                      className="bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 px-3 rounded-xl text-xs transition active:scale-95"
                     >
                       ⚖️ Adjust
                     </button>
@@ -2063,7 +2333,7 @@
             </div>
           )}
 
-          {/* --- FIX: SCROLLABLE DETAILED RECEIPT MODAL --- */}
+          {/* --- SCROLLABLE RECEIPT MODAL --- */}
           {activeBreakdown && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
@@ -2073,7 +2343,6 @@
                 className="bg-surface border border-line rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
               >
-                {/* Sticky Header */}
                 <div className="p-4 sm:p-5 border-b border-line flex justify-between items-center bg-surface sticky top-0 z-20">
                   <h3 className="font-bold text-textPrimary text-base">
                     {activeBreakdown.selectedFriend ? `Breakdown: ${activeBreakdown.selectedFriend}` : 'Transaction Summary'}
@@ -2081,13 +2350,11 @@
                   <button 
                     onClick={() => setActiveBreakdown(null)} 
                     className="w-9 h-9 rounded-full bg-subtle hover:bg-line text-textSecondary hover:text-textPrimary flex items-center justify-center text-lg font-bold transition active:scale-95"
-                    title="Close"
                   >
                     ✕
                   </button>
                 </div>
 
-                {/* Scrollable Content */}
                 <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
                   <div ref={receiptCardRef} className="bg-[#0B0F17] border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
                     <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
@@ -2189,17 +2456,16 @@
                   </div>
                 </div>
 
-                {/* Fixed Footer Buttons */}
                 <div className="p-4 border-t border-line bg-surface flex gap-3">
                   <button
                     onClick={() => handleExportElement(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
                     className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
                   >
-                    📸 Save Receipt Image (PNG)
+                    📸 Save PNG
                   </button>
                   <button
-                    onClick={() => handleExportElement(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
-                    className="flex-1 bg-subtle hover:bg-line text-textPrimary border border-line font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
+                    onClick={() => handleExportPDF(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
+                    className="flex-1 bg-coral hover:bg-coral/90 text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-coral/20"
                   >
                     📄 Download PDF
                   </button>
