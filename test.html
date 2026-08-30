@@ -265,7 +265,7 @@
         cancel: "ยกเลิก",
         save: "บันทึก",
         settleFullPrompt: "⚡ เคลียร์บิลที่ค้างทั้งหมด ({amt} RM)",
-        settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และล้างยอดปรับปรุงของ {name} เป็นจ่ายแล้ว ใช่หรือไม่?",
+        settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และบันทึกลงประวัติปรับยอดของ {name} ใช่หรือไม่?",
         statementTitle: "ใบแจ้งยอดหนี้คงค้างสะสม",
         fromBills: "จากบิลอาหาร/รถ",
         adjusted: "ยอดปรับลด",
@@ -277,7 +277,6 @@
       }
     };
 
-    // Helper คำนวณสูตรคณิตศาสตร์ในกล่องข้อความ
     const evaluateMathExpression = (str) => {
       if (!str || typeof str !== 'string') return str;
       const clean = str.replace(/[^0-9+\-*/.]/g, '');
@@ -410,7 +409,6 @@
         }
       };
 
-      // Calculator Buttons Handler
       const handleCalcBtn = (val) => {
         if (val === 'C') {
           setCalcInput('0');
@@ -436,6 +434,11 @@
           const firestoreInstance = firebase.firestore(firebaseApp);
           setDb(firestoreInstance);
 
+          // Auto sign-in anonymously if PIN was previously unlocked to ensure Firestore write permissions
+          if (localStorage.getItem('kraimaijay_secret_admin') === 'true' && !authInstance.currentUser) {
+            authInstance.signInAnonymously().catch(() => {});
+          }
+
           const unsubAuth = authInstance.onAuthStateChanged(user => {
             setCurrentUser(user);
             if (user && user.email) {
@@ -448,23 +451,19 @@
 
           const basePath = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data');
           
+          // De-duplicate Friend Query (Fix Problem #2)
           const unsubFriends = basePath.collection('friends').onSnapshot(snap => {
             const list = [];
-            snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-            if (list.length === 0) {
-              const defaultFriends = [
-                { name: 'Me (Dom)', isSelf: true, isArchived: false, createdAt: Date.now() },
-                { name: 'Yaya', isSelf: false, isArchived: false, createdAt: Date.now() },
-                { name: 'kamil', isSelf: false, isArchived: false, createdAt: Date.now() },
-                { name: 'wakin', isSelf: false, isArchived: false, createdAt: Date.now() },
-                { name: 'dom', isSelf: false, isArchived: false, createdAt: Date.now() },
-                { name: 'panda', isSelf: false, isArchived: false, createdAt: Date.now() },
-                { name: 'ink', isSelf: false, isArchived: false, createdAt: Date.now() }
-              ];
-              defaultFriends.forEach(df => basePath.collection('friends').add(df));
-            } else {
-              setFriends(list);
-            }
+            const seenNames = new Set();
+            snap.forEach(doc => {
+              const data = doc.data();
+              const normName = (data.name || '').trim().toLowerCase();
+              if (normName && !seenNames.has(normName)) {
+                seenNames.add(normName);
+                list.push({ id: doc.id, ...data });
+              }
+            });
+            setFriends(list);
           });
 
           const unsubBills = basePath.collection('bills').onSnapshot(snap => {
@@ -514,11 +513,17 @@
         }
       };
 
-      const handleVerifyPin = (e) => {
+      // Fix Problem #1: Sign In Anonymously on Valid PIN to bypass Firestore Permission Denied
+      const handleVerifyPin = async (e) => {
         e.preventDefault();
         if (inputPin === ADMIN_PIN) {
           setIsAdminBySecret(true);
           localStorage.setItem('kraimaijay_secret_admin', 'true');
+          try {
+            await firebase.auth().signInAnonymously();
+          } catch (err) {
+            console.warn("Anonymous auth failed, continuing with client state", err);
+          }
           setShowAuthModal(false);
           setInputPin('');
           showToast("👑 PIN Correct: Admin mode unlocked!");
@@ -538,14 +543,13 @@
         showToast("Logged out. Returned to View-Only mode");
       };
 
-      // --- SMART AUTO-SETTLE IN BATCH (ROBUST FIX) ---
+      // Fix Problem #3: Settle Full Balance & Log to Adjustments Collection
       const handleSettleFullWithBatch = async (friendName) => {
         if (!isAdmin) {
           showToast("Only Admin can change payment status", "error");
           return;
         }
 
-        // ค้นหาบิลทั้งหมดที่เพื่อนคนนี้มีส่วนแบ่งและยังไม่ได้จ่าย (ไม่ว่าจะเทียบด้วยตัวพิมพ์เล็กหรือใหญ่)
         const unpaidBills = bills.filter(b => {
           const splitsKeys = Object.keys(b.splits || {});
           const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
@@ -553,6 +557,8 @@
           const isPaid = matchedKey ? (b.paidStatus?.[matchedKey] === true) : false;
           return hasSplit && !isPaid;
         });
+
+        const curBalance = friendBalances[friendName]?.totalOwed || 0;
 
         if (!confirm(t('settleConfirmModal', { n: unpaidBills.length, name: friendName }))) {
           return;
@@ -564,7 +570,7 @@
             const batch = db.batch();
             let operationsCount = 0;
 
-            // 1. อัปเดตสถานะบิลที่ค้างทั้งหมดเป็น Paid
+            // 1. Mark every bill as Paid
             unpaidBills.forEach(bill => {
               const bDoc = basePath.collection('bills').doc(bill.id);
               const splitsKeys = Object.keys(bill.splits || {});
@@ -574,32 +580,41 @@
               operationsCount++;
             });
 
-            // 2. ถ้ามียอด Adjustment ค้างอยู่ ให้สร้าง Adjustment ล้างยอดส่วนต่างให้เป็น 0 พอดี
+            // 2. Clear any active adjustments and record the settlement
             const currentAdjOwed = friendBalances[friendName]?.adjustedOwed || 0;
             if (currentAdjOwed !== 0) {
               const newAdjRef = basePath.collection('adjustments').doc();
               batch.set(newAdjRef, {
                 friendName,
                 amount: -currentAdjOwed,
-                note: 'Auto Settle: Cleared remaining balance',
+                note: `⚡ Auto Settle: Cleared remaining adjustments`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now()
               });
               operationsCount++;
             }
 
+            // 3. Log a clear settlement record to Adjustments tab
+            const settleLogRef = basePath.collection('adjustments').doc();
+            batch.set(settleLogRef, {
+              friendName,
+              amount: 0,
+              note: `⚡ Settled all ${unpaidBills.length} pending bill(s) (Total: ${curBalance.toFixed(2)} RM)`,
+              date: new Date().toISOString().split('T')[0],
+              createdAt: Date.now() + 1
+            });
+            operationsCount++;
+
             if (operationsCount > 0) {
               await batch.commit();
-              showToast(`🎉 Cleared ${unpaidBills.length} pending bill(s) for ${friendName}!`);
-            } else {
-              showToast("No pending items found to settle.", "info");
+              showToast(`🎉 Cleared all bills and logged settlement for ${friendName}!`);
             }
 
             setSelectedFriendForAdjust(null);
           }
         } catch (err) {
           console.error("Batch settle error:", err);
-          showToast("Failed to settle bills: " + (err.message || "Permission Denied"), "error");
+          showToast("Failed to settle: " + (err.message || "Permission Denied"), "error");
         }
       };
 
@@ -1189,10 +1204,15 @@
           showToast("Only Admin can change payment status", "error");
           return;
         }
-        const updatedStatus = { ...bill.paidStatus, [friendName]: !bill.paidStatus?.[friendName] };
+        const splitsKeys = Object.keys(bill.splits || {});
+        const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+        const currentPaid = !!bill.paidStatus?.[matchedKey];
+        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: !currentPaid };
+        
         if (db) {
           try {
             await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).update({ paidStatus: updatedStatus });
+            showToast(`Updated ${matchedKey} to ${!currentPaid ? 'Paid' : 'Pending'}`);
           } catch (err) {
             showToast("Update failed: Permission denied", "error");
           }
@@ -1349,6 +1369,7 @@
         }
       };
 
+      // Fix Problem #5: Allow Partial Settlement and Item Allocation
       const handleSaveAdjustment = async (e) => {
         e.preventDefault();
         if (!isAdmin) {
@@ -1365,7 +1386,7 @@
         const newAdj = {
           friendName: selectedFriendForAdjust,
           amount: finalAmount,
-          note: adjustNote.trim() || (adjustType === 'plus' ? 'Debt Increased' : 'Payment Settled'),
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'Debt Increased' : `Partial Payment Settled (${amount.toFixed(2)} RM)`),
           date: new Date().toISOString().split('T')[0],
           createdAt: Date.now()
         };
@@ -1373,7 +1394,7 @@
         if (db) {
           try {
             await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').add(newAdj);
-            showToast("Adjustment saved");
+            showToast(`Adjustment of ${amount.toFixed(2)} RM saved`);
           } catch (err) {
             showToast("Save failed: Permission denied", "error");
           }
@@ -2362,7 +2383,7 @@
                           <p className="text-xs text-textSecondary mt-0.5">{t('note')}: {adj.note}</p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                          <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : adj.amount < 0 ? 'text-mint' : 'text-textMuted'}`}>
                             {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
                           </span>
                           {isAdmin && (
@@ -2498,7 +2519,7 @@
             </div>
           )}
 
-          {/* --- STATEMENT MODAL --- */}
+          {/* --- STATEMENT MODAL (WITH INTERACTIVE PAID TOGGLE - Fix Problem #4) --- */}
           {selectedFriendForHistory && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
@@ -2553,7 +2574,10 @@
                     </div>
 
                     <div className="space-y-2">
-                      <p className="text-xs font-bold text-textSecondary uppercase font-sans">📋 {t('history')} ({getFriendHistory(selectedFriendForHistory).bills.length}):</p>
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs font-bold text-textSecondary uppercase font-sans">📋 {t('history')} ({getFriendHistory(selectedFriendForHistory).bills.length}):</p>
+                        <span className="text-[10px] text-textMuted font-sans">Tap status to toggle</span>
+                      </div>
                       {getFriendHistory(selectedFriendForHistory).bills.length === 0 ? (
                         <p className="text-center py-3 text-textMuted">No transactions on record</p>
                       ) : (
@@ -2573,11 +2597,23 @@
                                     {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split')}
                                   </p>
                                 </div>
-                                <div className="text-right">
-                                  <p className="font-bold text-sm text-textPrimary font-mono tabular">{userShare.toFixed(2)} RM</p>
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
-                                    {isPaid ? t('paid') : t('pending')}
-                                  </span>
+                                <div className="text-right flex items-center gap-2">
+                                  <div>
+                                    <p className="font-bold text-sm text-textPrimary font-mono tabular">{userShare.toFixed(2)} RM</p>
+                                  </div>
+                                  {isAdmin ? (
+                                    <button
+                                      onClick={() => handleTogglePaid(b, selectedFriendForHistory)}
+                                      className={`text-[11px] font-bold px-2 py-1 rounded-lg transition ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                      title="Toggle Paid Status"
+                                    >
+                                      {isPaid ? t('paid') : t('pending')}
+                                    </button>
+                                  ) : (
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
+                                      {isPaid ? t('paid') : t('pending')}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -2596,7 +2632,7 @@
                                 <span className="text-textPrimary">{adj.note}</span>
                                 <span className="text-textMuted ml-1.5 font-mono">({adj.date})</span>
                               </div>
-                              <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                              <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : adj.amount < 0 ? 'text-mint' : 'text-textMuted'}`}>
                                 {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
                               </span>
                             </div>
@@ -2796,7 +2832,7 @@
             </div>
           )}
 
-          {/* --- ADJUSTMENT & SMART SETTLE MODAL --- */}
+          {/* --- ADJUSTMENT & PARTIAL SETTLE MODAL (Fix Problem #5) --- */}
           {selectedFriendForAdjust && isAdmin && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -2849,7 +2885,7 @@
                     onClick={() => setAdjustType('minus')}
                     className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-bg shadow-sm' : 'text-textSecondary'}`}
                   >
-                    Deduct / Settle (-)
+                    Deduct / Partial Pay (-)
                   </button>
                   <button
                     type="button"
@@ -2861,7 +2897,9 @@
                 </div>
 
                 <div>
-                  <label className="block text-xs text-textSecondary font-bold mb-1">Adjustment Amount (RM)</label>
+                  <label className="block text-xs text-textSecondary font-bold mb-1">
+                    {adjustType === 'minus' ? 'Amount Received / Paid (RM)' : 'Additional Amount (RM)'}
+                  </label>
                   <input 
                     type="number"
                     step="0.01"
@@ -2877,7 +2915,7 @@
                   <label className="block text-xs text-textSecondary font-bold mb-1">{t('note')}</label>
                   <input 
                     type="text"
-                    placeholder="e.g., Transfer via DuitNow, Cash"
+                    placeholder="e.g., Paid for Rice 20 + Drinks 5, Transfer via DuitNow"
                     value={adjustNote}
                     onChange={(e) => setAdjustNote(e.target.value)}
                     className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
