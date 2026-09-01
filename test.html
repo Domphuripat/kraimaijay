@@ -205,6 +205,10 @@
         downloadPdf: "📄 PDF",
         whatsapp: "💬 WhatsApp",
         instagram: "📸 IG",
+        taxModeTitle: "Tax Mode",
+        taxModeInclusive: "✓ Incl. Tax (Included in price)",
+        taxModeAddon: "+ Add-on Tax (Added on top)",
+        taxModeHint: "Delivery apps usually include tax inside item prices",
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
@@ -274,6 +278,10 @@
         downloadPdf: "📄 เอกสาร PDF",
         whatsapp: "💬 WhatsApp",
         instagram: "📸 IG Direct",
+        taxModeTitle: "โหมดภาษี (Tax Mode)",
+        taxModeInclusive: "✓ รวมภาษีแล้ว (Incl. Tax)",
+        taxModeAddon: "+ คิดภาษีเพิ่ม (Add-on Tax)",
+        taxModeHint: "แอพเดลิเวอรีส่วนใหญ่จะรวมภาษีไว้ในราคาอาหารแล้ว",
       }
     };
 
@@ -434,7 +442,6 @@
           const firestoreInstance = firebase.firestore(firebaseApp);
           setDb(firestoreInstance);
 
-          // Auto sign-in anonymously if PIN was previously unlocked to ensure Firestore write permissions
           if (localStorage.getItem('kraimaijay_secret_admin') === 'true' && !authInstance.currentUser) {
             authInstance.signInAnonymously().catch(() => {});
           }
@@ -451,7 +458,6 @@
 
           const basePath = firestoreInstance.collection('artifacts').doc(appId).collection('public').doc('data');
           
-          // De-duplicate Friend Query (Fix Problem #2)
           const unsubFriends = basePath.collection('friends').onSnapshot(snap => {
             const list = [];
             const seenNames = new Set();
@@ -513,7 +519,6 @@
         }
       };
 
-      // Fix Problem #1: Sign In Anonymously on Valid PIN to bypass Firestore Permission Denied
       const handleVerifyPin = async (e) => {
         e.preventDefault();
         if (inputPin === ADMIN_PIN) {
@@ -522,7 +527,7 @@
           try {
             await firebase.auth().signInAnonymously();
           } catch (err) {
-            console.warn("Anonymous auth failed, continuing with client state", err);
+            console.warn("Anonymous auth failed", err);
           }
           setShowAuthModal(false);
           setInputPin('');
@@ -543,7 +548,6 @@
         showToast("Logged out. Returned to View-Only mode");
       };
 
-      // Fix Problem #3: Settle Full Balance & Log to Adjustments Collection
       const handleSettleFullWithBatch = async (friendName) => {
         if (!isAdmin) {
           showToast("Only Admin can change payment status", "error");
@@ -570,7 +574,6 @@
             const batch = db.batch();
             let operationsCount = 0;
 
-            // 1. Mark every bill as Paid
             unpaidBills.forEach(bill => {
               const bDoc = basePath.collection('bills').doc(bill.id);
               const splitsKeys = Object.keys(bill.splits || {});
@@ -580,7 +583,6 @@
               operationsCount++;
             });
 
-            // 2. Clear any active adjustments and record the settlement
             const currentAdjOwed = friendBalances[friendName]?.adjustedOwed || 0;
             if (currentAdjOwed !== 0) {
               const newAdjRef = basePath.collection('adjustments').doc();
@@ -594,7 +596,6 @@
               operationsCount++;
             }
 
-            // 3. Log a clear settlement record to Adjustments tab
             const settleLogRef = basePath.collection('adjustments').doc();
             batch.set(settleLogRef, {
               friendName,
@@ -1369,7 +1370,6 @@
         }
       };
 
-      // Fix Problem #5: Allow Partial Settlement and Item Allocation
       const handleSaveAdjustment = async (e) => {
         e.preventDefault();
         if (!isAdmin) {
@@ -1800,6 +1800,7 @@
                           <label className="block text-xs text-textSecondary mb-1 font-bold">Base Ride Fare (RM)</label>
                           <input 
                             type="text" 
+                            inputMode="decimal"
                             value={rideFare}
                             onChange={(e) => setRideFare(e.target.value)}
                             onBlur={(e) => setRideFare(evaluateMathExpression(e.target.value))}
@@ -1813,6 +1814,7 @@
                           <label className="block text-xs text-amber mb-1 font-bold">Toll / Surcharge (RM)</label>
                           <input 
                             type="text" 
+                            inputMode="decimal"
                             value={tollFee}
                             onChange={(e) => setTollFee(e.target.value)}
                             onBlur={(e) => setTollFee(evaluateMathExpression(e.target.value))}
@@ -1825,6 +1827,7 @@
                           <label className="block text-xs text-coral mb-1 font-bold">Discount / Promo (RM)</label>
                           <input 
                             type="text" 
+                            inputMode="decimal"
                             value={discountAmount}
                             onChange={(e) => setDiscountAmount(e.target.value)}
                             onBlur={(e) => setDiscountAmount(evaluateMathExpression(e.target.value))}
@@ -1836,10 +1839,11 @@
                         <div>
                           <label className="block text-xs text-textSecondary mb-1 font-bold">Rounding (+/- RM)</label>
                           <input 
-                            type="number" 
-                            step="0.01"
+                            type="text" 
+                            inputMode="decimal"
                             value={roundingAdj}
-                            onChange={(e) => setRoundingAdj(parseFloat(e.target.value) || 0)}
+                            onChange={(e) => setRoundingAdj(e.target.value)}
+                            onBlur={(e) => setRoundingAdj(parseFloat(e.target.value) || 0)}
                             className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
                             placeholder="0.00"
                           />
@@ -1860,25 +1864,26 @@
                   ) : (
                     <>
                       <div className="bg-subtle p-4 rounded-xl border border-line space-y-4">
+                        {/* TAX MODE TOGGLE */}
                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-3 border-b border-line">
                           <div>
-                            <p className="text-xs font-bold text-textPrimary">Tax Mode</p>
-                            <p className="text-[11px] text-textSecondary">Delivery apps usually include tax inside item prices</p>
+                            <p className="text-xs font-bold text-textPrimary">{t('taxModeTitle')}</p>
+                            <p className="text-[11px] text-textSecondary">{t('taxModeHint')}</p>
                           </div>
-                          <div className="flex bg-surface p-1 rounded-lg border border-line">
+                          <div className="grid grid-cols-2 bg-surface p-1 rounded-xl border border-line gap-1">
                             <button
                               type="button"
                               onClick={() => setTaxMode('inclusive')}
-                              className={`px-3 py-1 text-xs font-bold rounded-md transition ${taxMode === 'inclusive' ? 'bg-accent text-white' : 'text-textSecondary'}`}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition text-center ${taxMode === 'inclusive' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
                             >
-                              ✓ Incl. Tax (Included)
+                              {t('taxModeInclusive')}
                             </button>
                             <button
                               type="button"
                               onClick={() => setTaxMode('addon')}
-                              className={`px-3 py-1 text-xs font-bold rounded-md transition ${taxMode === 'addon' ? 'bg-accent text-white' : 'text-textSecondary'}`}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition text-center ${taxMode === 'addon' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
                             >
-                              + Add-on Tax (Added on top)
+                              {t('taxModeAddon')}
                             </button>
                           </div>
                         </div>
@@ -1888,6 +1893,7 @@
                             <label className="block text-xs text-emerald-400 mb-1 font-bold">🛵 Delivery Fee</label>
                             <input 
                               type="text" 
+                              inputMode="decimal"
                               value={deliveryFee}
                               onChange={(e) => setDeliveryFee(e.target.value)}
                               onBlur={(e) => setDeliveryFee(evaluateMathExpression(e.target.value))}
@@ -1900,6 +1906,7 @@
                             <label className="block text-xs text-amber mb-1 font-bold">📦 Packaging Charge</label>
                             <input 
                               type="text" 
+                              inputMode="decimal"
                               value={packagingCharge}
                               onChange={(e) => setPackagingCharge(e.target.value)}
                               onBlur={(e) => setPackagingCharge(evaluateMathExpression(e.target.value))}
@@ -1912,6 +1919,7 @@
                             <label className="block text-xs text-coral mb-1 font-bold">🏷️ Discount (-)</label>
                             <input 
                               type="text" 
+                              inputMode="decimal"
                               value={discountAmount}
                               onChange={(e) => setDiscountAmount(e.target.value)}
                               onBlur={(e) => setDiscountAmount(evaluateMathExpression(e.target.value))}
@@ -1923,10 +1931,11 @@
                           <div>
                             <label className="block text-xs text-textSecondary mb-1 font-bold">Service Charge (%)</label>
                             <input 
-                              type="number" 
-                              step="0.1"
+                              type="text" 
+                              inputMode="decimal"
                               value={serviceChargeRate}
-                              onChange={(e) => setServiceChargeRate(parseFloat(e.target.value) || 0)}
+                              onChange={(e) => setServiceChargeRate(e.target.value)}
+                              onBlur={(e) => setServiceChargeRate(parseFloat(e.target.value) || 0)}
                               className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
                               placeholder="0"
                             />
@@ -1935,10 +1944,11 @@
                           <div>
                             <label className="block text-xs text-textSecondary mb-1 font-bold">Rounding (+/-)</label>
                             <input 
-                              type="number" 
-                              step="0.01"
+                              type="text" 
+                              inputMode="decimal"
                               value={roundingAdj}
-                              onChange={(e) => setRoundingAdj(parseFloat(e.target.value) || 0)}
+                              onChange={(e) => setRoundingAdj(e.target.value)}
+                              onBlur={(e) => setRoundingAdj(parseFloat(e.target.value) || 0)}
                               className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
                               placeholder="0.00"
                             />
@@ -1986,8 +1996,10 @@
                                   />
                                 </div>
                                 <div className="col-span-4 sm:col-span-2">
+                                  {/* PRICE WITH DECIMAL INPUT MODE */}
                                   <input
                                     type="text"
+                                    inputMode="decimal"
                                     value={item.price}
                                     onChange={(e) => setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, price: e.target.value } : bi))}
                                     onBlur={(e) => {
@@ -2000,12 +2012,23 @@
                                   />
                                 </div>
                                 <div className="col-span-3 sm:col-span-2">
+                                  {/* QTY WITH FULL NUMERIC / PIN PAD INPUT MODE */}
                                   <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
                                     value={item.qty}
-                                    onChange={(e) => setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, qty: parseInt(e.target.value) || 1 } : bi))}
-                                    className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
-                                    placeholder="Qty"
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/[^0-9]/g, '');
+                                      setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, qty: val ? parseInt(val) : '' } : bi));
+                                    }}
+                                    onBlur={(e) => {
+                                      if (!e.target.value || parseInt(e.target.value) <= 0) {
+                                        setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, qty: 1 } : bi));
+                                      }
+                                    }}
+                                    className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono text-center font-bold"
+                                    placeholder="1"
                                     required
                                   />
                                 </div>
@@ -2519,7 +2542,7 @@
             </div>
           )}
 
-          {/* --- STATEMENT MODAL (WITH INTERACTIVE PAID TOGGLE - Fix Problem #4) --- */}
+          {/* --- STATEMENT MODAL --- */}
           {selectedFriendForHistory && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
@@ -2832,7 +2855,7 @@
             </div>
           )}
 
-          {/* --- ADJUSTMENT & PARTIAL SETTLE MODAL (Fix Problem #5) --- */}
+          {/* --- ADJUSTMENT & PARTIAL SETTLE MODAL --- */}
           {selectedFriendForAdjust && isAdmin && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -2901,11 +2924,12 @@
                     {adjustType === 'minus' ? 'Amount Received / Paid (RM)' : 'Additional Amount (RM)'}
                   </label>
                   <input 
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     placeholder="0.00"
                     value={adjustAmount}
                     onChange={(e) => setAdjustAmount(e.target.value)}
+                    onBlur={(e) => setAdjustAmount(evaluateMathExpression(e.target.value))}
                     className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm font-mono focus:border-accent outline-none"
                     required
                   />
