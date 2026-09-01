@@ -1,0 +1,17 @@
+{
+  "name": "KraiMaiJayMeeReung - Split & Settle",
+  "short_name": "KraiMaiJay",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "cat.jpg",
+      "sizes": "192x192 512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
