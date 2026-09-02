@@ -1369,16 +1369,39 @@
           showToast("Only Admin can change payment status", "error");
           return;
         }
+        
         const splitsKeys = Object.keys(bill.splits || {});
         const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
         const currentPaid = !!bill.paidStatus?.[matchedKey];
-        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: !currentPaid };
-        
+        const newPaidStatus = !currentPaid;
+        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: newPaidStatus };
+        const userShare = bill.splits?.[matchedKey] || 0;
+      
         if (db) {
           try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).update({ paidStatus: updatedStatus });
-            showToast(`Updated ${matchedKey} to ${!currentPaid ? 'Paid' : 'Pending'}`);
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+      
+            // 1. อัปเดตสถานะในตัวบิล
+            const billRef = basePath.collection('bills').doc(bill.id);
+            batch.update(billRef, { paidStatus: updatedStatus });
+      
+            // 2. ถ้ากดเปลี่ยนเป็น "จ่ายแล้ว (Paid)" ให้เพิ่ม Log ประวัติการชำระเงินลงแท็บ Adjustments อัตโนมัติ
+            if (newPaidStatus && userShare > 0) {
+              const adjRef = basePath.collection('adjustments').doc();
+              batch.set(adjRef, {
+                friendName: matchedKey,
+                amount: 0, // ยอดคงเหลือ 0 เพราะเคลียร์บิลนี้แล้ว
+                note: `✓ ชำระแล้ว: ${bill.name} (${userShare.toFixed(2)} RM)`,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: Date.now()
+              });
+            }
+      
+            await batch.commit();
+            showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
           } catch (err) {
+            console.error(err);
             showToast("Update failed: Permission denied", "error");
           }
         }
