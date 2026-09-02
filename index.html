@@ -648,7 +648,6 @@
         }
       };
 
-      // --- FEATURE 3: EXPORT JSON, CSV & RESTORE BACKUP ---
       const handleExportJSONBackup = () => {
         const fullBackup = {
           version: "1.0",
@@ -747,7 +746,6 @@
         reader.readAsText(file);
       };
 
-      // --- FEATURE 4: MONTHLY SPENDING ANALYTICS CALCULATIONS ---
       const monthlyBills = useMemo(() => {
         return bills.filter(b => (b.date || '').startsWith(selectedMonth));
       }, [bills, selectedMonth]);
@@ -1364,44 +1362,41 @@
         setActiveTab('bills');
       };
 
+      // Handle Toggle Paid with Automatic Adjustment History Logging
       const handleTogglePaid = async (bill, friendName) => {
         if (!isAdmin) {
           showToast("Only Admin can change payment status", "error");
           return;
         }
-        
         const splitsKeys = Object.keys(bill.splits || {});
         const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
         const currentPaid = !!bill.paidStatus?.[matchedKey];
         const newPaidStatus = !currentPaid;
         const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: newPaidStatus };
         const userShare = bill.splits?.[matchedKey] || 0;
-      
+        
         if (db) {
           try {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
             const batch = db.batch();
-      
-            // 1. อัปเดตสถานะในตัวบิล
+
             const billRef = basePath.collection('bills').doc(bill.id);
             batch.update(billRef, { paidStatus: updatedStatus });
-      
-            // 2. ถ้ากดเปลี่ยนเป็น "จ่ายแล้ว (Paid)" ให้เพิ่ม Log ประวัติการชำระเงินลงแท็บ Adjustments อัตโนมัติ
+
             if (newPaidStatus && userShare > 0) {
               const adjRef = basePath.collection('adjustments').doc();
               batch.set(adjRef, {
                 friendName: matchedKey,
-                amount: 0, // ยอดคงเหลือ 0 เพราะเคลียร์บิลนี้แล้ว
+                amount: 0,
                 note: `✓ ชำระแล้ว: ${bill.name} (${userShare.toFixed(2)} RM)`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now()
               });
             }
-      
+
             await batch.commit();
             showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
           } catch (err) {
-            console.error(err);
             showToast("Update failed: Permission denied", "error");
           }
         }
@@ -2575,7 +2570,7 @@
               </div>
             )}
 
-            {/* --- 5. ADJUSTMENTS TAB --- */}
+            {/* --- 5. ADJUSTMENTS TAB (UPDATED VISUAL DISPLAY) --- */}
             {activeTab === 'adjustments' && (
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-textPrimary">{t('adjustmentLogs')} ({adjustments.length})</h2>
@@ -2591,13 +2586,19 @@
                           <p className="text-xs text-textSecondary mt-0.5">{t('note')}: {adj.note}</p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : adj.amount < 0 ? 'text-mint' : 'text-textMuted'}`}>
-                            {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
-                          </span>
+                          {adj.amount === 0 ? (
+                            <span className="text-mint font-bold font-mono text-xs bg-mint/10 border border-mint/30 px-2 py-0.5 rounded-md">
+                              ✓ Settled
+                            </span>
+                          ) : (
+                            <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                              {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
+                            </span>
+                          )}
                           {isAdmin && (
                             <button
                               onClick={() => handleDeleteAdjustment(adj)}
-                              className="text-textMuted hover:text-coral text-xs underline"
+                              className="text-textMuted hover:text-coral text-xs underline ml-1"
                             >
                               {t('delete')}
                             </button>
@@ -2610,7 +2611,7 @@
               </div>
             )}
 
-            {/* --- 6. ANALYTICS & BACKUP TAB (FEATURES 3 & 4) --- */}
+            {/* --- 6. ANALYTICS & BACKUP TAB --- */}
             {activeTab === 'analytics' && (
               <div className="space-y-6">
                 
@@ -2970,9 +2971,15 @@
                                 <span className="text-textPrimary">{adj.note}</span>
                                 <span className="text-textMuted ml-1.5 font-mono">({adj.date})</span>
                               </div>
-                              <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : adj.amount < 0 ? 'text-mint' : 'text-textMuted'}`}>
-                                {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
-                              </span>
+                              {adj.amount === 0 ? (
+                                <span className="text-mint font-bold font-mono text-[10px] bg-mint/10 border border-mint/30 px-1.5 py-0.2 rounded">
+                                  ✓ Settled
+                                </span>
+                              ) : (
+                                <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                                  {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
