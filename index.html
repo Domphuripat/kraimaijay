@@ -189,8 +189,8 @@
         showArchived: "Show Archived Friends",
         hideArchived: "Hide Archived Friends",
         archivedBadge: "Archived",
-        adjustmentLogs: "Adjustment Logs",
-        noAdjustments: "No adjustment logs recorded yet",
+        adjustmentLogs: "Payment & Adjustment Logs",
+        noAdjustments: "No logs recorded yet",
         note: "Note",
         calculator: "Calculator",
         copy: "Copy",
@@ -235,7 +235,7 @@
         dashboard: "แดชบอร์ด",
         history: "ประวัติบิล",
         friends: "เพื่อน & ยอดค้าง",
-        adjustments: "ประวัติปรับยอด",
+        adjustments: "ประวัติการชำระ & ปรับยอด",
         analytics: "สถิติ & สำรองข้อมูล",
         totalOutstanding: "ยอดรวมที่ต้องเก็บเพื่อน (รอโอน)",
         pendingFriends: "ค้างชำระทั้งหมด {n} คน",
@@ -275,8 +275,8 @@
         showArchived: "แสดงเพื่อนที่ซ่อน (Archived)",
         hideArchived: "ซ่อนเพื่อนที่เก็บถาวร",
         archivedBadge: "เก็บถาวร",
-        adjustmentLogs: "ประวัติการปรับลดยอด / ปิดยอด",
-        noAdjustments: "ยังไม่มีประวัติการปรับลดยอด",
+        adjustmentLogs: "ประวัติการชำระเงิน & ปรับลดยอด",
+        noAdjustments: "ยังไม่มีประวัติการทำรายการ",
         note: "หมายเหตุ",
         calculator: "เครื่องคิดเลข",
         copy: "คัดลอก",
@@ -285,7 +285,7 @@
         cancel: "ยกเลิก",
         save: "บันทึก",
         settleFullPrompt: "⚡ เคลียร์บิลที่ค้างทั้งหมด ({amt} RM)",
-        settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และบันทึกลงประวัติปรับยอดของ {name} ใช่หรือไม่?",
+        settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และบันทึกลงประวัติการชำระของ {name} ใช่หรือไม่?",
         statementTitle: "ใบแจ้งยอดหนี้คงค้างสะสม",
         fromBills: "จากบิลอาหาร/รถ",
         adjusted: "ยอดปรับลด",
@@ -602,6 +602,7 @@
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
             const batch = db.batch();
             let operationsCount = 0;
+            const settledBillIds = [];
 
             unpaidBills.forEach(bill => {
               const bDoc = basePath.collection('bills').doc(bill.id);
@@ -609,6 +610,7 @@
               const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
               const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
               batch.update(bDoc, { paidStatus: nextStatus });
+              settledBillIds.push(bill.id);
               operationsCount++;
             });
 
@@ -617,7 +619,8 @@
               const newAdjRef = basePath.collection('adjustments').doc();
               batch.set(newAdjRef, {
                 friendName,
-                amount: -currentAdjOwed,
+                displayAmount: Math.abs(currentAdjOwed),
+                isPaymentRecord: false,
                 note: `⚡ Auto Settle: Cleared remaining adjustments`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now()
@@ -625,11 +628,14 @@
               operationsCount++;
             }
 
+            // บันทึก Log การ Settle ครบทุกบิล พร้อมจำ billIds เผื่อกดยกเลิก/ลบในอนาคต
             const settleLogRef = basePath.collection('adjustments').doc();
             batch.set(settleLogRef, {
               friendName,
-              amount: 0,
-              note: `⚡ Settled all ${unpaidBills.length} pending bill(s) (Total: ${curBalance.toFixed(2)} RM)`,
+              displayAmount: curBalance,
+              isPaymentRecord: true,
+              relatedBillIds: settledBillIds,
+              note: `⚡ เคลียร์ยอดบิลทั้งหมด (${unpaidBills.length} รายการ)`,
               date: new Date().toISOString().split('T')[0],
               createdAt: Date.now() + 1
             });
@@ -637,7 +643,7 @@
 
             if (operationsCount > 0) {
               await batch.commit();
-              showToast(`🎉 Cleared all bills and logged settlement for ${friendName}!`);
+              showToast(`🎉 Cleared all bills and logged payment for ${friendName}!`);
             }
 
             setSelectedFriendForAdjust(null);
@@ -821,6 +827,7 @@
           pdf.save(`${filename}.pdf`);
           showToast("PDF Downloaded successfully!");
         } catch (err) {
+          console.error(err);
           showToast("Failed to generate PDF", "error");
         }
       };
@@ -1176,7 +1183,8 @@
         adjustments.forEach(adj => {
           const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
           const realName = fObj ? fObj.name : adj.friendName;
-          if (balances[realName]) {
+          // นับเฉพาะ adjustment ที่มีผลต่อยอดเงินจริง (เช่น manual adjust / partial pay)
+          if (balances[realName] && adj.amount !== undefined) {
             balances[realName].adjustedOwed += adj.amount;
           }
         });
@@ -1362,7 +1370,7 @@
         setActiveTab('bills');
       };
 
-      // Handle Toggle Paid with Automatic Adjustment History Logging
+      // Handle Toggle Paid with Syncable Bill-Specific Adjustment Log
       const handleTogglePaid = async (bill, friendName) => {
         if (!isAdmin) {
           showToast("Only Admin can change payment status", "error");
@@ -1384,13 +1392,23 @@
             batch.update(billRef, { paidStatus: updatedStatus });
 
             if (newPaidStatus && userShare > 0) {
+              // เพิ่ม Log ชำระเงิน พร้อมบันทึก displayAmount และ billId อ้างอิง
               const adjRef = basePath.collection('adjustments').doc();
               batch.set(adjRef, {
                 friendName: matchedKey,
-                amount: 0,
-                note: `✓ ชำระแล้ว: ${bill.name} (${userShare.toFixed(2)} RM)`,
+                billId: bill.id,
+                displayAmount: userShare,
+                isPaymentRecord: true,
+                note: `✓ ชำระแล้ว: ${bill.name}`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now()
+              });
+            } else if (!newPaidStatus) {
+              // ถ้าเปลี่ยนกลับเป็นยังไม่จ่าย ให้ลบ Log ที่ผูกกับบิลนี้ออก
+              const matchedAdjs = adjustments.filter(a => a.billId === bill.id && a.friendName.toLowerCase() === matchedKey.toLowerCase());
+              matchedAdjs.forEach(adj => {
+                const adjRef = basePath.collection('adjustments').doc(adj.id);
+                batch.delete(adjRef);
               });
             }
 
@@ -1535,17 +1553,51 @@
         handleCancelRenameFriend();
       };
 
+      // Handle Delete Adjustment with Auto-Revert to Pending on Bills
       const handleDeleteAdjustment = async (adj) => {
         if (!isAdmin) {
           showToast("Only Admin can delete adjustments", "error");
           return;
         }
-        if (!confirm(`Delete adjustment for "${adj.friendName}"?`)) return;
+        if (!confirm(`Delete adjustment log for "${adj.friendName}"? (Related bills will return to Pending)`)) return;
 
         if (db) {
           try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id).delete();
-            showToast("Adjustment removed");
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            // 1. ลบเอกสาร Adjustment
+            const adjRef = basePath.collection('adjustments').doc(adj.id);
+            batch.delete(adjRef);
+
+            // 2. ถ้า Log นี้มาจากการกด Paid บิลเดี่ยว ให้ปลดสถานะบิลนั้นกลับเป็น Pending ทันที
+            if (adj.billId) {
+              const billObj = bills.find(b => b.id === adj.billId);
+              if (billObj) {
+                const splitsKeys = Object.keys(billObj.splits || {});
+                const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
+                const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                const billRef = basePath.collection('bills').doc(adj.billId);
+                batch.update(billRef, { paidStatus: newPaidStatus });
+              }
+            }
+
+            // 3. ถ้า Log นี้มาจากการกด Settle All Bills ให้ปลดสถานะทุกบิลที่เกี่ยวข้องกลับเป็น Pending
+            if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
+              adj.relatedBillIds.forEach(bId => {
+                const billObj = bills.find(b => b.id === bId);
+                if (billObj) {
+                  const splitsKeys = Object.keys(billObj.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
+                  const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                  const billRef = basePath.collection('bills').doc(bId);
+                  batch.update(billRef, { paidStatus: newPaidStatus });
+                }
+              });
+            }
+
+            await batch.commit();
+            showToast("Adjustment removed & bills reverted to Pending");
           } catch (err) {
             showToast("Delete failed: Permission denied", "error");
           }
@@ -1568,6 +1620,8 @@
         const newAdj = {
           friendName: selectedFriendForAdjust,
           amount: finalAmount,
+          displayAmount: amount,
+          isPaymentRecord: adjustType === 'minus',
           note: adjustNote.trim() || (adjustType === 'plus' ? 'Debt Increased' : `Partial Payment Settled (${amount.toFixed(2)} RM)`),
           date: new Date().toISOString().split('T')[0],
           createdAt: Date.now()
@@ -2586,15 +2640,16 @@
                           <p className="text-xs text-textSecondary mt-0.5">{t('note')}: {adj.note}</p>
                         </div>
                         <div className="flex items-center gap-3">
-                          {adj.amount === 0 ? (
-                            <span className="text-mint font-bold font-mono text-xs bg-mint/10 border border-mint/30 px-2 py-0.5 rounded-md">
-                              ✓ Settled
+                          {adj.displayAmount !== undefined ? (
+                            <span className="font-bold font-mono text-mint">
+                              {adj.displayAmount.toFixed(2)} RM
                             </span>
-                          ) : (
+                          ) : adj.amount !== undefined ? (
                             <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
-                              {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
+                              {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
                             </span>
-                          )}
+                          ) : null}
+                          
                           {isAdmin && (
                             <button
                               onClick={() => handleDeleteAdjustment(adj)}
@@ -2971,15 +3026,26 @@
                                 <span className="text-textPrimary">{adj.note}</span>
                                 <span className="text-textMuted ml-1.5 font-mono">({adj.date})</span>
                               </div>
-                              {adj.amount === 0 ? (
-                                <span className="text-mint font-bold font-mono text-[10px] bg-mint/10 border border-mint/30 px-1.5 py-0.2 rounded">
-                                  ✓ Settled
-                                </span>
-                              ) : (
-                                <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
-                                  {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
-                                </span>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {adj.displayAmount !== undefined ? (
+                                  <span className="font-bold font-mono text-mint">
+                                    {adj.displayAmount.toFixed(2)} RM
+                                  </span>
+                                ) : adj.amount !== undefined ? (
+                                  <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                                    {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                                  </span>
+                                ) : null}
+
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => handleDeleteAdjustment(adj)}
+                                    className="text-textMuted hover:text-coral text-xs underline"
+                                  >
+                                    {t('delete')}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
