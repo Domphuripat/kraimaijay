@@ -1307,10 +1307,11 @@
         }
         billFriends.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
-            const fObj = friends.find(fr => fr.name === f);
-            initialPaidStatus[f] = fObj?.isSelf || false;
-          }
-        });
+            const fObj = friends.find(fr => fr.name.toLowerCase() === f.toLowerCase());
+            const isMe = fObj?.isSelf || /me|dom/i.test(f);
+            initialPaidStatus[f] = isMe ? true : false;
+        }
+      });
 
         const billPayload = {
           name: newBillName,
