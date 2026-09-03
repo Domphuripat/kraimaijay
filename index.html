@@ -628,7 +628,6 @@
               operationsCount++;
             }
 
-            // บันทึก Log การ Settle ครบทุกบิล พร้อมจำ billIds เผื่อกดยกเลิก/ลบในอนาคต
             const settleLogRef = basePath.collection('adjustments').doc();
             batch.set(settleLogRef, {
               friendName,
@@ -1183,7 +1182,6 @@
         adjustments.forEach(adj => {
           const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
           const realName = fObj ? fObj.name : adj.friendName;
-          // นับเฉพาะ adjustment ที่มีผลต่อยอดเงินจริง (เช่น manual adjust / partial pay)
           if (balances[realName] && adj.amount !== undefined) {
             balances[realName].adjustedOwed += adj.amount;
           }
@@ -1305,13 +1303,15 @@
           const oldBill = bills.find(b => b.id === editingBillId);
           initialPaidStatus = oldBill?.paidStatus || {};
         }
+
+        // Auto-set Me (Dom) to true (Paid) initially, others to false
         billFriends.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
             const fObj = friends.find(fr => fr.name.toLowerCase() === f.toLowerCase());
             const isMe = fObj?.isSelf || /me|dom/i.test(f);
             initialPaidStatus[f] = isMe ? true : false;
-        }
-      });
+          }
+        });
 
         const billPayload = {
           name: newBillName,
@@ -1393,7 +1393,6 @@
             batch.update(billRef, { paidStatus: updatedStatus });
 
             if (newPaidStatus && userShare > 0) {
-              // เพิ่ม Log ชำระเงิน พร้อมบันทึก displayAmount และ billId อ้างอิง
               const adjRef = basePath.collection('adjustments').doc();
               batch.set(adjRef, {
                 friendName: matchedKey,
@@ -1405,7 +1404,6 @@
                 createdAt: Date.now()
               });
             } else if (!newPaidStatus) {
-              // ถ้าเปลี่ยนกลับเป็นยังไม่จ่าย ให้ลบ Log ที่ผูกกับบิลนี้ออก
               const matchedAdjs = adjustments.filter(a => a.billId === bill.id && a.friendName.toLowerCase() === matchedKey.toLowerCase());
               matchedAdjs.forEach(adj => {
                 const adjRef = basePath.collection('adjustments').doc(adj.id);
@@ -1567,11 +1565,9 @@
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
             const batch = db.batch();
 
-            // 1. ลบเอกสาร Adjustment
             const adjRef = basePath.collection('adjustments').doc(adj.id);
             batch.delete(adjRef);
 
-            // 2. ถ้า Log นี้มาจากการกด Paid บิลเดี่ยว ให้ปลดสถานะบิลนั้นกลับเป็น Pending ทันที
             if (adj.billId) {
               const billObj = bills.find(b => b.id === adj.billId);
               if (billObj) {
@@ -1583,7 +1579,6 @@
               }
             }
 
-            // 3. ถ้า Log นี้มาจากการกด Settle All Bills ให้ปลดสถานะทุกบิลที่เกี่ยวข้องกลับเป็น Pending
             if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
               adj.relatedBillIds.forEach(bId => {
                 const billObj = bills.find(b => b.id === bId);
@@ -1984,7 +1979,7 @@
                         type="text" 
                         value={newBillName}
                         onChange={(e) => setNewBillName(e.target.value)}
-                        className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent focus:ring-1 focus:ring-accent outline-none"
+                        className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
                         placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : 'e.g., KFC GrabFood, Baby Cami'}
                         required
                       />
@@ -2000,6 +1995,7 @@
                     </div>
                   </div>
 
+                  {/* 1. PARTICIPANTS SELECTION WITH AUTO-CLEAN SHARED ITEMS */}
                   <div>
                     <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
                       Participants ({billFriends.length} people)
@@ -2013,7 +2009,12 @@
                             type="button"
                             onClick={() => {
                               if (isSelected) {
-                                setBillFriends(billFriends.filter(f => f !== friend.name));
+                                const nextFriends = billFriends.filter(f => f !== friend.name);
+                                setBillFriends(nextFriends);
+                                setBillItems(billItems.map(item => ({
+                                  ...item,
+                                  sharedWith: (item.sharedWith || []).filter(name => name !== friend.name)
+                                })));
                               } else {
                                 setBillFriends([...billFriends, friend.name]);
                               }
@@ -2281,27 +2282,31 @@
                                 </div>
                               </div>
 
+                              {/* 2. SHARED BY: FILTERED BY PARTICIPANTS ONLY */}
                               <div>
                                 <p className="text-[11px] text-textSecondary mb-1.5 font-bold">Shared By:</p>
                                 <div className="flex flex-wrap gap-1.5">
-                                  {friends.filter(f => !f.isArchived).map(f => {
-                                    const fName = f.name;
-                                    const isShared = (item.sharedWith || []).includes(fName);
-                                    return (
-                                      <button
-                                        key={fName}
-                                        type="button"
-                                        onClick={() => {
-                                          const currentShared = item.sharedWith || [];
-                                          const nextShared = isShared ? currentShared.filter(sn => sn !== fName) : [...currentShared, fName];
-                                          setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, sharedWith: nextShared } : bi));
-                                        }}
-                                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${isShared ? 'bg-mint text-bg font-bold shadow-sm' : 'bg-surface text-textSecondary border border-line'}`}
-                                      >
-                                        {fName}
-                                      </button>
-                                    );
-                                  })}
+                                  {billFriends.length === 0 ? (
+                                    <span className="text-[11px] text-coral">กรุณาเลือก Participants ด้านบนก่อน</span>
+                                  ) : (
+                                    billFriends.map(fName => {
+                                      const isShared = (item.sharedWith || []).includes(fName);
+                                      return (
+                                        <button
+                                          key={fName}
+                                          type="button"
+                                          onClick={() => {
+                                            const currentShared = item.sharedWith || [];
+                                            const nextShared = isShared ? currentShared.filter(sn => sn !== fName) : [...currentShared, fName];
+                                            setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, sharedWith: nextShared } : bi));
+                                          }}
+                                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${isShared ? 'bg-mint text-bg font-bold shadow-sm' : 'bg-surface text-textSecondary border border-line'}`}
+                                        >
+                                          {fName}
+                                        </button>
+                                      );
+                                    })
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2625,7 +2630,7 @@
               </div>
             )}
 
-            {/* --- 5. ADJUSTMENTS TAB (UPDATED VISUAL DISPLAY) --- */}
+            {/* --- 5. ADJUSTMENTS TAB --- */}
             {activeTab === 'adjustments' && (
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-textPrimary">{t('adjustmentLogs')} ({adjustments.length})</h2>
@@ -2647,7 +2652,7 @@
                             </span>
                           ) : adj.amount !== undefined ? (
                             <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
-                              {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                              {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
                             </span>
                           ) : null}
                           
