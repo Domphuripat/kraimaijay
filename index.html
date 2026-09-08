@@ -255,9 +255,9 @@
         filterAll: "ทั้งหมด",
         filterPending: "เฉพาะที่ยังค้าง",
         filterSettled: "เคลียร์ครบแล้ว",
-        filterRide: "🚗 เฉพาะค่ารถ",
+        filterRide: "🚗 ค่ารถ",
         filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
-        filterLoan: "💸 ยืมเงิน / Loan",
+        filterLoan: "💸 ยืมเงิน",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
         subtotal: "ยอดรวมก่อนลด",
@@ -925,20 +925,21 @@
         }
       };
 
-      // --- FIXED GEMINI AI VISION RECEIPT SCANNER ---
+      // --- ROBUST GEMINI AI VISION RECEIPT SCANNER ---
       const scanReceiptWithGeminiAI = async (imageFile, apiKey) => {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.readAsDataURL(imageFile);
           reader.onloadend = async () => {
             try {
-              const base64Data = reader.result.split(',')[1];
+              // ตัดส่วนหัว base64 ออกให้เหลือเฉพาะข้อมูลดิบ
+              const base64Raw = reader.result.toString();
+              const base64Data = base64Raw.includes(',') ? base64Raw.split(',')[1] : base64Raw;
               const mimeType = imageFile.type || 'image/jpeg';
               
-              const prompt = `You are an expert receipt OCR analyzer. Analyze this receipt or order screenshot (GrabFood, Foodpanda, Aeon supermarket, 7-Eleven, restaurant bill, or transport receipt).
-Extract and return a strict JSON object with these exact keys:
+              const prompt = `Analyze this receipt image. Extract and return ONLY a strict JSON object with this structure:
 {
-  "merchantName": "Store/Merchant name or empty string",
+  "merchantName": "Store/Merchant name",
   "items": [
     { "name": "Item description", "price": 0.00, "qty": 1 }
   ],
@@ -949,58 +950,62 @@ Extract and return a strict JSON object with these exact keys:
   "rideFare": 0.00
 }
 Rules:
-- price must be unit price (number).
+- price must be numeric unit price.
 - qty must be integer.
-- discountAmount must be a positive number if discount is present.
-- Ignore barcode digits or tax summary lines in item names.
-- Output ONLY pure JSON without markdown backticks.`;
+- discountAmount must be a positive number if discount exists.
+- Return pure JSON only without markdown fences.`;
 
-              // ลองเรียก gemini-1.5-flash ผ่าน v1beta endpoint
-              let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-              
-              let response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [{
-                    parts: [
-                      { text: prompt },
-                      { inlineData: { mimeType: mimeType, data: base64Data } }
-                    ]
-                  }],
-                  generationConfig: {
-                    responseMimeType: "application/json"
+              const payload = {
+                contents: [{
+                  parts: [
+                    { text: prompt },
+                    { inlineData: { mimeType: mimeType, data: base64Data } }
+                  ]
+                }],
+                generationConfig: {
+                  responseMimeType: "application/json"
+                }
+              };
+
+              // รายชื่อโมเดลและ Endpoint ที่ระบบจะทดสอบตามลำดับ
+              const candidateEndpoints = [
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`
+              ];
+
+              let lastError = null;
+              let successData = null;
+
+              for (const url of candidateEndpoints) {
+                try {
+                  const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                  });
+
+                  if (res.ok) {
+                    successData = await res.json();
+                    break;
+                  } else {
+                    const errRes = await res.json().catch(() => ({}));
+                    lastError = errRes.error?.message || `HTTP ${res.status}`;
                   }
-                })
-              });
-
-              // Fallback กรณีโมเดลชื่อ gemini-1.5-flash-latest
-              if (!response.ok) {
-                endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-                response = await fetch(endpoint, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    contents: [{
-                      parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: mimeType, data: base64Data } }
-                      ]
-                    }],
-                    generationConfig: {
-                      responseMimeType: "application/json"
-                    }
-                  })
-                });
+                } catch (e) {
+                  lastError = e.message;
+                }
               }
 
-              if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error?.message || "Gemini API request failed");
+              if (!successData) {
+                throw new Error(lastError || "Could not connect to Gemini AI Models");
               }
 
-              const data = await response.json();
-              const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+              const resultText = successData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
               const cleanedJSON = resultText.replace(/```json|```/gi, '').trim();
               const parsed = JSON.parse(cleanedJSON);
               resolve(parsed);
