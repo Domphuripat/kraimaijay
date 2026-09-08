@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KraiMaiJayMeeReung - Split & Settle</title>
+  <title>KraiMaiJayMeeReung - Split, Loan & Settle</title>
   
   <!-- Web App & Home Screen Icons -->
   <link rel="apple-touch-icon" href="cat.jpg">
@@ -168,6 +168,7 @@
         filterSettled: "Settled",
         filterRide: "🚗 Rides Only",
         filterFood: "🛵 Food / Orders",
+        filterLoan: "💸 Loans Only",
         noTransactions: "No transactions match your search or filter.",
         fare: "Fare",
         subtotal: "Subtotal",
@@ -224,12 +225,14 @@
         avgBillCost: "Avg Cost / Transaction",
         spendingRatio: "Expense Category Distribution",
         topSpenders: "Top Friends Share Breakdown",
+        calendarTitle: "📅 Daily Expense Calendar (My Expense)",
+        dayNames: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
         adminMode: "👑 โหมดแอดมิน",
         viewOnly: "👀 โหมดดูอย่างเดียว",
-        createTx: "+ สร้างรายการบิล",
+        createTx: "+ สร้างรายการบิล / ยืมเงิน",
         lock: "ล็อค 🔒",
         adminSignIn: "🔑 เข้าสู่ระบบแอดมิน",
         dashboard: "แดชบอร์ด",
@@ -254,6 +257,7 @@
         filterSettled: "เคลียร์ครบแล้ว",
         filterRide: "🚗 เฉพาะค่ารถ",
         filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
+        filterLoan: "💸 ยืมเงิน / Loan",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
         subtotal: "ยอดรวมก่อนลด",
@@ -310,6 +314,8 @@
         avgBillCost: "เฉลี่ยต่อบิล",
         spendingRatio: "สัดส่วนค่าใช้จ่าย",
         topSpenders: "สรุปยอดส่วนแบ่งรายบุคคลในเดือนนี้",
+        calendarTitle: "📅 ปฏิทินรายจ่ายของฉันรายวัน (Daily My Expense)",
+        dayNames: ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'],
       }
     };
 
@@ -380,6 +386,7 @@
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
+      const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
       const restoreInputRef = useRef(null);
 
       // Bill Form States
@@ -393,6 +400,10 @@
       const [rideFare, setRideFare] = useState('');
       const [tollFee, setTollFee] = useState('');
       const [rideRoute, setRideRoute] = useState('');
+
+      // Loan specific
+      const [loanAmount, setLoanAmount] = useState('');
+      const [loanBorrower, setLoanBorrower] = useState('');
       
       // Food & Delivery specific
       const [taxMode, setTaxMode] = useState('inclusive');
@@ -614,6 +625,13 @@
               operationsCount++;
             });
 
+            // Mark all pending Add Debt adjustments as Settled
+            adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase() && a.amount > 0 && !a.isSettled).forEach(adj => {
+              const aDoc = basePath.collection('adjustments').doc(adj.id);
+              batch.update(aDoc, { isSettled: true });
+              operationsCount++;
+            });
+
             const currentAdjOwed = friendBalances[friendName]?.adjustedOwed || 0;
             if (currentAdjOwed !== 0) {
               const newAdjRef = basePath.collection('adjustments').doc();
@@ -621,6 +639,7 @@
                 friendName,
                 displayAmount: Math.abs(currentAdjOwed),
                 isPaymentRecord: false,
+                isSettled: true,
                 note: `⚡ Auto Settle: Cleared remaining adjustments`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now()
@@ -633,6 +652,7 @@
               friendName,
               displayAmount: curBalance,
               isPaymentRecord: true,
+              isSettled: true,
               relatedBillIds: settledBillIds,
               note: `⚡ เคลียร์ยอดบิลทั้งหมด (${unpaidBills.length} รายการ)`,
               date: new Date().toISOString().split('T')[0],
@@ -676,7 +696,7 @@
         csvContent += "Date,Type,Title,Route,Subtotal(RM),Total(RM),Participants,Unpaid Pax\n";
 
         bills.forEach(b => {
-          const type = b.billType === 'ride' ? 'Ride' : 'Food/Delivery';
+          const type = b.billType === 'ride' ? 'Ride' : b.billType === 'loan' ? 'Loan' : 'Food/Delivery';
           const title = `"${(b.name || '').replace(/"/g, '""')}"`;
           const route = `"${(b.rideRoute || '').replace(/"/g, '""')}"`;
           const sub = (b.subtotal || 0).toFixed(2);
@@ -755,11 +775,14 @@
         return bills.filter(b => (b.date || '').startsWith(selectedMonth));
       }, [bills, selectedMonth]);
 
+      // Calculate Monthly Stats & Daily Expenses for Calendar
       const monthlyStats = useMemo(() => {
         let totalGroup = 0;
         let foodTotal = 0;
         let rideTotal = 0;
+        let loanTotal = 0;
         const friendShares = {};
+        const dailyMyExpenses = {};
 
         friends.forEach(f => { friendShares[f.name] = 0; });
 
@@ -768,8 +791,20 @@
           totalGroup += tot;
           if (b.billType === 'ride') {
             rideTotal += tot;
+          } else if (b.billType === 'loan') {
+            loanTotal += tot;
           } else {
             foodTotal += tot;
+          }
+
+          // Track personal daily expense
+          const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
+          if (b.date && selfAmount > 0) {
+            if (!dailyMyExpenses[b.date]) {
+              dailyMyExpenses[b.date] = { total: 0, items: [] };
+            }
+            dailyMyExpenses[b.date].total += selfAmount;
+            dailyMyExpenses[b.date].items.push({ name: b.name, amount: selfAmount, type: b.billType });
           }
 
           Object.entries(b.splits || {}).forEach(([pName, pAmt]) => {
@@ -787,13 +822,50 @@
           totalGroup,
           foodTotal,
           rideTotal,
+          loanTotal,
           count: monthlyBills.length,
           avgPerBill: monthlyBills.length > 0 ? (totalGroup / monthlyBills.length) : 0,
           foodPct: totalGroup > 0 ? Math.round((foodTotal / totalGroup) * 100) : 0,
           ridePct: totalGroup > 0 ? Math.round((rideTotal / totalGroup) * 100) : 0,
-          sortedSpenders
+          sortedSpenders,
+          dailyMyExpenses
         };
       }, [monthlyBills, friends]);
+
+      // Calendar Days Calculation
+      const calendarMatrix = useMemo(() => {
+        if (!selectedMonth) return [];
+        const [year, month] = selectedMonth.split('-').map(Number);
+        const firstDayIndex = new Date(year, month - 1, 1).getDay();
+        const daysInMonth = new Date(year, month, 0).getDate();
+        
+        const matrix = [];
+        let dayCounter = 1;
+
+        for (let row = 0; row < 6; row++) {
+          const week = [];
+          for (let col = 0; col < 7; col++) {
+            if (row === 0 && col < firstDayIndex) {
+              week.push(null);
+            } else if (dayCounter > daysInMonth) {
+              week.push(null);
+            } else {
+              const dayStr = `${selectedMonth}-${String(dayCounter).padStart(2, '0')}`;
+              const dayData = monthlyStats.dailyMyExpenses[dayStr] || null;
+              week.push({
+                day: dayCounter,
+                dateStr: dayStr,
+                total: dayData ? dayData.total : 0,
+                items: dayData ? dayData.items : []
+              });
+              dayCounter++;
+            }
+          }
+          matrix.push(week);
+          if (dayCounter > daysInMonth) break;
+        }
+        return matrix;
+      }, [selectedMonth, monthlyStats.dailyMyExpenses]);
 
       const handleExportPDF = async (ref, filename) => {
         if (!ref.current) return;
@@ -1014,10 +1086,24 @@
         }
       };
 
-      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee) => {
+      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower) => {
         const splits = {};
         const friendItemDetails = {};
         const activeFriendsCount = selectedFriends.length;
+
+        if (currentBillType === 'loan') {
+          const parsedLoanAmt = parseFloat(lAmt) || 0;
+          if (lBorrower) {
+            splits[lBorrower] = parsedLoanAmt;
+            friendItemDetails[lBorrower] = { baseShare: parsedLoanAmt };
+          }
+          return {
+            subtotal: parsedLoanAmt,
+            total: parsedLoanAmt,
+            splits,
+            friendItemDetails
+          };
+        }
 
         if (currentBillType === 'ride') {
           const parsedRideFare = parseFloat(rFare) || 0;
@@ -1182,7 +1268,7 @@
         adjustments.forEach(adj => {
           const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
           const realName = fObj ? fObj.name : adj.friendName;
-          if (balances[realName] && adj.amount !== undefined) {
+          if (balances[realName] && adj.amount !== undefined && !adj.isSettled) {
             balances[realName].adjustedOwed += adj.amount;
           }
         });
@@ -1231,7 +1317,8 @@
           if (statusFilter === 'pending') return unpaidCount > 0;
           if (statusFilter === 'settled') return unpaidCount === 0;
           if (statusFilter === 'ride') return bill.billType === 'ride';
-          if (statusFilter === 'food') return bill.billType !== 'ride';
+          if (statusFilter === 'loan') return bill.billType === 'loan';
+          if (statusFilter === 'food') return bill.billType !== 'ride' && bill.billType !== 'loan';
 
           return true;
         });
@@ -1250,6 +1337,8 @@
         setRideFare(bill.rideFare || '');
         setTollFee(bill.tollFee || '');
         setRideRoute(bill.rideRoute || '');
+        setLoanAmount(bill.loanAmount || '');
+        setLoanBorrower(bill.loanBorrower || '');
         setServiceChargeRate(bill.serviceChargeRate !== undefined ? bill.serviceChargeRate : 0);
         setDeliveryFee(bill.deliveryFee || 0);
         setPackagingCharge(bill.packagingCharge || 0);
@@ -1295,7 +1384,9 @@
           taxMode,
           billType,
           rideFare,
-          tollFee
+          tollFee,
+          loanAmount,
+          loanBorrower
         );
 
         let initialPaidStatus = {};
@@ -1304,8 +1395,9 @@
           initialPaidStatus = oldBill?.paidStatus || {};
         }
 
-        // Auto-set Me (Dom) to true (Paid) initially, others to false
-        billFriends.forEach(f => {
+        const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
+
+        participantsToProcess.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
             const fObj = friends.find(fr => fr.name.toLowerCase() === f.toLowerCase());
             const isMe = fObj?.isSelf || /me|dom/i.test(f);
@@ -1321,6 +1413,8 @@
           rideFare: parseFloat(rideFare) || 0,
           tollFee: parseFloat(tollFee) || 0,
           rideRoute,
+          loanAmount: parseFloat(loanAmount) || 0,
+          loanBorrower,
           subtotal: calculated.subtotal,
           serviceChargeRate,
           serviceChargeAmount: calculated.serviceChargeAmount || 0,
@@ -1331,7 +1425,7 @@
           totalTax: calculated.totalTax || 0,
           roundingAdjustment: calculated.roundingAdjustment || 0,
           total: calculated.total,
-          items: billType === 'ride' ? [] : billItems.map(item => ({
+          items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
             id: item.id,
             name: item.name,
             price: parseFloat(item.price) || 0,
@@ -1371,7 +1465,6 @@
         setActiveTab('bills');
       };
 
-      // Handle Toggle Paid with Syncable Bill-Specific Adjustment Log
       const handleTogglePaid = async (bill, friendName) => {
         if (!isAdmin) {
           showToast("Only Admin can change payment status", "error");
@@ -1399,6 +1492,7 @@
                 billId: bill.id,
                 displayAmount: userShare,
                 isPaymentRecord: true,
+                isSettled: true,
                 note: `✓ ชำระแล้ว: ${bill.name}`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now()
@@ -1415,6 +1509,20 @@
             showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
           } catch (err) {
             showToast("Update failed: Permission denied", "error");
+          }
+        }
+      };
+
+      const handleToggleAdjStatus = async (adj) => {
+        if (!isAdmin) return;
+        const newStatus = !adj.isSettled;
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('adjustments').doc(adj.id).update({ isSettled: newStatus });
+            showToast(`Updated status to ${newStatus ? 'Paid' : 'Pending'}`);
+          } catch (e) {
+            showToast("Failed to update status", "error");
           }
         }
       };
@@ -1552,7 +1660,6 @@
         handleCancelRenameFriend();
       };
 
-      // Handle Delete Adjustment with Auto-Revert to Pending on Bills
       const handleDeleteAdjustment = async (adj) => {
         if (!isAdmin) {
           showToast("Only Admin can delete adjustments", "error");
@@ -1618,7 +1725,8 @@
           amount: finalAmount,
           displayAmount: amount,
           isPaymentRecord: adjustType === 'minus',
-          note: adjustNote.trim() || (adjustType === 'plus' ? 'Debt Increased' : `Partial Payment Settled (${amount.toFixed(2)} RM)`),
+          isSettled: adjustType === 'minus' ? true : false,
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
           date: new Date().toISOString().split('T')[0],
           createdAt: Date.now()
         };
@@ -1709,6 +1817,8 @@
                         setRideFare('');
                         setTollFee('');
                         setRideRoute('');
+                        setLoanAmount('');
+                        setLoanBorrower('');
                         setSelectedImages([]);
                         setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
                         setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
@@ -1835,7 +1945,7 @@
               </div>
             )}
 
-            {/* --- 2. CREATE / EDIT TRANSACTION (ADMIN ONLY) --- */}
+            {/* --- 2. CREATE / EDIT TRANSACTION --- */}
             {activeTab === 'new-bill' && (
               isAdmin ? (
                 <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-6 border border-line space-y-6">
@@ -1846,7 +1956,7 @@
                     <button type="button" onClick={() => setActiveTab('bills')} className="text-textSecondary hover:text-textPrimary text-sm">✕ {t('cancel')}</button>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1856,7 +1966,7 @@
                       }}
                       className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'delivery' ? 'bg-grab/15 border-grab text-emerald-400 shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
-                      🛵 Food Delivery
+                      🛵 Delivery
                     </button>
                     <button
                       type="button"
@@ -1866,7 +1976,7 @@
                       }}
                       className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'ride' ? 'bg-bolt/15 border-bolt text-bolt shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
-                      🚗 Ride (Grab/Bolt)
+                      🚗 Ride
                     </button>
                     <button
                       type="button"
@@ -1880,107 +1990,118 @@
                     >
                       🍽️ Dine-in
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBillType('loan');
+                      }}
+                      className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'loan' ? 'bg-coral/15 border-coral text-coral shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
+                    >
+                      💸 Loan
+                    </button>
                   </div>
 
-                  {/* SMART SCANNER + PASTE TEXT */}
-                  <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Direct Smart Scanner (Grab / Bills)</p>
-                        <p className="text-xs text-textSecondary mt-0.5">Upload screenshot/photo or paste receipt text directly</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          multiple 
-                          ref={fileInputRef} 
-                          onChange={handleAddImages} 
-                          className="hidden" 
-                        />
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                          className="bg-accent hover:bg-accent-hover text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
-                        >
-                          + Select Photo ({selectedImages.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowRawTextInput(!showRawTextInput)}
-                          className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
-                        >
-                          📝 Paste Text
-                        </button>
-                      </div>
-                    </div>
-
-                    {showRawTextInput && (
-                      <div className="pt-2 border-t border-line/40 space-y-2">
-                        <textarea
-                          value={rawOrderText}
-                          onChange={(e) => setRawOrderText(e.target.value)}
-                          placeholder="Paste order text summary from Grab / Email receipt here..."
-                          className="w-full h-24 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
-                        />
-                        <div className="flex justify-end gap-2">
+                  {/* SMART SCANNER */}
+                  {billType !== 'loan' && (
+                    <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                        <div>
+                          <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Direct Smart Scanner (Grab / Bills)</p>
+                          <p className="text-xs text-textSecondary mt-0.5">Upload screenshot/photo or paste receipt text directly</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            multiple 
+                            ref={fileInputRef} 
+                            onChange={handleAddImages} 
+                            className="hidden" 
+                          />
                           <button
                             type="button"
-                            onClick={() => setShowRawTextInput(false)}
-                            className="px-3 py-1 text-xs text-textSecondary"
+                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                            className="bg-accent hover:bg-accent-hover text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
                           >
-                            {t('cancel')}
+                            + Select Photo ({selectedImages.length})
                           </button>
                           <button
                             type="button"
-                            onClick={handleParseRawText}
-                            className="bg-mint text-bg font-bold px-4 py-1 rounded-lg text-xs"
+                            onClick={() => setShowRawTextInput(!showRawTextInput)}
+                            className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
                           >
-                            Extract Items From Text
+                            📝 Paste Text
                           </button>
                         </div>
                       </div>
-                    )}
 
-                    {selectedImages.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-2 border-t border-line/40 items-center">
-                        {selectedImages.map((file, index) => (
-                          <div key={index} className="relative group bg-surface border border-line rounded-lg p-1 flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono text-textMuted px-1">#{index + 1}</span>
-                            <span className="text-xs text-textPrimary max-w-[100px] truncate">{file.name}</span>
+                      {showRawTextInput && (
+                        <div className="pt-2 border-t border-line/40 space-y-2">
+                          <textarea
+                            value={rawOrderText}
+                            onChange={(e) => setRawOrderText(e.target.value)}
+                            placeholder="Paste order text summary from Grab / Email receipt here..."
+                            className="w-full h-24 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
+                          />
+                          <div className="flex justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => handleRemoveImage(index)}
-                              className="text-coral text-xs px-1 hover:font-bold"
+                              onClick={() => setShowRawTextInput(false)}
+                              className="px-3 py-1 text-xs text-textSecondary"
                             >
-                              ✕
+                              {t('cancel')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleParseRawText}
+                              className="bg-mint text-bg font-bold px-4 py-1 rounded-lg text-xs"
+                            >
+                              Extract Items From Text
                             </button>
                           </div>
-                        ))}
-                        
-                        <button
-                          type="button"
-                          disabled={ocrProcessing}
-                          onClick={handleProcessAllImages}
-                          className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
-                        >
-                          {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+
+                      {selectedImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-line/40 items-center">
+                          {selectedImages.map((file, index) => (
+                            <div key={index} className="relative group bg-surface border border-line rounded-lg p-1 flex items-center gap-1.5">
+                              <span className="text-[10px] font-mono text-textMuted px-1">#{index + 1}</span>
+                              <span className="text-xs text-textPrimary max-w-[100px] truncate">{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImage(index)}
+                                className="text-coral text-xs px-1 hover:font-bold"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                          
+                          <button
+                            type="button"
+                            disabled={ocrProcessing}
+                            onClick={handleProcessAllImages}
+                            className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
+                          >
+                            {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
-                        {billType === 'ride' ? 'Trip / Ride Title' : 'Merchant / Order Title'}
+                        {billType === 'ride' ? 'Trip / Ride Title' : billType === 'loan' ? 'Loan Purpose / Reason' : 'Merchant / Order Title'}
                       </label>
                       <input 
                         type="text" 
                         value={newBillName}
                         onChange={(e) => setNewBillName(e.target.value)}
                         className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
-                        placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : 'e.g., KFC GrabFood, Baby Cami'}
+                        placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : billType === 'loan' ? 'e.g., ยืมเงินสดกินข้าว, ฝากโอน' : 'e.g., KFC GrabFood, Baby Cami'}
                         required
                       />
                     </div>
@@ -1995,38 +2116,76 @@
                     </div>
                   </div>
 
-                  {/* 1. PARTICIPANTS SELECTION WITH AUTO-CLEAN SHARED ITEMS */}
-                  <div>
-                    <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
-                      Participants ({billFriends.length} people)
-                    </label>
-                    <div className="flex flex-wrap gap-2 bg-subtle p-3 rounded-xl border border-line">
-                      {friends.filter(f => !f.isArchived).map(friend => {
-                        const isSelected = billFriends.includes(friend.name);
-                        return (
-                          <button
-                            key={friend.id}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                const nextFriends = billFriends.filter(f => f !== friend.name);
-                                setBillFriends(nextFriends);
-                                setBillItems(billItems.map(item => ({
-                                  ...item,
-                                  sharedWith: (item.sharedWith || []).filter(name => name !== friend.name)
-                                })));
-                              } else {
-                                setBillFriends([...billFriends, friend.name]);
-                              }
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 ${isSelected ? 'bg-accent text-white shadow-md shadow-accent/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                  {billType === 'loan' ? (
+                    <div className="bg-subtle p-4 rounded-xl border border-coral/30 space-y-4">
+                      <div className="flex items-center gap-2 text-coral text-xs font-bold uppercase tracking-wider">
+                        <span>💸 Cash Loan / Borrowing Details</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-textSecondary mb-1 font-bold">Borrower (คนที่ยืมเงิน)</label>
+                          <select
+                            value={loanBorrower}
+                            onChange={(e) => setLoanBorrower(e.target.value)}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2.5 text-sm text-textPrimary focus:border-coral outline-none"
+                            required
                           >
-                            {isSelected ? '✓ ' : '+ '} {friend.name}
-                          </button>
-                        );
-                      })}
+                            <option value="">-- เลือกคนที่ยืม --</option>
+                            {friends.filter(f => !f.isSelf && !f.isArchived).map(f => (
+                              <option key={f.id} value={f.name}>{f.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-coral mb-1 font-bold">Loan Amount (ยอดเงินที่ยืม - RM)</label>
+                          <input 
+                            type="text" 
+                            inputMode="decimal"
+                            value={loanAmount}
+                            onChange={(e) => setLoanAmount(e.target.value)}
+                            onBlur={(e) => setLoanAmount(evaluateMathExpression(e.target.value))}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-coral outline-none font-mono font-bold"
+                            placeholder="0.00"
+                            required
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
+                        Participants ({billFriends.length} people)
+                      </label>
+                      <div className="flex flex-wrap gap-2 bg-subtle p-3 rounded-xl border border-line">
+                        {friends.filter(f => !f.isArchived).map(friend => {
+                          const isSelected = billFriends.includes(friend.name);
+                          return (
+                            <button
+                              key={friend.id}
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) {
+                                  const nextFriends = billFriends.filter(f => f !== friend.name);
+                                  setBillFriends(nextFriends);
+                                  setBillItems(billItems.map(item => ({
+                                    ...item,
+                                    sharedWith: (item.sharedWith || []).filter(name => name !== friend.name)
+                                  })));
+                                } else {
+                                  setBillFriends([...billFriends, friend.name]);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 ${isSelected ? 'bg-accent text-white shadow-md shadow-accent/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                            >
+                              {isSelected ? '✓ ' : '+ '} {friend.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {billType === 'ride' ? (
                     <div className="bg-subtle p-4 rounded-xl border border-bolt/30 space-y-4">
@@ -2100,7 +2259,7 @@
                         />
                       </div>
                     </div>
-                  ) : (
+                  ) : billType === 'loan' ? null : (
                     <>
                       <div className="bg-subtle p-4 rounded-xl border border-line space-y-4">
                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-3 border-b border-line">
@@ -2282,7 +2441,6 @@
                                 </div>
                               </div>
 
-                              {/* 2. SHARED BY: FILTERED BY PARTICIPANTS ONLY */}
                               <div>
                                 <p className="text-[11px] text-textSecondary mb-1.5 font-bold">Shared By:</p>
                                 <div className="flex flex-wrap gap-1.5">
@@ -2367,6 +2525,7 @@
                       { id: 'pending', label: t('filterPending') },
                       { id: 'settled', label: t('filterSettled') },
                       { id: 'ride', label: t('filterRide') },
+                      { id: 'loan', label: t('filterLoan') },
                       { id: 'food', label: t('filterFood') },
                     ].map(f => (
                       <button
@@ -2406,6 +2565,9 @@
                                 {bill.billType === 'ride' && (
                                   <span className="text-[10px] bg-bolt/20 text-bolt font-bold px-1.5 py-0.5 rounded">🚗 Ride</span>
                                 )}
+                                {bill.billType === 'loan' && (
+                                  <span className="text-[10px] bg-coral/20 text-coral font-bold px-1.5 py-0.5 rounded">💸 Loan</span>
+                                )}
                                 {bill.deliveryFee > 0 && (
                                   <span className="text-[10px] bg-grab/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded">Delivery</span>
                                 )}
@@ -2423,7 +2585,7 @@
 
                           <div className="grid grid-cols-2 gap-2 mt-4 bg-subtle p-3 rounded-xl">
                             <div>
-                              <p className="text-[10px] text-textMuted uppercase font-bold">{bill.billType === 'ride' ? t('fare') : t('subtotal')}</p>
+                              <p className="text-[10px] text-textMuted uppercase font-bold">{bill.billType === 'ride' ? t('fare') : bill.billType === 'loan' ? 'Loaned' : t('subtotal')}</p>
                               <p className="text-sm font-semibold text-textSecondary font-mono">{bill.subtotal?.toFixed(2)} RM</p>
                             </div>
                             <div className="text-right">
@@ -2442,8 +2604,8 @@
                                 <div className="flex gap-1.5">
                                   <button
                                     onClick={() => {
-                                      const text = `🧾 รายละเอียดบิล: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
-                                        (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n');
+                                      const text = `🧾 รายละเอียด: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
+                                        (bill.billType === 'loan' ? `- ผู้ยืม: ${bill.loanBorrower}` : (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n'));
                                       shareToSocial(text, 'whatsapp');
                                     }}
                                     className="bg-whatsapp/20 hover:bg-whatsapp text-emerald-400 hover:text-bg text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
@@ -2452,8 +2614,8 @@
                                   </button>
                                   <button
                                     onClick={() => {
-                                      const text = `🧾 รายละเอียดบิล: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
-                                        (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n');
+                                      const text = `🧾 รายละเอียด: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
+                                        (bill.billType === 'loan' ? `- ผู้ยืม: ${bill.loanBorrower}` : (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n'));
                                       shareToSocial(text, 'ig');
                                     }}
                                     className="bg-instagram/20 hover:bg-instagram text-coral hover:text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
@@ -2483,7 +2645,7 @@
                                       >
                                         <p className="font-bold flex items-center gap-1.5 text-textPrimary">
                                           {fName}
-                                          <span className="text-[10px] text-accent underline font-normal">→ Items</span>
+                                          <span className="text-[10px] text-accent underline font-normal">→ Details</span>
                                         </p>
                                         <p className="text-textSecondary text-[11px] font-mono mt-0.5">{bill.splits[fName]?.toFixed(2)} RM</p>
                                       </div>
@@ -2655,6 +2817,15 @@
                               {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
                             </span>
                           ) : null}
+
+                          {adj.amount > 0 && isAdmin && (
+                            <button
+                              onClick={() => handleToggleAdjStatus(adj)}
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                            >
+                              {adj.isSettled ? t('paid') : t('pending')}
+                            </button>
+                          )}
                           
                           {isAdmin && (
                             <button
@@ -2672,7 +2843,7 @@
               </div>
             )}
 
-            {/* --- 6. ANALYTICS & BACKUP TAB --- */}
+            {/* --- 6. ANALYTICS & BACKUP TAB (CALENDAR VIEW ADDED) --- */}
             {activeTab === 'analytics' && (
               <div className="space-y-6">
                 
@@ -2720,19 +2891,88 @@
                     </div>
                   </div>
 
-                  {/* Category Progress Bar */}
-                  {monthlyStats.totalGroup > 0 && (
-                    <div className="space-y-2 pt-2">
-                      <div className="flex justify-between text-xs text-textSecondary font-bold">
-                        <span>{t('spendingRatio')}</span>
-                        <span>Food: {monthlyStats.foodPct}% | Ride: {monthlyStats.ridePct}%</span>
-                      </div>
-                      <div className="w-full h-3 bg-subtle rounded-full overflow-hidden flex">
-                        <div style={{ width: `${monthlyStats.foodPct}%` }} className="bg-emerald-500 h-full transition-all"></div>
-                        <div style={{ width: `${monthlyStats.ridePct}%` }} className="bg-bolt h-full transition-all"></div>
-                      </div>
+                  {/* CALENDAR VIEW FOR DAILY MY EXPENSE */}
+                  <div className="space-y-3 pt-4 border-t border-line">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-bold text-mint uppercase font-mono flex items-center gap-1.5">
+                        {t('calendarTitle')}
+                      </h3>
+                      <span className="text-[10px] text-textMuted">Tap day to view bills</span>
                     </div>
-                  )}
+
+                    <div className="bg-subtle/60 border border-line p-3 sm:p-4 rounded-2xl space-y-2">
+                      {/* Day Header */}
+                      <div className="grid grid-cols-7 text-center text-[11px] font-bold text-textMuted pb-1 border-b border-line/60">
+                        {t('dayNames').map((d, i) => (
+                          <div key={i} className={i === 0 || i === 6 ? 'text-coral/80' : ''}>{d}</div>
+                        ))}
+                      </div>
+
+                      {/* Calendar Grid */}
+                      <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+                        {calendarMatrix.flat().map((cell, idx) => {
+                          if (!cell) {
+                            return <div key={idx} className="min-h-[52px] sm:min-h-[64px] bg-surface/30 rounded-xl opacity-30"></div>;
+                          }
+                          const hasExpense = cell.total > 0;
+                          const isSelected = selectedCalendarDay?.dateStr === cell.dateStr;
+
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => hasExpense && setSelectedCalendarDay(isSelected ? null : cell)}
+                              className={`min-h-[52px] sm:min-h-[64px] p-1.5 rounded-xl border flex flex-col justify-between transition ${
+                                isSelected 
+                                  ? 'bg-accent/20 border-accent ring-1 ring-accent' 
+                                  : hasExpense 
+                                    ? 'bg-surface hover:border-mint/60 border-line/80 cursor-pointer shadow-sm' 
+                                    : 'bg-surface/50 border-line/40 opacity-70'
+                              }`}
+                            >
+                              <span className="text-[11px] font-bold font-mono text-textPrimary leading-none">
+                                {cell.day}
+                              </span>
+                              {hasExpense ? (
+                                <div className="text-right">
+                                  <span className="text-[10px] sm:text-[11px] font-black text-mint font-mono leading-none block truncate">
+                                    {cell.total.toFixed(2)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="h-2"></div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Selected Day Item Detail Drawer */}
+                      {selectedCalendarDay && (
+                        <div className="mt-3 p-3 bg-surface border border-accent/40 rounded-xl space-y-2">
+                          <div className="flex justify-between items-center pb-1.5 border-b border-line">
+                            <span className="text-xs font-bold text-textPrimary font-mono">
+                              🗓️ {selectedCalendarDay.dateStr}
+                            </span>
+                            <span className="text-xs font-black text-mint font-mono">
+                              Total: {selectedCalendarDay.total.toFixed(2)} RM
+                            </span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {selectedCalendarDay.items.map((it, i) => (
+                              <div key={i} className="flex justify-between items-center text-xs bg-subtle p-2 rounded-lg">
+                                <span className="text-textPrimary flex items-center gap-1.5">
+                                  {it.type === 'ride' ? '🚗' : it.type === 'loan' ? '💸' : '🛵'} {it.name}
+                                </span>
+                                <span className="font-bold text-textPrimary font-mono">
+                                  {it.amount.toFixed(2)} RM
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   {/* Top Members Breakdown */}
                   <div className="space-y-3 pt-3 border-t border-line">
@@ -2991,10 +3231,10 @@
                               <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
                                 <div>
                                   <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
-                                    {b.billType === 'ride' ? '🚗 ' : '🛵 '} {b.name}
+                                    {b.billType === 'ride' ? '🚗 ' : b.billType === 'loan' ? '💸 ' : '🛵 '} {b.name}
                                   </p>
                                   <p className="text-[10px] text-textMuted">
-                                    {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split')}
+                                    {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split')}
                                   </p>
                                 </div>
                                 <div className="text-right flex items-center gap-2">
@@ -3043,10 +3283,19 @@
                                   </span>
                                 ) : null}
 
+                                {adj.amount > 0 && isAdmin && (
+                                  <button
+                                    onClick={() => handleToggleAdjStatus(adj)}
+                                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                  >
+                                    {adj.isSettled ? t('paid') : t('pending')}
+                                  </button>
+                                )}
+
                                 {isAdmin && (
                                   <button
                                     onClick={() => handleDeleteAdjustment(adj)}
-                                    className="text-textMuted hover:text-coral text-xs underline"
+                                    className="text-textMuted hover:text-coral text-xs underline ml-1"
                                   >
                                     {t('delete')}
                                   </button>
@@ -3136,7 +3385,7 @@
                       <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
                       <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 {t('appTitle')}</p>
                       <p className="text-base font-bold text-textPrimary font-sans">
-                        {activeBreakdown.bill.billType === 'ride' ? '🚗 ' : '🛵 '} {activeBreakdown.bill.name}
+                        {activeBreakdown.bill.billType === 'ride' ? '🚗 ' : activeBreakdown.bill.billType === 'loan' ? '💸 ' : '🛵 '} {activeBreakdown.bill.name}
                       </p>
                       {activeBreakdown.bill.rideRoute && <p className="text-[11px] text-textSecondary font-sans">📍 {activeBreakdown.bill.rideRoute}</p>}
                       <p className="text-textMuted">{activeBreakdown.bill.date}</p>
@@ -3147,7 +3396,18 @@
                       )}
                     </div>
 
-                    {activeBreakdown.bill.billType === 'ride' ? (
+                    {activeBreakdown.bill.billType === 'loan' ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between py-1">
+                          <span className="text-textSecondary">Borrower (ผู้ยืม)</span>
+                          <span className="font-bold font-mono">{activeBreakdown.bill.loanBorrower}</span>
+                        </div>
+                        <div className="flex justify-between py-1 text-coral">
+                          <span>Loaned Amount</span>
+                          <span className="font-bold font-mono">{activeBreakdown.bill.total?.toFixed(2)} RM</span>
+                        </div>
+                      </div>
+                    ) : activeBreakdown.bill.billType === 'ride' ? (
                       <div className="space-y-2">
                         <div className="flex justify-between py-1">
                           <span className="text-textSecondary">Base Fare</span>
