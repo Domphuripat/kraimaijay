@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KraiMaiJayMeeReung - Split & Settle</title>
+  <title>KraiMaiJayMeeReung - Split, Loan & Settle</title>
   
   <!-- Web App & Home Screen Icons -->
   <link rel="apple-touch-icon" href="cat.jpg">
@@ -11,6 +11,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="KraiMaiJay">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0B0F17">
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -148,6 +150,7 @@
         history: "History",
         friends: "Friends",
         adjustments: "Adjustments",
+        analytics: "Analytics & Backup",
         totalOutstanding: "Total Outstanding (To Collect)",
         pendingFriends: "Pending from {n} friend(s)",
         myExpenseToday: "My Expense Today",
@@ -165,6 +168,7 @@
         filterSettled: "Settled",
         filterRide: "🚗 Rides Only",
         filterFood: "🛵 Food / Orders",
+        filterLoan: "💸 Loans Only",
         noTransactions: "No transactions match your search or filter.",
         fare: "Fare",
         subtotal: "Subtotal",
@@ -186,8 +190,8 @@
         showArchived: "Show Archived Friends",
         hideArchived: "Hide Archived Friends",
         archivedBadge: "Archived",
-        adjustmentLogs: "Adjustment Logs",
-        noAdjustments: "No adjustment logs recorded yet",
+        adjustmentLogs: "Payment & Adjustment Logs",
+        noAdjustments: "No logs recorded yet",
         note: "Note",
         calculator: "Calculator",
         copy: "Copy",
@@ -206,21 +210,35 @@
         whatsapp: "💬 WhatsApp",
         instagram: "📸 IG",
         taxModeTitle: "Tax Mode",
-        taxModeInclusive: "✓ Incl. Tax (Included in price)",
-        taxModeAddon: "+ Add-on Tax (Added on top)",
+        taxModeInclusive: "✓ Incl. Tax (Included)",
+        taxModeAddon: "+ Add-on Tax (Added)",
         taxModeHint: "Delivery apps usually include tax inside item prices",
+        analyticsTitle: "Monthly Analytics & Insights",
+        backupTitle: "Data Backup & Recovery",
+        exportJsonBtn: "📦 Export All Data (JSON Backup)",
+        exportCsvBtn: "📊 Export Bills Summary (CSV)",
+        restoreJsonBtn: "📥 Restore Data from JSON",
+        monthSelect: "Select Month:",
+        totalGroupSpend: "Total Group Spend",
+        totalFoodSpend: "Food & Delivery",
+        totalRideSpend: "Rides (Grab / Bolt)",
+        avgBillCost: "Avg Cost / Transaction",
+        spendingRatio: "Expense Category Distribution",
+        topSpenders: "Top Friends Share Breakdown",
+        dailyExpenseTitle: "📅 Daily My Expense Breakdown",
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
         adminMode: "👑 โหมดแอดมิน",
         viewOnly: "👀 โหมดดูอย่างเดียว",
-        createTx: "+ สร้างรายการบิล",
+        createTx: "+ สร้างรายการบิล / ยืมเงิน",
         lock: "ล็อค 🔒",
         adminSignIn: "🔑 เข้าสู่ระบบแอดมิน",
         dashboard: "แดชบอร์ด",
         history: "ประวัติบิล",
         friends: "เพื่อน & ยอดค้าง",
-        adjustments: "ประวัติปรับยอด",
+        adjustments: "ประวัติการชำระ & ปรับยอด",
+        analytics: "สถิติ & สำรองข้อมูล",
         totalOutstanding: "ยอดรวมที่ต้องเก็บเพื่อน (รอโอน)",
         pendingFriends: "ค้างชำระทั้งหมด {n} คน",
         myExpenseToday: "ยอดของฉันวันนี้",
@@ -238,6 +256,7 @@
         filterSettled: "เคลียร์ครบแล้ว",
         filterRide: "🚗 เฉพาะค่ารถ",
         filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
+        filterLoan: "💸 ยืมเงิน",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
         subtotal: "ยอดรวมก่อนลด",
@@ -259,8 +278,8 @@
         showArchived: "แสดงเพื่อนที่ซ่อน (Archived)",
         hideArchived: "ซ่อนเพื่อนที่เก็บถาวร",
         archivedBadge: "เก็บถาวร",
-        adjustmentLogs: "ประวัติการปรับลดยอด / ปิดยอด",
-        noAdjustments: "ยังไม่มีประวัติการปรับลดยอด",
+        adjustmentLogs: "ประวัติการชำระเงิน & ปรับลดยอด",
+        noAdjustments: "ยังไม่มีประวัติการทำรายการ",
         note: "หมายเหตุ",
         calculator: "เครื่องคิดเลข",
         copy: "คัดลอก",
@@ -269,7 +288,7 @@
         cancel: "ยกเลิก",
         save: "บันทึก",
         settleFullPrompt: "⚡ เคลียร์บิลที่ค้างทั้งหมด ({amt} RM)",
-        settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และบันทึกลงประวัติปรับยอดของ {name} ใช่หรือไม่?",
+        settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และบันทึกลงประวัติการชำระของ {name} ใช่หรือไม่?",
         statementTitle: "ใบแจ้งยอดหนี้คงค้างสะสม",
         fromBills: "จากบิลอาหาร/รถ",
         adjusted: "ยอดปรับลด",
@@ -282,6 +301,19 @@
         taxModeInclusive: "✓ รวมภาษีแล้ว (Incl. Tax)",
         taxModeAddon: "+ คิดภาษีเพิ่ม (Add-on Tax)",
         taxModeHint: "แอพเดลิเวอรีส่วนใหญ่จะรวมภาษีไว้ในราคาอาหารแล้ว",
+        analyticsTitle: "สรุปสถิติค่าใช้จ่ายรายเดือน",
+        backupTitle: "สำรองและกู้คืนข้อมูล (Backup & Restore)",
+        exportJsonBtn: "📦 ดาวน์โหลดไฟล์สำรองข้อมูล (JSON Backup)",
+        exportCsvBtn: "📊 ส่งออกสรุปบิลทั้งหมด (Excel CSV)",
+        restoreJsonBtn: "📥 กู้คืนข้อมูลจากไฟล์ JSON",
+        monthSelect: "เลือกเดือนที่ต้องการดู:",
+        totalGroupSpend: "ยอดใช้จ่ายรวมทั้งกลุ่ม",
+        totalFoodSpend: "ค่าอาหาร & เดลิเวอรี",
+        totalRideSpend: "ค่าเดินทาง (Grab/Bolt)",
+        avgBillCost: "เฉลี่ยต่อบิล",
+        spendingRatio: "สัดส่วนค่าใช้จ่าย",
+        topSpenders: "สรุปยอดส่วนแบ่งรายบุคคลในเดือนนี้",
+        dailyExpenseTitle: "📅 สรุปยอดค่าใช้จ่ายส่วนตัวรายวัน (Daily My Expense)",
       }
     };
 
@@ -348,9 +380,11 @@
       const [adjustments, setAdjustments] = useState([]);
       const [showArchivedFriends, setShowArchivedFriends] = useState(false);
 
-      // Search & Filters
+      // Search, Filters & Analytics Month Selection
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
+      const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
+      const restoreInputRef = useRef(null);
 
       // Bill Form States
       const [editingBillId, setEditingBillId] = useState(null);
@@ -363,6 +397,10 @@
       const [rideFare, setRideFare] = useState('');
       const [tollFee, setTollFee] = useState('');
       const [rideRoute, setRideRoute] = useState('');
+
+      // Loan specific (Feature #1)
+      const [loanAmount, setLoanAmount] = useState('');
+      const [loanBorrower, setLoanBorrower] = useState('');
       
       // Food & Delivery specific
       const [taxMode, setTaxMode] = useState('inclusive');
@@ -514,7 +552,6 @@
             }
           }
         } catch (err) {
-          console.warn(err);
           showToast("Google sign-in failed. Please use PIN below!", "error");
         }
       };
@@ -573,6 +610,7 @@
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
             const batch = db.batch();
             let operationsCount = 0;
+            const settledBillIds = [];
 
             unpaidBills.forEach(bill => {
               const bDoc = basePath.collection('bills').doc(bill.id);
@@ -580,6 +618,14 @@
               const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
               const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
               batch.update(bDoc, { paidStatus: nextStatus });
+              settledBillIds.push(bill.id);
+              operationsCount++;
+            });
+
+            // Mark all pending Add Debt adjustments as Settled (Feature #2)
+            adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase() && a.amount > 0 && !a.isSettled).forEach(adj => {
+              const aDoc = basePath.collection('adjustments').doc(adj.id);
+              batch.update(aDoc, { isSettled: true });
               operationsCount++;
             });
 
@@ -588,7 +634,9 @@
               const newAdjRef = basePath.collection('adjustments').doc();
               batch.set(newAdjRef, {
                 friendName,
-                amount: -currentAdjOwed,
+                displayAmount: Math.abs(currentAdjOwed),
+                isPaymentRecord: false,
+                isSettled: true,
                 note: `⚡ Auto Settle: Cleared remaining adjustments`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now()
@@ -599,8 +647,11 @@
             const settleLogRef = basePath.collection('adjustments').doc();
             batch.set(settleLogRef, {
               friendName,
-              amount: 0,
-              note: `⚡ Settled all ${unpaidBills.length} pending bill(s) (Total: ${curBalance.toFixed(2)} RM)`,
+              displayAmount: curBalance,
+              isPaymentRecord: true,
+              isSettled: true,
+              relatedBillIds: settledBillIds,
+              note: `⚡ เคลียร์ยอดบิลทั้งหมด (${unpaidBills.length} รายการ)`,
               date: new Date().toISOString().split('T')[0],
               createdAt: Date.now() + 1
             });
@@ -608,7 +659,7 @@
 
             if (operationsCount > 0) {
               await batch.commit();
-              showToast(`🎉 Cleared all bills and logged settlement for ${friendName}!`);
+              showToast(`🎉 Cleared all bills and logged payment for ${friendName}!`);
             }
 
             setSelectedFriendForAdjust(null);
@@ -618,6 +669,168 @@
           showToast("Failed to settle: " + (err.message || "Permission Denied"), "error");
         }
       };
+
+      const handleExportJSONBackup = () => {
+        const fullBackup = {
+          version: "1.0",
+          exportDate: new Date().toISOString(),
+          friends,
+          bills,
+          adjustments
+        };
+        const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast("JSON Backup downloaded successfully! 📦");
+      };
+
+      const handleExportCSVReport = () => {
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+        csvContent += "Date,Type,Title,Route,Subtotal(RM),Total(RM),Participants,Unpaid Pax\n";
+
+        bills.forEach(b => {
+          const type = b.billType === 'ride' ? 'Ride' : b.billType === 'loan' ? 'Loan' : 'Food/Delivery';
+          const title = `"${(b.name || '').replace(/"/g, '""')}"`;
+          const route = `"${(b.rideRoute || '').replace(/"/g, '""')}"`;
+          const sub = (b.subtotal || 0).toFixed(2);
+          const tot = (b.total || 0).toFixed(2);
+          const parts = `"${Object.keys(b.splits || {}).join(', ')}"`;
+          const unpaidList = Object.keys(b.splits || {}).filter(name => !b.paidStatus?.[name]);
+          const unpaid = `"${unpaidList.join(', ')}"`;
+
+          csvContent += `${b.date},${type},${title},${route},${sub},${tot},${parts},${unpaid}\n`;
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `KraiMaiJay_Bills_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast("Bills CSV Report downloaded! 📊");
+      };
+
+      const handleRestoreJSON = (e) => {
+        if (!isAdmin) {
+          showToast("Admin only can restore data", "error");
+          return;
+        }
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const data = JSON.parse(event.target.result);
+            if (!data.friends || !data.bills) {
+              showToast("Invalid backup JSON format", "error");
+              return;
+            }
+
+            if (!confirm(`Are you sure you want to restore ${data.bills.length} bills and ${data.friends.length} friends?`)) {
+              return;
+            }
+
+            if (db) {
+              const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+              const batch = db.batch();
+
+              data.friends.forEach(f => {
+                const ref = basePath.collection('friends').doc(f.id || undefined);
+                batch.set(ref, { name: f.name, isSelf: f.isSelf || false, isArchived: f.isArchived || false, createdAt: f.createdAt || Date.now() });
+              });
+
+              data.bills.forEach(b => {
+                const ref = basePath.collection('bills').doc(b.id || undefined);
+                batch.set(ref, b);
+              });
+
+              (data.adjustments || []).forEach(a => {
+                const ref = basePath.collection('adjustments').doc(a.id || undefined);
+                batch.set(ref, a);
+              });
+
+              await batch.commit();
+              showToast("Backup restored to cloud successfully! 🎉");
+            }
+          } catch (err) {
+            console.error(err);
+            showToast("Failed to parse or restore JSON file", "error");
+          } finally {
+            if (restoreInputRef.current) restoreInputRef.current.value = '';
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      const monthlyBills = useMemo(() => {
+        return bills.filter(b => (b.date || '').startsWith(selectedMonth));
+      }, [bills, selectedMonth]);
+
+      // Feature #3: Calculate Monthly Stats & Daily My Expense Breakdown
+      const monthlyStats = useMemo(() => {
+        let totalGroup = 0;
+        let foodTotal = 0;
+        let rideTotal = 0;
+        let loanTotal = 0;
+        const friendShares = {};
+        const dailyMyExpenses = {};
+
+        friends.forEach(f => { friendShares[f.name] = 0; });
+
+        monthlyBills.forEach(b => {
+          const tot = b.total || 0;
+          totalGroup += tot;
+          if (b.billType === 'ride') {
+            rideTotal += tot;
+          } else if (b.billType === 'loan') {
+            loanTotal += tot;
+          } else {
+            foodTotal += tot;
+          }
+
+          // Track personal daily expense
+          const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
+          if (b.date && selfAmount > 0) {
+            if (!dailyMyExpenses[b.date]) {
+              dailyMyExpenses[b.date] = { total: 0, items: [] };
+            }
+            dailyMyExpenses[b.date].total += selfAmount;
+            dailyMyExpenses[b.date].items.push({ name: b.name, amount: selfAmount, type: b.billType });
+          }
+
+          Object.entries(b.splits || {}).forEach(([pName, pAmt]) => {
+            const fObj = friends.find(f => f.name.toLowerCase() === pName.toLowerCase());
+            const key = fObj ? fObj.name : pName;
+            friendShares[key] = (friendShares[key] || 0) + (pAmt || 0);
+          });
+        });
+
+        const sortedSpenders = Object.entries(friendShares)
+          .filter(([_, amt]) => amt > 0)
+          .sort((a, b) => b[1] - a[1]);
+
+        const sortedDailyExpenses = Object.entries(dailyMyExpenses)
+          .sort((a, b) => b[0].localeCompare(a[0]));
+
+        return {
+          totalGroup,
+          foodTotal,
+          rideTotal,
+          loanTotal,
+          count: monthlyBills.length,
+          avgPerBill: monthlyBills.length > 0 ? (totalGroup / monthlyBills.length) : 0,
+          foodPct: totalGroup > 0 ? Math.round((foodTotal / totalGroup) * 100) : 0,
+          ridePct: totalGroup > 0 ? Math.round((rideTotal / totalGroup) * 100) : 0,
+          sortedSpenders,
+          sortedDailyExpenses
+        };
+      }, [monthlyBills, friends]);
 
       const handleExportPDF = async (ref, filename) => {
         if (!ref.current) return;
@@ -677,11 +890,7 @@
       const parseTextContent = (fullText) => {
         const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
         let extractedItems = [];
-        let rFare = 0;
-        let tFee = 0;
-        let dFee = 0;
-        let pCharge = 0;
-        let dAmount = 0;
+        let rFare = 0, tFee = 0, dFee = 0, pCharge = 0, dAmount = 0;
 
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
@@ -763,11 +972,7 @@
         setOcrProgress(0);
 
         let combinedExtractedItems = [];
-        let extractedRideFare = 0;
-        let detectedToll = 0;
-        let detectedDiscount = 0;
-        let detectedDelivery = 0;
-        let detectedPackaging = 0;
+        let extractedRideFare = 0, detectedToll = 0, detectedDiscount = 0, detectedDelivery = 0, detectedPackaging = 0;
 
         try {
           for (let i = 0; i < selectedImages.length; i++) {
@@ -846,10 +1051,25 @@
         }
       };
 
-      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee) => {
+      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower) => {
         const splits = {};
         const friendItemDetails = {};
         const activeFriendsCount = selectedFriends.length;
+
+        // Loan Calculation (Feature #1)
+        if (currentBillType === 'loan') {
+          const parsedLoanAmt = parseFloat(lAmt) || 0;
+          if (lBorrower) {
+            splits[lBorrower] = parsedLoanAmt;
+            friendItemDetails[lBorrower] = { baseShare: parsedLoanAmt };
+          }
+          return {
+            subtotal: parsedLoanAmt,
+            total: parsedLoanAmt,
+            splits,
+            friendItemDetails
+          };
+        }
 
         if (currentBillType === 'ride') {
           const parsedRideFare = parseFloat(rFare) || 0;
@@ -1014,7 +1234,7 @@
         adjustments.forEach(adj => {
           const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
           const realName = fObj ? fObj.name : adj.friendName;
-          if (balances[realName]) {
+          if (balances[realName] && adj.amount !== undefined && !adj.isSettled) {
             balances[realName].adjustedOwed += adj.amount;
           }
         });
@@ -1063,7 +1283,8 @@
           if (statusFilter === 'pending') return unpaidCount > 0;
           if (statusFilter === 'settled') return unpaidCount === 0;
           if (statusFilter === 'ride') return bill.billType === 'ride';
-          if (statusFilter === 'food') return bill.billType !== 'ride';
+          if (statusFilter === 'loan') return bill.billType === 'loan';
+          if (statusFilter === 'food') return bill.billType !== 'ride' && bill.billType !== 'loan';
 
           return true;
         });
@@ -1082,6 +1303,8 @@
         setRideFare(bill.rideFare || '');
         setTollFee(bill.tollFee || '');
         setRideRoute(bill.rideRoute || '');
+        setLoanAmount(bill.loanAmount || '');
+        setLoanBorrower(bill.loanBorrower || '');
         setServiceChargeRate(bill.serviceChargeRate !== undefined ? bill.serviceChargeRate : 0);
         setDeliveryFee(bill.deliveryFee || 0);
         setPackagingCharge(bill.packagingCharge || 0);
@@ -1127,7 +1350,9 @@
           taxMode,
           billType,
           rideFare,
-          tollFee
+          tollFee,
+          loanAmount,
+          loanBorrower
         );
 
         let initialPaidStatus = {};
@@ -1135,10 +1360,14 @@
           const oldBill = bills.find(b => b.id === editingBillId);
           initialPaidStatus = oldBill?.paidStatus || {};
         }
-        billFriends.forEach(f => {
+
+        const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
+
+        participantsToProcess.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
-            const fObj = friends.find(fr => fr.name === f);
-            initialPaidStatus[f] = fObj?.isSelf || false;
+            const fObj = friends.find(fr => fr.name.toLowerCase() === f.toLowerCase());
+            const isMe = fObj?.isSelf || /me|dom/i.test(f);
+            initialPaidStatus[f] = isMe ? true : false;
           }
         });
 
@@ -1150,6 +1379,8 @@
           rideFare: parseFloat(rideFare) || 0,
           tollFee: parseFloat(tollFee) || 0,
           rideRoute,
+          loanAmount: parseFloat(loanAmount) || 0,
+          loanBorrower,
           subtotal: calculated.subtotal,
           serviceChargeRate,
           serviceChargeAmount: calculated.serviceChargeAmount || 0,
@@ -1160,7 +1391,7 @@
           totalTax: calculated.totalTax || 0,
           roundingAdjustment: calculated.roundingAdjustment || 0,
           total: calculated.total,
-          items: billType === 'ride' ? [] : billItems.map(item => ({
+          items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
             id: item.id,
             name: item.name,
             price: parseFloat(item.price) || 0,
@@ -1208,14 +1439,57 @@
         const splitsKeys = Object.keys(bill.splits || {});
         const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
         const currentPaid = !!bill.paidStatus?.[matchedKey];
-        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: !currentPaid };
+        const newPaidStatus = !currentPaid;
+        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: newPaidStatus };
+        const userShare = bill.splits?.[matchedKey] || 0;
         
         if (db) {
           try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).update({ paidStatus: updatedStatus });
-            showToast(`Updated ${matchedKey} to ${!currentPaid ? 'Paid' : 'Pending'}`);
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            const billRef = basePath.collection('bills').doc(bill.id);
+            batch.update(billRef, { paidStatus: updatedStatus });
+
+            if (newPaidStatus && userShare > 0) {
+              const adjRef = basePath.collection('adjustments').doc();
+              batch.set(adjRef, {
+                friendName: matchedKey,
+                billId: bill.id,
+                displayAmount: userShare,
+                isPaymentRecord: true,
+                isSettled: true,
+                note: `✓ ชำระแล้ว: ${bill.name}`,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: Date.now()
+              });
+            } else if (!newPaidStatus) {
+              const matchedAdjs = adjustments.filter(a => a.billId === bill.id && a.friendName.toLowerCase() === matchedKey.toLowerCase());
+              matchedAdjs.forEach(adj => {
+                const adjRef = basePath.collection('adjustments').doc(adj.id);
+                batch.delete(adjRef);
+              });
+            }
+
+            await batch.commit();
+            showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
           } catch (err) {
             showToast("Update failed: Permission denied", "error");
+          }
+        }
+      };
+
+      // Toggle status for manual Add Debt Adjustments (Feature #2)
+      const handleToggleAdjStatus = async (adj) => {
+        if (!isAdmin) return;
+        const newStatus = !adj.isSettled;
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('adjustments').doc(adj.id).update({ isSettled: newStatus });
+            showToast(`Updated status to ${newStatus ? 'Paid' : 'Pending'}`);
+          } catch (e) {
+            showToast("Failed to update status", "error");
           }
         }
       };
@@ -1358,11 +1632,41 @@
           showToast("Only Admin can delete adjustments", "error");
           return;
         }
-        if (!confirm(`Delete adjustment for "${adj.friendName}"?`)) return;
+        if (!confirm(`Delete adjustment log for "${adj.friendName}"?`)) return;
 
         if (db) {
           try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id).delete();
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            const adjRef = basePath.collection('adjustments').doc(adj.id);
+            batch.delete(adjRef);
+
+            if (adj.billId) {
+              const billObj = bills.find(b => b.id === adj.billId);
+              if (billObj) {
+                const splitsKeys = Object.keys(billObj.splits || {});
+                const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
+                const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                const billRef = basePath.collection('bills').doc(adj.billId);
+                batch.update(billRef, { paidStatus: newPaidStatus });
+              }
+            }
+
+            if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
+              adj.relatedBillIds.forEach(bId => {
+                const billObj = bills.find(b => b.id === bId);
+                if (billObj) {
+                  const splitsKeys = Object.keys(billObj.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
+                  const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                  const billRef = basePath.collection('bills').doc(bId);
+                  batch.update(billRef, { paidStatus: newPaidStatus });
+                }
+              });
+            }
+
+            await batch.commit();
             showToast("Adjustment removed");
           } catch (err) {
             showToast("Delete failed: Permission denied", "error");
@@ -1370,6 +1674,7 @@
         }
       };
 
+      // Save adjustment with pending state for Debt additions (Feature #2)
       const handleSaveAdjustment = async (e) => {
         e.preventDefault();
         if (!isAdmin) {
@@ -1386,7 +1691,10 @@
         const newAdj = {
           friendName: selectedFriendForAdjust,
           amount: finalAmount,
-          note: adjustNote.trim() || (adjustType === 'plus' ? 'Debt Increased' : `Partial Payment Settled (${amount.toFixed(2)} RM)`),
+          displayAmount: amount,
+          isPaymentRecord: adjustType === 'minus',
+          isSettled: adjustType === 'minus' ? true : false, // Debt additions are pending by default
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
           date: new Date().toISOString().split('T')[0],
           createdAt: Date.now()
         };
@@ -1477,6 +1785,8 @@
                         setRideFare('');
                         setTollFee('');
                         setRideRoute('');
+                        setLoanAmount('');
+                        setLoanBorrower('');
                         setSelectedImages([]);
                         setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
                         setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
@@ -1509,17 +1819,18 @@
           <main className="max-w-4xl mx-auto px-4 mt-6">
             
             {/* Tabs */}
-            <div className="flex bg-surface p-1 rounded-2xl gap-1 mb-6 border border-line">
+            <div className="flex bg-surface p-1 rounded-2xl gap-1 mb-6 border border-line overflow-x-auto">
               {[
                 { id: 'dashboard', label: t('dashboard') },
                 { id: 'bills', label: `${t('history')} (${bills.length})` },
                 { id: 'friends', label: `${t('friends')} (${friends.filter(f => !f.isArchived).length})` },
-                { id: 'adjustments', label: `${t('adjustments')} (${adjustments.length})` }
+                { id: 'adjustments', label: `${t('adjustments')} (${adjustments.length})` },
+                { id: 'analytics', label: t('analytics') }
               ].map(tab => (
                 <button 
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 py-2 px-2 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 ${activeTab === tab.id ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+                  className={`flex-1 py-2 px-3 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 whitespace-nowrap ${activeTab === tab.id ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
                 >
                   {tab.label}
                 </button>
@@ -1602,7 +1913,7 @@
               </div>
             )}
 
-            {/* --- 2. CREATE / EDIT TRANSACTION (ADMIN ONLY) --- */}
+            {/* --- 2. CREATE / EDIT TRANSACTION (FEATURE #1: LOAN / BORROW ADDED) --- */}
             {activeTab === 'new-bill' && (
               isAdmin ? (
                 <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-6 border border-line space-y-6">
@@ -1613,7 +1924,7 @@
                     <button type="button" onClick={() => setActiveTab('bills')} className="text-textSecondary hover:text-textPrimary text-sm">✕ {t('cancel')}</button>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1623,7 +1934,7 @@
                       }}
                       className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'delivery' ? 'bg-grab/15 border-grab text-emerald-400 shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
-                      🛵 Food Delivery
+                      🛵 Delivery
                     </button>
                     <button
                       type="button"
@@ -1633,7 +1944,7 @@
                       }}
                       className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'ride' ? 'bg-bolt/15 border-bolt text-bolt shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
-                      🚗 Ride (Grab/Bolt)
+                      🚗 Ride
                     </button>
                     <button
                       type="button"
@@ -1647,107 +1958,118 @@
                     >
                       🍽️ Dine-in
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBillType('loan');
+                      }}
+                      className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'loan' ? 'bg-coral/15 border-coral text-coral shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
+                    >
+                      💸 Loan (ยืมเงิน)
+                    </button>
                   </div>
 
-                  {/* SMART SCANNER + PASTE TEXT */}
-                  <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Direct Smart Scanner (Grab / Bills)</p>
-                        <p className="text-xs text-textSecondary mt-0.5">Upload screenshot/photo or paste receipt text directly</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          multiple 
-                          ref={fileInputRef} 
-                          onChange={handleAddImages} 
-                          className="hidden" 
-                        />
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                          className="bg-accent hover:bg-accent-hover text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
-                        >
-                          + Select Photo ({selectedImages.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowRawTextInput(!showRawTextInput)}
-                          className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
-                        >
-                          📝 Paste Text
-                        </button>
-                      </div>
-                    </div>
-
-                    {showRawTextInput && (
-                      <div className="pt-2 border-t border-line/40 space-y-2">
-                        <textarea
-                          value={rawOrderText}
-                          onChange={(e) => setRawOrderText(e.target.value)}
-                          placeholder="Paste order text summary from Grab / Email receipt here..."
-                          className="w-full h-24 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
-                        />
-                        <div className="flex justify-end gap-2">
+                  {/* SMART SCANNER (SHOW FOR FOOD/DELIVERY ONLY) */}
+                  {billType !== 'loan' && (
+                    <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                        <div>
+                          <p className="text-sm font-bold text-textPrimary flex items-center gap-2">📸 Direct Smart Scanner (Grab / Bills)</p>
+                          <p className="text-xs text-textSecondary mt-0.5">Upload screenshot/photo or paste receipt text directly</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            multiple 
+                            ref={fileInputRef} 
+                            onChange={handleAddImages} 
+                            className="hidden" 
+                          />
                           <button
                             type="button"
-                            onClick={() => setShowRawTextInput(false)}
-                            className="px-3 py-1 text-xs text-textSecondary"
+                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                            className="bg-accent hover:bg-accent-hover text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
                           >
-                            {t('cancel')}
+                            + Select Photo ({selectedImages.length})
                           </button>
                           <button
                             type="button"
-                            onClick={handleParseRawText}
-                            className="bg-mint text-bg font-bold px-4 py-1 rounded-lg text-xs"
+                            onClick={() => setShowRawTextInput(!showRawTextInput)}
+                            className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
                           >
-                            Extract Items From Text
+                            📝 Paste Text
                           </button>
                         </div>
                       </div>
-                    )}
 
-                    {selectedImages.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-2 border-t border-line/40 items-center">
-                        {selectedImages.map((file, index) => (
-                          <div key={index} className="relative group bg-surface border border-line rounded-lg p-1 flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono text-textMuted px-1">#{index + 1}</span>
-                            <span className="text-xs text-textPrimary max-w-[100px] truncate">{file.name}</span>
+                      {showRawTextInput && (
+                        <div className="pt-2 border-t border-line/40 space-y-2">
+                          <textarea
+                            value={rawOrderText}
+                            onChange={(e) => setRawOrderText(e.target.value)}
+                            placeholder="Paste order text summary from Grab / Email receipt here..."
+                            className="w-full h-24 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
+                          />
+                          <div className="flex justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => handleRemoveImage(index)}
-                              className="text-coral text-xs px-1 hover:font-bold"
+                              onClick={() => setShowRawTextInput(false)}
+                              className="px-3 py-1 text-xs text-textSecondary"
                             >
-                              ✕
+                              {t('cancel')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleParseRawText}
+                              className="bg-mint text-bg font-bold px-4 py-1 rounded-lg text-xs"
+                            >
+                              Extract Items From Text
                             </button>
                           </div>
-                        ))}
-                        
-                        <button
-                          type="button"
-                          disabled={ocrProcessing}
-                          onClick={handleProcessAllImages}
-                          className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
-                        >
-                          {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+
+                      {selectedImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-line/40 items-center">
+                          {selectedImages.map((file, index) => (
+                            <div key={index} className="relative group bg-surface border border-line rounded-lg p-1 flex items-center gap-1.5">
+                              <span className="text-[10px] font-mono text-textMuted px-1">#{index + 1}</span>
+                              <span className="text-xs text-textPrimary max-w-[100px] truncate">{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImage(index)}
+                                className="text-coral text-xs px-1 hover:font-bold"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                          
+                          <button
+                            type="button"
+                            disabled={ocrProcessing}
+                            onClick={handleProcessAllImages}
+                            className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
+                          >
+                            {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
-                        {billType === 'ride' ? 'Trip / Ride Title' : 'Merchant / Order Title'}
+                        {billType === 'ride' ? 'Trip / Ride Title' : billType === 'loan' ? 'Loan Purpose / Reason' : 'Merchant / Order Title'}
                       </label>
                       <input 
                         type="text" 
                         value={newBillName}
                         onChange={(e) => setNewBillName(e.target.value)}
-                        className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent focus:ring-1 focus:ring-accent outline-none"
-                        placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : 'e.g., KFC GrabFood, Baby Cami'}
+                        className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
+                        placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : billType === 'loan' ? 'e.g., ยืมเงินสดกินข้าว, ฝากโอน' : 'e.g., KFC GrabFood, Baby Cami'}
                         required
                       />
                     </div>
@@ -1762,32 +2084,77 @@
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
-                      Participants ({billFriends.length} people)
-                    </label>
-                    <div className="flex flex-wrap gap-2 bg-subtle p-3 rounded-xl border border-line">
-                      {friends.filter(f => !f.isArchived).map(friend => {
-                        const isSelected = billFriends.includes(friend.name);
-                        return (
-                          <button
-                            key={friend.id}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setBillFriends(billFriends.filter(f => f !== friend.name));
-                              } else {
-                                setBillFriends([...billFriends, friend.name]);
-                              }
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 ${isSelected ? 'bg-accent text-white shadow-md shadow-accent/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                  {/* LOAN SPECIFIC INTERFACE (FEATURE #1) */}
+                  {billType === 'loan' ? (
+                    <div className="bg-subtle p-4 rounded-xl border border-coral/30 space-y-4">
+                      <div className="flex items-center gap-2 text-coral text-xs font-bold uppercase tracking-wider">
+                        <span>💸 Cash Loan / Borrowing Details</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-textSecondary mb-1 font-bold">Borrower (คนที่ยืมเงิน)</label>
+                          <select
+                            value={loanBorrower}
+                            onChange={(e) => setLoanBorrower(e.target.value)}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2.5 text-sm text-textPrimary focus:border-coral outline-none"
+                            required
                           >
-                            {isSelected ? '✓ ' : '+ '} {friend.name}
-                          </button>
-                        );
-                      })}
+                            <option value="">-- เลือกคนที่ยืม --</option>
+                            {friends.filter(f => !f.isSelf && !f.isArchived).map(f => (
+                              <option key={f.id} value={f.name}>{f.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-coral mb-1 font-bold">Loan Amount (ยอดเงินที่ยืม - RM)</label>
+                          <input 
+                            type="text" 
+                            inputMode="decimal"
+                            value={loanAmount}
+                            onChange={(e) => setLoanAmount(e.target.value)}
+                            onBlur={(e) => setLoanAmount(evaluateMathExpression(e.target.value))}
+                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-coral outline-none font-mono font-bold"
+                            placeholder="0.00"
+                            required
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">
+                        Participants ({billFriends.length} people)
+                      </label>
+                      <div className="flex flex-wrap gap-2 bg-subtle p-3 rounded-xl border border-line">
+                        {friends.filter(f => !f.isArchived).map(friend => {
+                          const isSelected = billFriends.includes(friend.name);
+                          return (
+                            <button
+                              key={friend.id}
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) {
+                                  const nextFriends = billFriends.filter(f => f !== friend.name);
+                                  setBillFriends(nextFriends);
+                                  setBillItems(billItems.map(item => ({
+                                    ...item,
+                                    sharedWith: (item.sharedWith || []).filter(name => name !== friend.name)
+                                  })));
+                                } else {
+                                  setBillFriends([...billFriends, friend.name]);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 ${isSelected ? 'bg-accent text-white shadow-md shadow-accent/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                            >
+                              {isSelected ? '✓ ' : '+ '} {friend.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {billType === 'ride' ? (
                     <div className="bg-subtle p-4 rounded-xl border border-bolt/30 space-y-4">
@@ -1861,10 +2228,9 @@
                         />
                       </div>
                     </div>
-                  ) : (
+                  ) : billType === 'loan' ? null : (
                     <>
                       <div className="bg-subtle p-4 rounded-xl border border-line space-y-4">
-                        {/* TAX MODE TOGGLE */}
                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-3 border-b border-line">
                           <div>
                             <p className="text-xs font-bold text-textPrimary">{t('taxModeTitle')}</p>
@@ -1996,7 +2362,6 @@
                                   />
                                 </div>
                                 <div className="col-span-4 sm:col-span-2">
-                                  {/* PRICE WITH DECIMAL INPUT MODE */}
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -2007,12 +2372,11 @@
                                       setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, price: evaluated } : bi));
                                     }}
                                     className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
-                                    placeholder="Price (เช่น 12+3.5)"
+                                    placeholder="Price"
                                     required
                                   />
                                 </div>
                                 <div className="col-span-3 sm:col-span-2">
-                                  {/* QTY WITH FULL NUMERIC / PIN PAD INPUT MODE */}
                                   <input
                                     type="text"
                                     inputMode="numeric"
@@ -2049,24 +2413,27 @@
                               <div>
                                 <p className="text-[11px] text-textSecondary mb-1.5 font-bold">Shared By:</p>
                                 <div className="flex flex-wrap gap-1.5">
-                                  {friends.filter(f => !f.isArchived).map(f => {
-                                    const fName = f.name;
-                                    const isShared = (item.sharedWith || []).includes(fName);
-                                    return (
-                                      <button
-                                        key={fName}
-                                        type="button"
-                                        onClick={() => {
-                                          const currentShared = item.sharedWith || [];
-                                          const nextShared = isShared ? currentShared.filter(sn => sn !== fName) : [...currentShared, fName];
-                                          setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, sharedWith: nextShared } : bi));
-                                        }}
-                                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${isShared ? 'bg-mint text-bg font-bold shadow-sm' : 'bg-surface text-textSecondary border border-line'}`}
-                                      >
-                                        {fName}
-                                      </button>
-                                    );
-                                  })}
+                                  {billFriends.length === 0 ? (
+                                    <span className="text-[11px] text-coral">กรุณาเลือก Participants ด้านบนก่อน</span>
+                                  ) : (
+                                    billFriends.map(fName => {
+                                      const isShared = (item.sharedWith || []).includes(fName);
+                                      return (
+                                        <button
+                                          key={fName}
+                                          type="button"
+                                          onClick={() => {
+                                            const currentShared = item.sharedWith || [];
+                                            const nextShared = isShared ? currentShared.filter(sn => sn !== fName) : [...currentShared, fName];
+                                            setBillItems(billItems.map(bi => bi.id === item.id ? { ...bi, sharedWith: nextShared } : bi));
+                                          }}
+                                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${isShared ? 'bg-mint text-bg font-bold shadow-sm' : 'bg-surface text-textSecondary border border-line'}`}
+                                        >
+                                          {fName}
+                                        </button>
+                                      );
+                                    })
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2127,6 +2494,7 @@
                       { id: 'pending', label: t('filterPending') },
                       { id: 'settled', label: t('filterSettled') },
                       { id: 'ride', label: t('filterRide') },
+                      { id: 'loan', label: t('filterLoan') },
                       { id: 'food', label: t('filterFood') },
                     ].map(f => (
                       <button
@@ -2166,6 +2534,9 @@
                                 {bill.billType === 'ride' && (
                                   <span className="text-[10px] bg-bolt/20 text-bolt font-bold px-1.5 py-0.5 rounded">🚗 Ride</span>
                                 )}
+                                {bill.billType === 'loan' && (
+                                  <span className="text-[10px] bg-coral/20 text-coral font-bold px-1.5 py-0.5 rounded">💸 Loan</span>
+                                )}
                                 {bill.deliveryFee > 0 && (
                                   <span className="text-[10px] bg-grab/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded">Delivery</span>
                                 )}
@@ -2183,7 +2554,7 @@
 
                           <div className="grid grid-cols-2 gap-2 mt-4 bg-subtle p-3 rounded-xl">
                             <div>
-                              <p className="text-[10px] text-textMuted uppercase font-bold">{bill.billType === 'ride' ? t('fare') : t('subtotal')}</p>
+                              <p className="text-[10px] text-textMuted uppercase font-bold">{bill.billType === 'ride' ? t('fare') : bill.billType === 'loan' ? 'Loaned' : t('subtotal')}</p>
                               <p className="text-sm font-semibold text-textSecondary font-mono">{bill.subtotal?.toFixed(2)} RM</p>
                             </div>
                             <div className="text-right">
@@ -2202,8 +2573,8 @@
                                 <div className="flex gap-1.5">
                                   <button
                                     onClick={() => {
-                                      const text = `🧾 รายละเอียดบิล: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
-                                        (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n');
+                                      const text = `🧾 รายละเอียด: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
+                                        (bill.billType === 'loan' ? `- ผู้ยืม: ${bill.loanBorrower}` : (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n'));
                                       shareToSocial(text, 'whatsapp');
                                     }}
                                     className="bg-whatsapp/20 hover:bg-whatsapp text-emerald-400 hover:text-bg text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
@@ -2212,8 +2583,8 @@
                                   </button>
                                   <button
                                     onClick={() => {
-                                      const text = `🧾 รายละเอียดบิล: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
-                                        (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n');
+                                      const text = `🧾 รายละเอียด: ${bill.name}\nยอดรวม: ${bill.total?.toFixed(2)} RM\n` +
+                                        (bill.billType === 'loan' ? `- ผู้ยืม: ${bill.loanBorrower}` : (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n'));
                                       shareToSocial(text, 'ig');
                                     }}
                                     className="bg-instagram/20 hover:bg-instagram text-coral hover:text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
@@ -2243,7 +2614,7 @@
                                       >
                                         <p className="font-bold flex items-center gap-1.5 text-textPrimary">
                                           {fName}
-                                          <span className="text-[10px] text-accent underline font-normal">→ Items</span>
+                                          <span className="text-[10px] text-accent underline font-normal">→ Details</span>
                                         </p>
                                         <p className="text-textSecondary text-[11px] font-mono mt-0.5">{bill.splits[fName]?.toFixed(2)} RM</p>
                                       </div>
@@ -2390,7 +2761,7 @@
               </div>
             )}
 
-            {/* --- 5. ADJUSTMENTS TAB --- */}
+            {/* --- 5. ADJUSTMENTS TAB (FEATURE #2: PENDING/PAID TOGGLE FOR ADD DEBT) --- */}
             {activeTab === 'adjustments' && (
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-textPrimary">{t('adjustmentLogs')} ({adjustments.length})</h2>
@@ -2406,13 +2777,31 @@
                           <p className="text-xs text-textSecondary mt-0.5">{t('note')}: {adj.note}</p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : adj.amount < 0 ? 'text-mint' : 'text-textMuted'}`}>
-                            {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
-                          </span>
+                          {adj.displayAmount !== undefined ? (
+                            <span className="font-bold font-mono text-mint">
+                              {adj.displayAmount.toFixed(2)} RM
+                            </span>
+                          ) : adj.amount !== undefined ? (
+                            <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                              {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
+                            </span>
+                          ) : null}
+
+                          {/* Interactive Toggle for Add Debt Adjustments */}
+                          {adj.amount > 0 && isAdmin && (
+                            <button
+                              onClick={() => handleToggleAdjStatus(adj)}
+                              className={`text-[11px] font-bold px-2 py-1 rounded-lg transition ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                              title="Toggle Debt Paid Status"
+                            >
+                              {adj.isSettled ? t('paid') : t('pending')}
+                            </button>
+                          )}
+                          
                           {isAdmin && (
                             <button
                               onClick={() => handleDeleteAdjustment(adj)}
-                              className="text-textMuted hover:text-coral text-xs underline"
+                              className="text-textMuted hover:text-coral text-xs underline ml-1"
                             >
                               {t('delete')}
                             </button>
@@ -2422,6 +2811,150 @@
                     ))
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* --- 6. ANALYTICS & BACKUP TAB (FEATURE #3: DAILY EXPENSE ADDED) --- */}
+            {activeTab === 'analytics' && (
+              <div className="space-y-6">
+                
+                {/* 1. Monthly Analytics Card */}
+                <div className="bg-surface rounded-2xl p-6 border border-line space-y-5">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 pb-3 border-b border-line">
+                    <div>
+                      <h2 className="text-base font-bold text-textPrimary flex items-center gap-2">
+                        📊 {t('analyticsTitle')}
+                      </h2>
+                      <p className="text-xs text-textSecondary mt-0.5">Overview of monthly expenditures and distribution</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-textSecondary font-bold">{t('monthSelect')}</label>
+                      <input 
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="bg-subtle border border-line rounded-xl px-3 py-1.5 text-xs text-textPrimary outline-none focus:border-accent font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Summary Metric Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-subtle p-4 rounded-xl border border-line">
+                      <p className="text-[10px] text-textMuted uppercase font-bold">{t('totalGroupSpend')}</p>
+                      <p className="text-xl font-black text-textPrimary mt-1 font-mono tabular">{monthlyStats.totalGroup.toFixed(2)} RM</p>
+                      <p className="text-[10px] text-textSecondary mt-0.5">{monthlyStats.count} Transactions</p>
+                    </div>
+                    <div className="bg-subtle p-4 rounded-xl border border-line">
+                      <p className="text-[10px] text-emerald-400 uppercase font-bold">{t('totalFoodSpend')}</p>
+                      <p className="text-xl font-black text-emerald-400 mt-1 font-mono tabular">{monthlyStats.foodTotal.toFixed(2)} RM</p>
+                      <p className="text-[10px] text-textSecondary mt-0.5">{monthlyStats.foodPct}% of month</p>
+                    </div>
+                    <div className="bg-subtle p-4 rounded-xl border border-line">
+                      <p className="text-[10px] text-bolt uppercase font-bold">{t('totalRideSpend')}</p>
+                      <p className="text-xl font-black text-bolt mt-1 font-mono tabular">{monthlyStats.rideTotal.toFixed(2)} RM</p>
+                      <p className="text-[10px] text-textSecondary mt-0.5">{monthlyStats.ridePct}% of month</p>
+                    </div>
+                    <div className="bg-subtle p-4 rounded-xl border border-line">
+                      <p className="text-[10px] text-accent uppercase font-bold">{t('avgBillCost')}</p>
+                      <p className="text-xl font-black text-accent mt-1 font-mono tabular">{monthlyStats.avgPerBill.toFixed(2)} RM</p>
+                      <p className="text-[10px] text-textSecondary mt-0.5">Per Transaction</p>
+                    </div>
+                  </div>
+
+                  {/* Feature #3: Daily My Expense Breakdown */}
+                  <div className="space-y-3 pt-4 border-t border-line">
+                    <h3 className="text-xs font-bold text-mint uppercase font-mono flex items-center gap-1.5">
+                      {t('dailyExpenseTitle')}
+                    </h3>
+                    {monthlyStats.sortedDailyExpenses.length === 0 ? (
+                      <p className="text-xs text-textMuted py-3 text-center">No personal expenditure logged for {selectedMonth}</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {monthlyStats.sortedDailyExpenses.map(([dStr, dObj]) => (
+                          <div key={dStr} className="bg-subtle p-3 rounded-xl border border-line flex flex-col gap-1.5">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-textPrimary text-xs font-mono">{dStr}</span>
+                              <span className="font-black text-mint text-sm font-mono tabular">{dObj.total.toFixed(2)} RM</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {dObj.items.map((it, idx) => (
+                                <span key={idx} className="text-[10px] bg-surface text-textSecondary px-2 py-0.5 rounded border border-line/60">
+                                  {it.type === 'ride' ? '🚗' : it.type === 'loan' ? '💸' : '🛵'} {it.name}: <strong className="text-textPrimary font-mono">{it.amount.toFixed(2)} RM</strong>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Top Members Breakdown */}
+                  <div className="space-y-3 pt-3 border-t border-line">
+                    <p className="text-xs font-bold text-textPrimary uppercase font-sans">👥 {t('topSpenders')}:</p>
+                    {monthlyStats.sortedSpenders.length === 0 ? (
+                      <p className="text-xs text-textMuted py-3 text-center">No transaction records in {selectedMonth}</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {monthlyStats.sortedSpenders.map(([pName, pAmt]) => (
+                          <div key={pName} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line/60">
+                            <span className="font-bold text-textPrimary text-xs">{pName}</span>
+                            <span className="font-bold text-textPrimary text-xs font-mono tabular">{pAmt.toFixed(2)} RM</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Backup & Restore Card */}
+                <div className="bg-surface rounded-2xl p-6 border border-line space-y-4">
+                  <div>
+                    <h2 className="text-base font-bold text-textPrimary flex items-center gap-2">
+                      💾 {t('backupTitle')}
+                    </h2>
+                    <p className="text-xs text-textSecondary mt-0.5">Export full records for spreadsheet reporting or restore historical data</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <button
+                      onClick={handleExportJSONBackup}
+                      className="bg-subtle hover:bg-line border border-line text-textPrimary font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition active:scale-[0.99]"
+                    >
+                      <span>{t('exportJsonBtn')}</span>
+                    </button>
+                    <button
+                      onClick={handleExportCSVReport}
+                      className="bg-subtle hover:bg-line border border-line text-textPrimary font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition active:scale-[0.99]"
+                    >
+                      <span>{t('exportCsvBtn')}</span>
+                    </button>
+                  </div>
+
+                  {isAdmin && (
+                    <div className="pt-3 border-t border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold text-amber">Restore Backup File (JSON)</p>
+                        <p className="text-[11px] text-textSecondary">Upload a previously exported JSON backup to synchronize with Firestore</p>
+                      </div>
+                      <input 
+                        type="file" 
+                        accept=".json"
+                        ref={restoreInputRef}
+                        onChange={handleRestoreJSON}
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => restoreInputRef.current && restoreInputRef.current.click()}
+                        className="bg-amber/15 hover:bg-amber text-amber hover:text-bg border border-amber/40 font-bold py-2 px-4 rounded-xl text-xs transition"
+                      >
+                        {t('restoreJsonBtn')}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
 
@@ -2614,10 +3147,10 @@
                               <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
                                 <div>
                                   <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
-                                    {b.billType === 'ride' ? '🚗 ' : '🛵 '} {b.name}
+                                    {b.billType === 'ride' ? '🚗 ' : b.billType === 'loan' ? '💸 ' : '🛵 '} {b.name}
                                   </p>
                                   <p className="text-[10px] text-textMuted">
-                                    {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split')}
+                                    {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split')}
                                   </p>
                                 </div>
                                 <div className="text-right flex items-center gap-2">
@@ -2655,9 +3188,36 @@
                                 <span className="text-textPrimary">{adj.note}</span>
                                 <span className="text-textMuted ml-1.5 font-mono">({adj.date})</span>
                               </div>
-                              <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : adj.amount < 0 ? 'text-mint' : 'text-textMuted'}`}>
-                                {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
-                              </span>
+                              <div className="flex items-center gap-2">
+                                {adj.displayAmount !== undefined ? (
+                                  <span className="font-bold font-mono text-mint">
+                                    {adj.displayAmount.toFixed(2)} RM
+                                  </span>
+                                ) : adj.amount !== undefined ? (
+                                  <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                                    {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                                  </span>
+                                ) : null}
+
+                                {/* Toggle button for Add Debt adjustments (Feature #2) */}
+                                {adj.amount > 0 && isAdmin && (
+                                  <button
+                                    onClick={() => handleToggleAdjStatus(adj)}
+                                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                  >
+                                    {adj.isSettled ? t('paid') : t('pending')}
+                                  </button>
+                                )}
+
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => handleDeleteAdjustment(adj)}
+                                    className="text-textMuted hover:text-coral text-xs underline ml-1"
+                                  >
+                                    {t('delete')}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -2742,7 +3302,7 @@
                       <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
                       <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 {t('appTitle')}</p>
                       <p className="text-base font-bold text-textPrimary font-sans">
-                        {activeBreakdown.bill.billType === 'ride' ? '🚗 ' : '🛵 '} {activeBreakdown.bill.name}
+                        {activeBreakdown.bill.billType === 'ride' ? '🚗 ' : activeBreakdown.bill.billType === 'loan' ? '💸 ' : '🛵 '} {activeBreakdown.bill.name}
                       </p>
                       {activeBreakdown.bill.rideRoute && <p className="text-[11px] text-textSecondary font-sans">📍 {activeBreakdown.bill.rideRoute}</p>}
                       <p className="text-textMuted">{activeBreakdown.bill.date}</p>
@@ -2753,7 +3313,18 @@
                       )}
                     </div>
 
-                    {activeBreakdown.bill.billType === 'ride' ? (
+                    {activeBreakdown.bill.billType === 'loan' ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between py-1">
+                          <span className="text-textSecondary">Borrower (ผู้ยืม)</span>
+                          <span className="font-bold font-mono">{activeBreakdown.bill.loanBorrower}</span>
+                        </div>
+                        <div className="flex justify-between py-1 text-coral">
+                          <span>Loaned Amount</span>
+                          <span className="font-bold font-mono">{activeBreakdown.bill.total?.toFixed(2)} RM</span>
+                        </div>
+                      </div>
+                    ) : activeBreakdown.bill.billType === 'ride' ? (
                       <div className="space-y-2">
                         <div className="flex justify-between py-1">
                           <span className="text-textSecondary">Base Fare</span>
