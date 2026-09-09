@@ -255,9 +255,9 @@
         filterAll: "ทั้งหมด",
         filterPending: "เฉพาะที่ยังค้าง",
         filterSettled: "เคลียร์ครบแล้ว",
-        filterRide: "🚗 ค่ารถ",
+        filterRide: "🚗 เฉพาะค่ารถ",
         filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
-        filterLoan: "💸 ยืมเงิน",
+        filterLoan: "💸 ยืมเงิน / Loan",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
         subtotal: "ยอดรวมก่อนลด",
@@ -932,7 +932,6 @@
           reader.readAsDataURL(imageFile);
           reader.onloadend = async () => {
             try {
-              // ตัดส่วนหัว base64 ออกให้เหลือเฉพาะข้อมูลดิบ
               const base64Raw = reader.result.toString();
               const base64Data = base64Raw.includes(',') ? base64Raw.split(',')[1] : base64Raw;
               const mimeType = imageFile.type || 'image/jpeg';
@@ -967,7 +966,6 @@ Rules:
                 }
               };
 
-              // รายชื่อโมเดลและ Endpoint ที่ระบบจะทดสอบตามลำดับ
               const candidateEndpoints = [
                 `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
                 `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
