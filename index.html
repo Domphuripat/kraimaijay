@@ -168,7 +168,7 @@
         filterSettled: "Settled",
         filterRide: "🚗 Rides Only",
         filterFood: "🛵 Food / Orders",
-        filterLoan: "💸 Loans Only",
+        filterLoan: "💸 Loans",
         noTransactions: "No transactions match your search or filter.",
         fare: "Fare",
         subtotal: "Subtotal",
@@ -232,13 +232,13 @@
         appTitle: "ใครไม่จ่ายมีเรื่อง",
         adminMode: "👑 โหมดแอดมิน",
         viewOnly: "👀 โหมดดูอย่างเดียว",
-        createTx: "+ สร้างรายการบิล / ยืมเงิน",
+        createTx: "+ สร้างรายการบิล",
         lock: "ล็อค 🔒",
         adminSignIn: "🔑 เข้าสู่ระบบแอดมิน",
         dashboard: "แดชบอร์ด",
         history: "ประวัติบิล",
-        friends: "เพื่อน & ยอดค้าง",
-        adjustments: "ประวัติการชำระ & ปรับยอด",
+        friends: "เพื่อน",
+        adjustments: "ประวัติการชำระ",
         analytics: "สถิติ & สำรองข้อมูล",
         totalOutstanding: "ยอดรวมที่ต้องเก็บเพื่อน (รอโอน)",
         pendingFriends: "ค้างชำระทั้งหมด {n} คน",
@@ -256,8 +256,8 @@
         filterPending: "เฉพาะที่ยังค้าง",
         filterSettled: "เคลียร์ครบแล้ว",
         filterRide: "🚗 เฉพาะค่ารถ",
-        filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
-        filterLoan: "💸 ยืมเงิน / Loan",
+        filterFood: "🛵 สั่งอาหาร",
+        filterLoan: "💸 ยืมเงิน",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
         subtotal: "ยอดรวมก่อนลด",
@@ -924,7 +924,7 @@
 
       // --- STRATEGY 2: CLIENT-SIDE CANVAS IMAGE PRE-PROCESSING ---
       const preprocessImageForOCR = (imageFile) => {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
           const img = new Image();
           const objectUrl = URL.createObjectURL(imageFile);
           img.onload = () => {
@@ -932,7 +932,6 @@
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
 
-            // ขยายภาพเล็กน้อยเพื่อให้ OCR อ่านตัวหนังสือเล็กๆ ได้คมชัดขึ้น (Scale factor 1.5)
             const scale = 1.5;
             canvas.width = img.width * scale;
             canvas.height = img.height * scale;
@@ -940,12 +939,10 @@
             ctx.imageSmoothingEnabled = true;
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            // แปลงเป็น Grayscale + Adaptive Thresholding (ขาว-ดำ คมชัด ตัดเงาสะท้อน)
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const d = imgData.data;
             for (let i = 0; i < d.length; i += 4) {
               const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-              // เร่งคอนทราสต์ตัวอักษร
               const v = gray > 145 ? 255 : 0;
               d[i] = v;     // R
               d[i + 1] = v; // G
@@ -965,10 +962,9 @@
 
       // --- STRATEGY 3: ENHANCED REGEX PARSER (AEON, 7-11, GRAB, FOODPANDA) ---
       const parseTextContent = (fullText) => {
-        // ทำความสะอาดข้อความและจัดเรียงบรรทัด
         const cleanLines = fullText
           .replace(/[—–]/g, '-')
-          .replace(/[oO](?=[0-9])/g, '0') // แก้ O ที่ OCR อ่านผิดเป็น 0
+          .replace(/[oO](?=[0-9])/g, '0')
           .split('\n')
           .map(l => l.trim())
           .filter(Boolean);
@@ -1019,7 +1015,6 @@
           if (isNoise) continue;
 
           // 5. ดึงรายการสินค้า: รองรับสลิป Aeon, 7-11, Grab (ข้ามบาร์โค้ดเลขยาวๆ นำหน้า)
-          // เช่น "955600123456 COCA COLA 1.5L 3.50" หรือ "1x Chicken Rice 12.00"
           const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
           const match = line.match(itemRegex);
 
@@ -1028,7 +1023,6 @@
             let itemName = match[2].replace(/^[0-9]+x?\s*/i, '').trim();
             let itemPrice = parseFloat(match[3].replace(',', '.'));
 
-            // เช็คว่าบรรทัดถัดไปมีระบุตัวคูณ Qty หรือไม่ (เช่น 2x อยู่บรรทัดถัดไป)
             if (i + 1 < cleanLines.length && /^[0-9]+\s*[xX]$/i.test(cleanLines[i + 1])) {
               qty = parseInt(cleanLines[i + 1]) || qty;
             }
@@ -1093,7 +1087,7 @@
               }
             );
 
-            // 3. แกะข้อมูลด้วย Regular Expressions ที่ปรับแต่งเฉพาะ
+            // 3. แกะข้อมูลด้วย Regular Expressions
             const parsed = parseTextContent(text);
             parsed.extractedItems.forEach(item => {
               if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
