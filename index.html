@@ -168,7 +168,7 @@
         filterSettled: "Settled",
         filterRide: "🚗 Rides Only",
         filterFood: "🛵 Food / Orders",
-        filterLoan: "💸 Loans",
+        filterLoan: "💸 Loans Only",
         noTransactions: "No transactions match your search or filter.",
         fare: "Fare",
         subtotal: "Subtotal",
@@ -227,6 +227,7 @@
         topSpenders: "Top Friends Share Breakdown",
         calendarTitle: "📅 Daily Expense Calendar (My Expense)",
         dayNames: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+        paidByLabel: "💳 Paid By (Who paid the bill?):",
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
@@ -256,7 +257,7 @@
         filterPending: "เฉพาะที่ยังค้าง",
         filterSettled: "เคลียร์ครบแล้ว",
         filterRide: "🚗 เฉพาะค่ารถ",
-        filterFood: "🛵 สั่งอาหาร",
+        filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
         filterLoan: "💸 ยืมเงิน",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
@@ -316,6 +317,7 @@
         topSpenders: "สรุปยอดส่วนแบ่งรายบุคคลในเดือนนี้",
         calendarTitle: "📅 ปฏิทินรายจ่ายของฉันรายวัน (Daily My Expense)",
         dayNames: ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'],
+        paidByLabel: "💳 ใครเป็นคนจ่ายเงินบิลนี้ (Paid By):",
       }
     };
 
@@ -395,6 +397,7 @@
       const [billType, setBillType] = useState('delivery');
       const [newBillDate, setNewBillDate] = useState(new Date().toISOString().split('T')[0]);
       const [billFriends, setBillFriends] = useState([]);
+      const [paidBy, setPaidBy] = useState('Me (Dom)'); // Feature: เพื่อนจ่าย / ใครเป็นคนจ่าย
       
       // Ride specific
       const [rideFare, setRideFare] = useState('');
@@ -693,19 +696,20 @@
 
       const handleExportCSVReport = () => {
         let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-        csvContent += "Date,Type,Title,Route,Subtotal(RM),Total(RM),Participants,Unpaid Pax\n";
+        csvContent += "Date,Type,Title,Route,PaidBy,Subtotal(RM),Total(RM),Participants,Unpaid Pax\n";
 
         bills.forEach(b => {
           const type = b.billType === 'ride' ? 'Ride' : b.billType === 'loan' ? 'Loan' : 'Food/Delivery';
           const title = `"${(b.name || '').replace(/"/g, '""')}"`;
           const route = `"${(b.rideRoute || '').replace(/"/g, '""')}"`;
+          const pBy = `"${b.paidBy || 'Me (Dom)'}"`;
           const sub = (b.subtotal || 0).toFixed(2);
           const tot = (b.total || 0).toFixed(2);
           const parts = `"${Object.keys(b.splits || {}).join(', ')}"`;
           const unpaidList = Object.keys(b.splits || {}).filter(name => !b.paidStatus?.[name]);
           const unpaid = `"${unpaidList.join(', ')}"`;
 
-          csvContent += `${b.date},${type},${title},${route},${sub},${tot},${parts},${unpaid}\n`;
+          csvContent += `${b.date},${type},${title},${route},${pBy},${sub},${tot},${parts},${unpaid}\n`;
         });
 
         const encodedUri = encodeURI(csvContent);
@@ -944,9 +948,9 @@
             for (let i = 0; i < d.length; i += 4) {
               const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
               const v = gray > 145 ? 255 : 0;
-              d[i] = v;     // R
-              d[i + 1] = v; // G
-              d[i + 2] = v; // B
+              d[i] = v;
+              d[i + 1] = v;
+              d[i + 2] = v;
             }
             ctx.putImageData(imgData, 0, 0);
 
@@ -975,7 +979,7 @@
         for (let i = 0; i < cleanLines.length; i++) {
           const line = cleanLines[i];
 
-          // 1. ตรวจจับ Delivery Fee
+          // 1. Delivery Fee
           if (/delivery\s*fee|rider\s*fee|driver\s*fee|shipping/i.test(line)) {
             const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
             if (matches && matches.length > 0) {
@@ -984,7 +988,7 @@
             continue;
           }
 
-          // 2. ตรวจจับ Packaging Charge / Box fee
+          // 2. Packaging Charge
           if (/packaging|packing|takeaway\s*box|container|bag/i.test(line)) {
             const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
             if (matches && matches.length > 0) {
@@ -993,7 +997,7 @@
             continue;
           }
 
-          // 3. ตรวจจับ Discount / Promo / Voucher
+          // 3. Discount / Promo
           if (/discount|promo|voucher|off\b|cashback|rebate/i.test(line)) {
             const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
             if (matches && matches.length > 0) {
@@ -1003,18 +1007,17 @@
             continue;
           }
 
-          // 4. ตรวจจับ Toll Fee (ทางด่วน)
+          // 4. Toll Fee
           if (/toll|expressway|highway/i.test(line)) {
             const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
             if (matches) tFee = parseFloat(matches[1].replace(',', '.'));
             continue;
           }
 
-          // ข้ามบรรทัด Noise ที่ไม่ใช่สินค้า
           const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|sst\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery|invoice|receipt|cashier|terminal|change\b|rounding/i.test(line);
           if (isNoise) continue;
 
-          // 5. ดึงรายการสินค้า: รองรับสลิป Aeon, 7-11, Grab (ข้ามบาร์โค้ดเลขยาวๆ นำหน้า)
+          // 5. Items (รองรับบาร์โค้ด Aeon, 7-11 และ Grab)
           const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
           const match = line.match(itemRegex);
 
@@ -1056,7 +1059,6 @@
         setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
       };
 
-      // Process All Images using Enhanced Canvas Pre-processing + Tesseract
       const handleProcessAllImages = async () => {
         if (!selectedImages.length) return;
         setOcrProcessing(true);
@@ -1069,11 +1071,8 @@
           showToast("⚡ กำลังปรับแต่งภาพ & สแกนบิลแบบ Offline...");
           for (let i = 0; i < selectedImages.length; i++) {
             const rawFile = selectedImages[i];
-            
-            // 1. Pre-process ภาพผ่าน Canvas
             const processedBlob = await preprocessImageForOCR(rawFile);
 
-            // 2. สแกนด้วย Tesseract.js
             const { data: { text } } = await Tesseract.recognize(
               processedBlob,
               'eng+tha',
@@ -1087,7 +1086,6 @@
               }
             );
 
-            // 3. แกะข้อมูลด้วย Regular Expressions
             const parsed = parseTextContent(text);
             parsed.extractedItems.forEach(item => {
               if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
@@ -1311,6 +1309,7 @@
         };
       };
 
+      // --- DUAL-WAY DEBT CALCULATION (เพื่อนจ่าย / ME จ่าย) ---
       const getFriendBalances = () => {
         const balances = {};
         friends.forEach(f => {
@@ -1318,14 +1317,32 @@
         });
 
         bills.forEach(bill => {
-          Object.keys(bill.splits || {}).forEach(name => {
-            const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
-            const realName = fObj ? fObj.name : name;
-            const isSelf = fObj?.isSelf || realName === 'Me (Dom)' || realName === 'ตัวฉันเอง';
-            if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
-              balances[realName].billsOwed += bill.splits[name];
+          const billPayer = bill.paidBy || 'Me (Dom)';
+          const isDomPayer = /me|dom/i.test(billPayer);
+
+          if (isDomPayer) {
+            // กรณีเราจ่าย: เพื่อนทุกคนที่หารบิลนี้จะติดหนี้เรา
+            Object.keys(bill.splits || {}).forEach(name => {
+              const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+              const realName = fObj ? fObj.name : name;
+              const isSelf = fObj?.isSelf || /me|dom/i.test(realName);
+              if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
+                balances[realName].billsOwed += bill.splits[name];
+              }
+            });
+          } else {
+            // กรณีเพื่อนจ่าย (เช่น A จ่าย): เราจะติดหนี้เพื่อนคนนั้น (- หนี้)
+            const payerObj = friends.find(f => f.name.toLowerCase() === billPayer.toLowerCase());
+            const realPayerName = payerObj ? payerObj.name : billPayer;
+            
+            // หายอดส่วนของเราในบิลนั้น
+            const myShare = bill.splits?.['Me (Dom)'] || bill.splits?.['ตัวฉันเอง'] || 0;
+            const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
+
+            if (balances[realPayerName] && myShare > 0 && !isMySharePaid) {
+              balances[realPayerName].billsOwed -= myShare; // ติดลบคือเราต้องจ่ายให้เพื่อน
             }
-          });
+          }
         });
 
         adjustments.forEach(adj => {
@@ -1357,7 +1374,9 @@
       const getFriendHistory = (friendName) => {
         const friendBills = bills.filter(b => {
           const keys = Object.keys(b.splits || {});
-          return keys.some(k => k.toLowerCase() === friendName.toLowerCase());
+          const touchesFriend = keys.some(k => k.toLowerCase() === friendName.toLowerCase());
+          const isFriendPayer = (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
+          return touchesFriend || isFriendPayer;
         });
         const friendAdjustments = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
         return { bills: friendBills, adjustments: friendAdjustments };
@@ -1395,6 +1414,7 @@
         setEditingBillId(bill.id);
         setNewBillName(bill.name);
         setBillType(bill.billType || 'delivery');
+        setPaidBy(bill.paidBy || 'Me (Dom)');
         setTaxMode(bill.taxMode || 'inclusive');
         setNewBillDate(bill.date);
         setRideFare(bill.rideFare || '');
@@ -1460,17 +1480,18 @@
 
         const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
 
+        // Auto-set the Payer to Paid: true
         participantsToProcess.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
-            const fObj = friends.find(fr => fr.name.toLowerCase() === f.toLowerCase());
-            const isMe = fObj?.isSelf || /me|dom/i.test(f);
-            initialPaidStatus[f] = isMe ? true : false;
+            const isCurrentPayer = f.toLowerCase() === paidBy.toLowerCase();
+            initialPaidStatus[f] = isCurrentPayer ? true : false;
           }
         });
 
         const billPayload = {
           name: newBillName,
           billType,
+          paidBy,
           taxMode,
           date: newBillDate,
           rideFare: parseFloat(rideFare) || 0,
@@ -1689,7 +1710,7 @@
           Object.entries(bill.paidStatus || {}).forEach(([k, v]) => {
             newPaidStatus[k === oldName ? newName : k] = v;
           });
-          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus };
+          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus, paidBy: bill.paidBy === oldName ? newName : bill.paidBy };
         };
 
         try {
@@ -1699,11 +1720,11 @@
             batch.update(friendRef, { name: newName });
 
             bills.forEach(bill => {
-              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName));
+              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName)) || bill.paidBy === oldName;
               if (touches) {
                 const updated = renameInBill(bill);
                 const billRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id);
-                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus });
+                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus, paidBy: updated.paidBy });
               }
             });
 
@@ -1873,6 +1894,7 @@
                         setEditingBillId(null);
                         setNewBillName('');
                         setBillType('delivery');
+                        setPaidBy('Me (Dom)');
                         setTaxMode('inclusive');
                         setDeliveryFee(0);
                         setPackagingCharge(0);
@@ -1961,12 +1983,14 @@
                     <span className="text-[11px] text-accent">Tap name to view ledger ↗</span>
                   </div>
                   <div className="space-y-3">
-                    {friends.filter(f => !f.isSelf && (friendBalances[f.name]?.totalOwed || 0) > 0).length === 0 ? (
+                    {friends.filter(f => !f.isSelf && (friendBalances[f.name]?.totalOwed || 0) !== 0).length === 0 ? (
                       <div className="py-8 text-center text-textMuted text-sm">{t('allSettled')}</div>
                     ) : (
                       friends.map(friend => {
                         const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
-                        if (friend.isSelf || balance.totalOwed <= 0) return null;
+                        if (friend.isSelf || balance.totalOwed === 0) return null;
+
+                        const isDebtor = balance.totalOwed > 0;
 
                         return (
                           <div key={friend.id} className="bg-subtle border border-line/80 hover:border-accent/40 p-4 rounded-xl flex justify-between items-center transition duration-150">
@@ -1978,7 +2002,9 @@
                                 {friend.name}
                                 {friend.isArchived && <span className="text-[10px] bg-line text-textMuted px-1.5 py-0.2 rounded">{t('archivedBadge')}</span>}
                                 <span className="text-[10px] text-accent font-normal underline group-hover:opacity-100 opacity-80">{t('viewHistory')}</span>
-                                <span className="text-[10px] text-coral bg-coral-subtle/50 px-1.5 py-0.5 rounded font-mono">{t('pending')}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${isDebtor ? 'text-coral bg-coral-subtle/50' : 'text-mint bg-mint-subtle/50'}`}>
+                                  {isDebtor ? 'ค้างจ่ายเรา' : 'เราค้างเพื่อน'}
+                                </span>
                               </span>
                               <div className="flex gap-4 mt-1 text-xs text-textSecondary font-mono tabular">
                                 <span>{t('bills')}: {balance.billsOwed.toFixed(2)} RM</span>
@@ -1990,7 +2016,9 @@
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="text-lg font-extrabold text-coral font-mono tabular mr-1">{balance.totalOwed.toFixed(2)} RM</span>
+                              <span className={`text-lg font-extrabold font-mono tabular mr-1 ${isDebtor ? 'text-coral' : 'text-mint'}`}>
+                                {Math.abs(balance.totalOwed).toFixed(2)} RM
+                              </span>
                               
                               {isAdmin && (
                                 <button
@@ -2010,7 +2038,7 @@
               </div>
             )}
 
-            {/* --- 2. CREATE / EDIT TRANSACTION --- */}
+            {/* --- 2. CREATE / EDIT TRANSACTION (PAID BY FEATURE ADDED) --- */}
             {activeTab === 'new-bill' && (
               isAdmin ? (
                 <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-6 border border-line space-y-6">
@@ -2062,9 +2090,33 @@
                       }}
                       className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'loan' ? 'bg-coral/15 border-coral text-coral shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
-                      💸 Loan (ยืมเงิน)
+                      💸 Loan
                     </button>
                   </div>
+
+                  {/* PAID BY SELECTOR (ฟังก์ชันเพื่อนจ่าย) */}
+                  {billType !== 'loan' && (
+                    <div className="bg-subtle p-3.5 rounded-xl border border-line space-y-2">
+                      <label className="block text-xs font-bold text-textPrimary">
+                        {t('paidByLabel')}
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {friends.filter(f => !f.isArchived).map(friend => {
+                          const isPayer = paidBy.toLowerCase() === friend.name.toLowerCase();
+                          return (
+                            <button
+                              key={friend.id}
+                              type="button"
+                              onClick={() => setPaidBy(friend.name)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${isPayer ? 'bg-mint text-bg shadow-md shadow-mint/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                            >
+                              {isPayer ? '✓ ' : ''} {friend.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* SMART SCANNER (OFFLINE PRE-PROCESSING + ENHANCED REGEX) */}
                   {billType !== 'loan' && (
@@ -2635,6 +2687,11 @@
                                 {bill.billType === 'loan' && (
                                   <span className="text-[10px] bg-coral/20 text-coral font-bold px-1.5 py-0.5 rounded">💸 Loan</span>
                                 )}
+                                {bill.paidBy && bill.paidBy !== 'Me (Dom)' && (
+                                  <span className="text-[10px] bg-accent/20 text-accent font-bold px-1.5 py-0.5 rounded">
+                                    👤 {bill.paidBy} จ่าย
+                                  </span>
+                                )}
                                 {bill.deliveryFee > 0 && (
                                   <span className="text-[10px] bg-grab/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded">Delivery</span>
                                 )}
@@ -2702,8 +2759,7 @@
                                 <p className="font-bold text-textMuted text-[11px] uppercase">{t('individualBreakdown')}</p>
                                 {Object.keys(bill.splits || {}).map(fName => {
                                   const isPaid = bill.paidStatus?.[fName];
-                                  const fObj = friends.find(f => f.name.toLowerCase() === fName.toLowerCase());
-                                  const isSelf = fObj?.isSelf;
+                                  const isPayerOfThisBill = (bill.paidBy || 'Me (Dom)').toLowerCase() === fName.toLowerCase();
                                   return (
                                     <div key={fName} className="flex justify-between items-center bg-subtle p-2.5 rounded-xl text-xs">
                                       <div 
@@ -2717,8 +2773,10 @@
                                         <p className="text-textSecondary text-[11px] font-mono mt-0.5">{bill.splits[fName]?.toFixed(2)} RM</p>
                                       </div>
                                       <div className="flex items-center gap-2">
-                                        {isSelf ? (
-                                          <span className="text-[11px] text-textMuted font-medium bg-surface px-2 py-1 rounded-md border border-line">{t('payer')}</span>
+                                        {isPayerOfThisBill ? (
+                                          <span className="text-[11px] text-mint font-bold bg-mint-subtle/40 px-2 py-1 rounded-md border border-mint/30">
+                                            👑 {t('payer')}
+                                          </span>
                                         ) : isAdmin ? (
                                           <button
                                             onClick={() => handleTogglePaid(bill, fName)}
@@ -2788,6 +2846,7 @@
                     .map(friend => {
                       const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
                       const isRenaming = renamingFriendId === friend.id;
+                      const isDebtor = balance.totalOwed > 0;
                       return (
                         <div key={friend.id} className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-center gap-3">
                           {isRenaming ? (
@@ -2815,7 +2874,12 @@
                                 <span className="text-[10px] text-accent underline font-normal">{t('viewLedger')}</span>
                               </span>
                               {!friend.isSelf && (
-                                <p className="text-xs text-textSecondary mt-0.5">Total Balance: <span className="font-bold text-coral font-mono">{balance.totalOwed?.toFixed(2)} RM</span></p>
+                                <p className="text-xs text-textSecondary mt-0.5">
+                                  {isDebtor ? 'ค้างจ่ายเรา: ' : 'เราค้างเพื่อน: '}
+                                  <span className={`font-bold font-mono ${isDebtor ? 'text-coral' : 'text-mint'}`}>
+                                    {Math.abs(balance.totalOwed).toFixed(2)} RM
+                                  </span>
+                                </p>
                               )}
                             </div>
                           )}
@@ -2968,14 +3032,12 @@
                     </div>
 
                     <div className="bg-subtle/60 border border-line p-3 sm:p-4 rounded-2xl space-y-2">
-                      {/* Day Header */}
                       <div className="grid grid-cols-7 text-center text-[11px] font-bold text-textMuted pb-1 border-b border-line/60">
                         {t('dayNames').map((d, i) => (
                           <div key={i} className={i === 0 || i === 6 ? 'text-coral/80' : ''}>{d}</div>
                         ))}
                       </div>
 
-                      {/* Calendar Grid */}
                       <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
                         {calendarMatrix.flat().map((cell, idx) => {
                           if (!cell) {
@@ -3013,7 +3075,6 @@
                         })}
                       </div>
 
-                      {/* Selected Day Item Detail Drawer */}
                       {selectedCalendarDay && (
                         <div className="mt-3 p-3 bg-surface border border-accent/40 rounded-xl space-y-2">
                           <div className="flex justify-between items-center pb-1.5 border-b border-line">
@@ -3274,7 +3335,7 @@
                       </div>
                       <div>
                         <p className="text-[10px] text-coral uppercase font-bold">{t('netBalance')}</p>
-                        <p className="text-base font-black text-coral mt-0.5 tabular font-mono">
+                        <p className={`text-base font-black mt-0.5 tabular font-mono ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0) > 0 ? 'text-coral' : 'text-mint'}`}>
                           {(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}
                         </p>
                       </div>
@@ -3294,6 +3355,8 @@
                             const matchedKey = splitsKeys.find(k => k.toLowerCase() === selectedFriendForHistory.toLowerCase()) || selectedFriendForHistory;
                             const isPaid = b.paidStatus?.[matchedKey];
                             const userShare = b.splits[matchedKey] || 0;
+                            const isFriendPayer = (b.paidBy || '').toLowerCase() === selectedFriendForHistory.toLowerCase();
+
                             return (
                               <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
                                 <div>
@@ -3301,12 +3364,14 @@
                                     {b.billType === 'ride' ? '🚗 ' : b.billType === 'loan' ? '💸 ' : '🛵 '} {b.name}
                                   </p>
                                   <p className="text-[10px] text-textMuted">
-                                    {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split')}
+                                    {b.date} • {isFriendPayer ? `👑 ${selectedFriendForHistory} เป็นคนจ่าย` : (b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split'))}
                                   </p>
                                 </div>
                                 <div className="text-right flex items-center gap-2">
                                   <div>
-                                    <p className="font-bold text-sm text-textPrimary font-mono tabular">{userShare.toFixed(2)} RM</p>
+                                    <p className="font-bold text-sm text-textPrimary font-mono tabular">
+                                      {isFriendPayer ? `Total: ${b.total?.toFixed(2)} RM` : `${userShare.toFixed(2)} RM`}
+                                    </p>
                                   </div>
                                   {isAdmin ? (
                                     <button
@@ -3456,6 +3521,9 @@
                       </p>
                       {activeBreakdown.bill.rideRoute && <p className="text-[11px] text-textSecondary font-sans">📍 {activeBreakdown.bill.rideRoute}</p>}
                       <p className="text-textMuted">{activeBreakdown.bill.date}</p>
+                      <p className="text-xs text-mint font-bold mt-1">
+                        💳 Paid By: {activeBreakdown.bill.paidBy || 'Me (Dom)'}
+                      </p>
                       {activeBreakdown.selectedFriend && (
                         <p className="text-emerald-400 font-bold font-sans text-sm mt-1">
                           Participant: {activeBreakdown.selectedFriend}
