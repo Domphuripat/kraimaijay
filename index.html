@@ -400,7 +400,7 @@
       const [adjustments, setAdjustments] = useState([]);
       const [showArchivedFriends, setShowArchivedFriends] = useState(false);
 
-      // Dashboard Debt Filter
+      // Feature #5: Dashboard Debt Filter
       const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
 
       // Search, Filters & Analytics Month Selection
@@ -418,8 +418,8 @@
       const [billFriends, setBillFriends] = useState([]);
       const [paidBy, setPaidBy] = useState('Me (Dom)');
       
-      // Penny Rounding remainder mode
-      const [remainderMode, setRemainderMode] = useState('distribute');
+      // Feature #3: Penny Rounding remainder mode
+      const [remainderMode, setRemainderMode] = useState('distribute'); // 'distribute' or 'payer'
       
       // Ride specific
       const [rideFare, setRideFare] = useState('');
@@ -470,6 +470,7 @@
         setTimeout(() => setToast(null), 3500);
       };
 
+      // Feature #4: Dynamic Quick Presets from user history & popular spots
       const quickMerchantPresets = useMemo(() => {
         const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
         const fromBills = bills.filter(b => b.billType !== 'ride' && b.billType !== 'loan').map(b => b.name).filter(Boolean);
@@ -484,6 +485,7 @@
         return Array.from(set).slice(0, 6);
       }, [bills]);
 
+      // Feature #2: Generate Quick Text for Chat
       const copyStatementTextToClipboard = (friendName) => {
         const hist = getFriendHistory(friendName);
         const bal = friendBalances[friendName] || { totalOwed: 0, billsOwed: 0, adjustedOwed: 0 };
@@ -706,6 +708,7 @@
               operationsCount++;
             });
 
+            // Mark all pending Add Debt adjustments as Settled
             adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase() && a.amount > 0 && !a.isSettled).forEach(adj => {
               const aDoc = basePath.collection('adjustments').doc(adj.id);
               batch.update(aDoc, { isSettled: true });
@@ -878,6 +881,7 @@
             foodTotal += tot;
           }
 
+          // Track personal daily expense
           const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
           if (b.date && selfAmount > 0) {
             if (!dailyMyExpenses[b.date]) {
@@ -1218,13 +1222,729 @@
         }
       };
 
-      const calculateBillSplits_Wrapper = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
-        return calculateBillSplits(items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode, curPaidBy);
+      // Feature #3: Remainder & Split Calculation Logic
+      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
+        const splits = {};
+        const friendItemDetails = {};
+        const activeFriendsCount = selectedFriends.length;
+
+        if (currentBillType === 'loan') {
+          const parsedLoanAmt = parseFloat(lAmt) || 0;
+          if (lBorrower) {
+            splits[lBorrower] = parsedLoanAmt;
+            friendItemDetails[lBorrower] = { baseShare: parsedLoanAmt };
+          }
+          return {
+            subtotal: parsedLoanAmt,
+            total: parsedLoanAmt,
+            splits,
+            friendItemDetails
+          };
+        }
+
+        if (currentBillType === 'ride') {
+          const parsedRideFare = parseFloat(rFare) || 0;
+          const parsedToll = parseFloat(tFee) || 0;
+          const parsedDiscount = parseFloat(discount) || 0;
+          const parsedRoundAdj = parseFloat(roundAdj) || 0;
+          
+          const netTotal = Math.max(0, parsedRideFare + parsedToll - parsedDiscount + parsedRoundAdj);
+          const totalCents = Math.round(netTotal * 100);
+          const baseCents = activeFriendsCount > 0 ? Math.floor(totalCents / activeFriendsCount) : 0;
+          let remainderCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
+
+          selectedFriends.forEach(f => {
+            let shareCents = baseCents;
+            if (curRemainderMode === 'distribute') {
+              if (remainderCents > 0) {
+                shareCents += 1;
+                remainderCents--;
+              }
+            } else if (curRemainderMode === 'payer' && f.toLowerCase() === curPaidBy.toLowerCase()) {
+              shareCents += remainderCents;
+            }
+
+            splits[f] = shareCents / 100;
+
+            friendItemDetails[f] = {
+              baseShare: Math.round((parsedRideFare / (activeFriendsCount || 1)) * 100) / 100,
+              tollShare: Math.round((parsedToll / (activeFriendsCount || 1)) * 100) / 100,
+              discountShare: Math.round((parsedDiscount / (activeFriendsCount || 1)) * 100) / 100,
+            };
+          });
+
+          return {
+            subtotal: parsedRideFare,
+            tollFee: parsedToll,
+            discountAmount: parsedDiscount,
+            total: Math.round(netTotal * 100) / 100,
+            splits,
+            friendItemDetails
+          };
+        }
+
+        const friendBaseShares = {};
+        const friendTaxShares = {};
+        
+        selectedFriends.forEach(f => {
+          friendBaseShares[f] = 0;
+          friendTaxShares[f] = 0;
+        });
+
+        let subtotal = 0;
+        let taxBreakdown = { 0: 0, 6: 0, 7: 0, 8: 0 };
+        let totalTax = 0;
+
+        items.forEach(item => {
+          const price = parseFloat(item.price) || 0;
+          const qty = parseInt(item.qty) || 1;
+          const itemTotal = price * qty;
+          const taxRate = parseFloat(item.taxRate) || 0;
+
+          subtotal += itemTotal;
+
+          let itemTaxAmount = 0;
+          if (currentTaxMode === 'addon') {
+            itemTaxAmount = itemTotal * (taxRate / 100);
+          } else {
+            itemTaxAmount = itemTotal - (itemTotal / (1 + (taxRate / 100)));
+          }
+
+          taxBreakdown[taxRate] = (taxBreakdown[taxRate] || 0) + itemTaxAmount;
+          totalTax += itemTaxAmount;
+
+          const sharedList = (item.sharedWith || []).filter(f => selectedFriends.includes(f));
+          if (sharedList.length > 0) {
+            const itemTotalCents = Math.round(itemTotal * 100);
+            const baseShareCents = Math.floor(itemTotalCents / sharedList.length);
+            let remShareCents = itemTotalCents % sharedList.length;
+
+            const itemTaxCents = Math.round(itemTaxAmount * 100);
+            const baseTaxCents = Math.floor(itemTaxCents / sharedList.length);
+            let remTaxCents = itemTaxCents % sharedList.length;
+
+            sharedList.forEach(f => {
+              const allocatedCents = baseShareCents + (remShareCents > 0 ? 1 : 0);
+              if (remShareCents > 0) remShareCents--;
+              friendBaseShares[f] = (friendBaseShares[f] || 0) + (allocatedCents / 100);
+
+              const allocatedTaxCents = baseTaxCents + (remTaxCents > 0 ? 1 : 0);
+              if (remTaxCents > 0) remTaxCents--;
+              friendTaxShares[f] = (friendTaxShares[f] || 0) + (allocatedTaxCents / 100);
+            });
+          }
+        });
+
+        const totalSc = subtotal * (scRate / 100);
+        const parsedDFee = parseFloat(dFee) || 0;
+        const parsedPackCharge = parseFloat(packCharge) || 0;
+        const parsedDiscount = parseFloat(discount) || 0;
+        const parsedRoundAdj = parseFloat(roundAdj) || 0;
+
+        const perPersonDelivery = activeFriendsCount > 0 ? (parsedDFee / activeFriendsCount) : 0;
+        const perPersonPackaging = activeFriendsCount > 0 ? (parsedPackCharge / activeFriendsCount) : 0;
+
+        let totalDistributedCents = 0;
+
+        selectedFriends.forEach(f => {
+          const base = friendBaseShares[f] || 0;
+          const friendSc = base * (scRate / 100);
+          const friendTax = currentTaxMode === 'addon' ? (friendTaxShares[f] || 0) : 0;
+          const userDiscountShare = subtotal > 0 ? (base / subtotal) * parsedDiscount : (parsedDiscount / (activeFriendsCount || 1));
+          
+          const finalPersonAmount = Math.max(0, base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare);
+          const personCents = Math.round(finalPersonAmount * 100);
+          splits[f] = personCents / 100;
+          totalDistributedCents += personCents;
+
+          friendItemDetails[f] = {
+            baseShare: Math.round(base * 100) / 100,
+            scShare: Math.round(friendSc * 100) / 100,
+            taxShare: Math.round((friendTaxShares[f] || 0) * 100) / 100,
+            deliveryShare: Math.round(perPersonDelivery * 100) / 100,
+            packagingShare: Math.round(perPersonPackaging * 100) / 100,
+            discountShare: Math.round(userDiscountShare * 100) / 100,
+          };
+        });
+
+        const addedTaxToTotal = currentTaxMode === 'addon' ? totalTax : 0;
+        const finalTotal = Math.round((subtotal + totalSc + addedTaxToTotal + parsedDFee + parsedPackCharge - parsedDiscount + parsedRoundAdj) * 100) / 100;
+        const targetTotalCents = Math.round(finalTotal * 100);
+
+        if (activeFriendsCount > 0 && totalDistributedCents !== targetTotalCents) {
+          const diffCents = targetTotalCents - totalDistributedCents;
+          const targetPerson = (curRemainderMode === 'payer' && selectedFriends.includes(curPaidBy)) 
+            ? curPaidBy 
+            : selectedFriends[selectedFriends.length - 1];
+          splits[targetPerson] = Math.max(0, Math.round((splits[targetPerson] + (diffCents / 100)) * 100) / 100);
+        }
+
+        return {
+          subtotal: Math.round(subtotal * 100) / 100,
+          serviceChargeAmount: Math.round(totalSc * 100) / 100,
+          deliveryFee: parsedDFee,
+          packagingCharge: parsedPackCharge,
+          discountAmount: parsedDiscount,
+          taxMode: currentTaxMode,
+          taxBreakdown,
+          totalTax: Math.round(totalTax * 100) / 100,
+          roundingAdjustment: parsedRoundAdj,
+          total: finalTotal,
+          splits,
+          friendItemDetails
+        };
       };
 
-      const isPayerOfThisBill = (bill, fName) => {
-        return (bill.paidBy || 'Me (Dom)').toLowerCase() === fName.toLowerCase();
+      // --- DUAL-WAY DEBT CALCULATION (เพื่อนจ่าย / ME จ่าย) ---
+      const getFriendBalances = () => {
+        const balances = {};
+        friends.forEach(f => {
+          balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
+        });
+
+        bills.forEach(bill => {
+          const billPayer = bill.paidBy || 'Me (Dom)';
+          const isDomPayer = /me|dom/i.test(billPayer);
+
+          if (isDomPayer) {
+            // กรณีเราจ่าย: เพื่อนทุกคนที่หารบิลนี้จะติดหนี้เรา
+            Object.keys(bill.splits || {}).forEach(name => {
+              const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+              const realName = fObj ? fObj.name : name;
+              const isSelf = fObj?.isSelf || /me|dom/i.test(realName);
+              if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
+                balances[realName].billsOwed += bill.splits[name];
+              }
+            });
+          } else {
+            // กรณีเพื่อนจ่าย (เช่น A จ่าย): เราจะติดหนี้เพื่อนคนนั้น (- หนี้)
+            const payerObj = friends.find(f => f.name.toLowerCase() === billPayer.toLowerCase());
+            const realPayerName = payerObj ? payerObj.name : billPayer;
+            
+            // หายอดส่วนของเราในบิลนั้น
+            const myShare = bill.splits?.['Me (Dom)'] || bill.splits?.['ตัวฉันเอง'] || 0;
+            const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
+
+            if (balances[realPayerName] && myShare > 0 && !isMySharePaid) {
+              balances[realPayerName].billsOwed -= myShare;
+            }
+          }
+        });
+
+        adjustments.forEach(adj => {
+          const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
+          const realName = fObj ? fObj.name : adj.friendName;
+          if (balances[realName] && adj.amount !== undefined && !adj.isSettled) {
+            balances[realName].adjustedOwed += adj.amount;
+          }
+        });
+
+        Object.keys(balances).forEach(name => {
+          balances[name].totalOwed = balances[name].billsOwed + balances[name].adjustedOwed;
+        });
+
+        return balances;
       };
+
+      const friendBalances = getFriendBalances();
+
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayMyExpense = bills
+        .filter(b => b.date === todayDateStr)
+        .reduce((sum, b) => {
+          const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
+          return sum + selfAmount;
+        }, 0);
+      const todayBillsCount = bills.filter(b => b.date === todayDateStr).length;
+
+      const getFriendHistory = (friendName) => {
+        const friendBills = bills.filter(b => {
+          const keys = Object.keys(b.splits || {});
+          const touchesFriend = keys.some(k => k.toLowerCase() === friendName.toLowerCase());
+          const isFriendPayer = (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
+          return touchesFriend || isFriendPayer;
+        });
+        const friendAdjustments = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
+        return { bills: friendBills, adjustments: friendAdjustments };
+      };
+
+      const filteredBills = useMemo(() => {
+        const term = searchQuery.trim().toLowerCase();
+        return bills.filter(bill => {
+          const matchTitle = (bill.name || '').toLowerCase().includes(term);
+          const matchRoute = (bill.rideRoute || '').toLowerCase().includes(term);
+          const matchItem = (bill.items || []).some(item => (item.name || '').toLowerCase().includes(term));
+          
+          if (term && !matchTitle && !matchRoute && !matchItem) return false;
+
+          const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
+            const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
+            return !(fObj?.isSelf) && !bill.paidStatus?.[n];
+          }).length;
+
+          if (statusFilter === 'pending') return unpaidCount > 0;
+          if (statusFilter === 'settled') return unpaidCount === 0;
+          if (statusFilter === 'ride') return bill.billType === 'ride';
+          if (statusFilter === 'loan') return bill.billType === 'loan';
+          if (statusFilter === 'food') return bill.billType !== 'ride' && bill.billType !== 'loan';
+
+          return true;
+        });
+      }, [bills, searchQuery, statusFilter, friends]);
+
+      const handleStartEditBill = (bill) => {
+        if (!isAdmin) {
+          showToast("Only Admin can edit transactions", "error");
+          return;
+        }
+        setEditingBillId(bill.id);
+        setNewBillName(bill.name);
+        setBillType(bill.billType || 'delivery');
+        setPaidBy(bill.paidBy || 'Me (Dom)');
+        setRemainderMode(bill.remainderMode || 'distribute');
+        setTaxMode(bill.taxMode || 'inclusive');
+        setNewBillDate(bill.date);
+        setRideFare(bill.rideFare || '');
+        setTollFee(bill.tollFee || '');
+        setRideRoute(bill.rideRoute || '');
+        setLoanAmount(bill.loanAmount || '');
+        setLoanBorrower(bill.loanBorrower || '');
+        setServiceChargeRate(bill.serviceChargeRate !== undefined ? bill.serviceChargeRate : 0);
+        setDeliveryFee(bill.deliveryFee || 0);
+        setPackagingCharge(bill.packagingCharge || 0);
+        setDiscountAmount(bill.discountAmount || 0);
+        setRoundingAdj(bill.roundingAdjustment || 0);
+        
+        const existingParticipants = new Set([
+          ...Object.keys(bill.splits || {}),
+          ...(bill.items || []).flatMap(i => i.sharedWith || [])
+        ]);
+        const participantsArray = Array.from(existingParticipants);
+        setBillFriends(participantsArray.length > 0 ? participantsArray : friends.filter(f => !f.isArchived).map(f => f.name));
+
+        const loadedItems = (bill.items || []).map(item => ({
+          ...item,
+          id: item.id || Date.now().toString() + Math.random().toString(36).substring(2, 5),
+          taxRate: item.taxRate !== undefined ? item.taxRate : 0,
+          sharedWith: item.sharedWith || []
+        }));
+        setBillItems(loadedItems);
+        setActiveTab('new-bill');
+      };
+
+      const handleSaveBill = async (e) => {
+        e.preventDefault();
+        if (!isAdmin) {
+          showToast("Permission denied: Admin only", "error");
+          return;
+        }
+        if (!newBillName.trim()) {
+          showToast("Please enter a transaction title", "error");
+          return;
+        }
+
+        const calculated = calculateBillSplits(
+          billItems,
+          serviceChargeRate,
+          deliveryFee,
+          packagingCharge,
+          discountAmount,
+          roundingAdj,
+          billFriends,
+          taxMode,
+          billType,
+          rideFare,
+          tollFee,
+          loanAmount,
+          loanBorrower,
+          remainderMode,
+          paidBy
+        );
+
+        let initialPaidStatus = {};
+        if (editingBillId) {
+          const oldBill = bills.find(b => b.id === editingBillId);
+          initialPaidStatus = oldBill?.paidStatus || {};
+        }
+
+        const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
+
+        participantsToProcess.forEach(f => {
+          if (initialPaidStatus[f] === undefined) {
+            const isCurrentPayer = f.toLowerCase() === paidBy.toLowerCase();
+            initialPaidStatus[f] = isCurrentPayer ? true : false;
+          }
+        });
+
+        const billPayload = {
+          name: newBillName,
+          billType,
+          paidBy,
+          remainderMode,
+          taxMode,
+          date: newBillDate,
+          rideFare: parseFloat(rideFare) || 0,
+          tollFee: parseFloat(tollFee) || 0,
+          rideRoute,
+          loanAmount: parseFloat(loanAmount) || 0,
+          loanBorrower,
+          subtotal: calculated.subtotal,
+          serviceChargeRate,
+          serviceChargeAmount: calculated.serviceChargeAmount || 0,
+          deliveryFee: calculated.deliveryFee || 0,
+          packagingCharge: calculated.packagingCharge || 0,
+          discountAmount: calculated.discountAmount || 0,
+          taxBreakdown: calculated.taxBreakdown || {},
+          totalTax: calculated.totalTax || 0,
+          roundingAdjustment: calculated.roundingAdjustment || 0,
+          total: calculated.total,
+          items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            price: parseFloat(item.price) || 0,
+            qty: parseInt(item.qty) || 1,
+            taxRate: parseFloat(item.taxRate || 0),
+            sharedWith: item.sharedWith || []
+          })),
+          splits: calculated.splits,
+          friendItemDetails: calculated.friendItemDetails,
+          paidStatus: initialPaidStatus,
+          updatedAt: Date.now()
+        };
+
+        if (editingBillId) {
+          if (db) {
+            try {
+              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(editingBillId).update(billPayload);
+              showToast("Bill updated successfully");
+            } catch (err) {
+              showToast("Update failed: Permission denied", "error");
+            }
+          }
+        } else {
+          billPayload.createdAt = Date.now();
+          if (db) {
+            try {
+              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').add(billPayload);
+              showToast("New transaction saved to cloud");
+            } catch (err) {
+              showToast("Save failed: Permission denied", "error");
+            }
+          }
+        }
+
+        setEditingBillId(null);
+        setViewingBillId(null);
+        setActiveTab('bills');
+      };
+
+      const handleTogglePaid = async (bill, friendName) => {
+        if (!isAdmin) {
+          showToast("Only Admin can change payment status", "error");
+          return;
+        }
+        const splitsKeys = Object.keys(bill.splits || {});
+        const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+        const currentPaid = !!bill.paidStatus?.[matchedKey];
+        const newPaidStatus = !currentPaid;
+        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: newPaidStatus };
+        const userShare = bill.splits?.[matchedKey] || 0;
+        
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            const billRef = basePath.collection('bills').doc(bill.id);
+            batch.update(billRef, { paidStatus: updatedStatus });
+
+            if (newPaidStatus && userShare > 0) {
+              const adjRef = basePath.collection('adjustments').doc();
+              batch.set(adjRef, {
+                friendName: matchedKey,
+                billId: bill.id,
+                displayAmount: userShare,
+                isPaymentRecord: true,
+                isSettled: true,
+                note: `✓ ชำระแล้ว: ${bill.name}`,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: Date.now()
+              });
+            } else if (!newPaidStatus) {
+              const matchedAdjs = adjustments.filter(a => a.billId === bill.id && a.friendName.toLowerCase() === matchedKey.toLowerCase());
+              matchedAdjs.forEach(adj => {
+                const adjRef = basePath.collection('adjustments').doc(adj.id);
+                batch.delete(adjRef);
+              });
+            }
+
+            await batch.commit();
+            showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
+          } catch (err) {
+            showToast("Update failed: Permission denied", "error");
+          }
+        }
+      };
+
+      const handleToggleAdjStatus = async (adj) => {
+        if (!isAdmin) return;
+        const newStatus = !adj.isSettled;
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('adjustments').doc(adj.id).update({ isSettled: newStatus });
+            showToast(`Updated status to ${newStatus ? 'Paid' : 'Pending'}`);
+          } catch (e) {
+            showToast("Failed to update status", "error");
+          }
+        }
+      };
+
+      const handleDeleteBill = async (billId) => {
+        if (!isAdmin) {
+          showToast("Only Admin can delete bills", "error");
+          return;
+        }
+        if (!confirm("Are you sure you want to delete this bill?")) return;
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(billId).delete();
+            setViewingBillId(null);
+            showToast("Bill deleted");
+          } catch (err) {
+            showToast("Delete failed: Permission denied", "error");
+          }
+        }
+      };
+
+      const handleAddFriend = async (e) => {
+        e.preventDefault();
+        if (!isAdmin) {
+          showToast("Only Admin can add friends", "error");
+          return;
+        }
+        const name = newFriendName.trim();
+        if (!name) return;
+        if (friends.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+          showToast("Friend name already exists", "error");
+          return;
+        }
+
+        const newF = { name, isSelf: false, isArchived: false, createdAt: Date.now() };
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(newF);
+            showToast("Friend added");
+          } catch (err) {
+            showToast("Failed to add friend", "error");
+          }
+        }
+        setNewFriendName('');
+      };
+
+      const handleToggleArchiveFriend = async (friend) => {
+        if (!isAdmin) {
+          showToast("Only Admin can archive friends", "error");
+          return;
+        }
+        const actionText = friend.isArchived ? "Restore" : "Archive";
+        if (!confirm(`${actionText} friend "${friend.name}"? (Past records remain safe)`)) return;
+
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({
+              isArchived: !friend.isArchived
+            });
+            showToast(`Friend ${actionText.toLowerCase()}d successfully`);
+          } catch (err) {
+            showToast("Action failed: Permission denied", "error");
+          }
+        }
+      };
+
+      const handleStartRenameFriend = (friend) => {
+        if (!isAdmin) return;
+        setRenamingFriendId(friend.id);
+        setRenameValue(friend.name);
+      };
+
+      const handleCancelRenameFriend = () => {
+        setRenamingFriendId(null);
+        setRenameValue('');
+      };
+
+      const handleConfirmRenameFriend = async (friend) => {
+        if (!isAdmin) return;
+        const newName = renameValue.trim();
+        if (!newName || newName === friend.name) {
+          handleCancelRenameFriend();
+          return;
+        }
+        if (friends.some(f => f.id !== friend.id && f.name.toLowerCase() === newName.toLowerCase())) {
+          showToast("This name already exists", "error");
+          return;
+        }
+
+        const oldName = friend.name;
+        const renameInBill = (bill) => {
+          const newItems = (bill.items || []).map(item => ({
+            ...item,
+            sharedWith: (item.sharedWith || []).map(n => n === oldName ? newName : n)
+          }));
+          const newSplits = {};
+          Object.entries(bill.splits || {}).forEach(([k, v]) => {
+            newSplits[k === oldName ? newName : k] = v;
+          });
+          const newPaidStatus = {};
+          Object.entries(bill.paidStatus || {}).forEach(([k, v]) => {
+            newPaidStatus[k === oldName ? newName : k] = v;
+          });
+          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus, paidBy: bill.paidBy === oldName ? newName : bill.paidBy };
+        };
+
+        try {
+          if (db) {
+            const batch = db.batch();
+            const friendRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id);
+            batch.update(friendRef, { name: newName });
+
+            bills.forEach(bill => {
+              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName)) || bill.paidBy === oldName;
+              if (touches) {
+                const updated = renameInBill(bill);
+                const billRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id);
+                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus, paidBy: updated.paidBy });
+              }
+            });
+
+            adjustments.forEach(adj => {
+              if (adj.friendName === oldName) {
+                const adjRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id);
+                batch.update(adjRef, { friendName: newName });
+              }
+            });
+
+            await batch.commit();
+            showToast(`Renamed to "${newName}"`);
+          }
+        } catch (err) {
+          showToast("Rename failed: Permission denied", "error");
+        }
+        handleCancelRenameFriend();
+      };
+
+      const handleDeleteAdjustment = async (adj) => {
+        if (!isAdmin) {
+          showToast("Only Admin can delete adjustments", "error");
+          return;
+        }
+        if (!confirm(`Delete adjustment log for "${adj.friendName}"?`)) return;
+
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            const adjRef = basePath.collection('adjustments').doc(adj.id);
+            batch.delete(adjRef);
+
+            if (adj.billId) {
+              const billObj = bills.find(b => b.id === adj.billId);
+              if (billObj) {
+                const splitsKeys = Object.keys(billObj.splits || {});
+                const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
+                const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                const billRef = basePath.collection('bills').doc(adj.billId);
+                batch.update(billRef, { paidStatus: newPaidStatus });
+              }
+            }
+
+            if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
+              adj.relatedBillIds.forEach(bId => {
+                const billObj = bills.find(b => b.id === bId);
+                if (billObj) {
+                  const splitsKeys = Object.keys(billObj.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
+                  const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                  const billRef = basePath.collection('bills').doc(bId);
+                  batch.update(billRef, { paidStatus: newPaidStatus });
+                }
+              });
+            }
+
+            await batch.commit();
+            showToast("Adjustment removed");
+          } catch (err) {
+            showToast("Delete failed: Permission denied", "error");
+          }
+        }
+      };
+
+      const handleSaveAdjustment = async (e) => {
+        e.preventDefault();
+        if (!isAdmin) {
+          showToast("Only Admin can adjust balances", "error");
+          return;
+        }
+        const amount = parseFloat(adjustAmount);
+        if (isNaN(amount) || amount <= 0) {
+          showToast("Please enter a valid amount", "error");
+          return;
+        }
+
+        const finalAmount = adjustType === 'plus' ? amount : -amount;
+        const newAdj = {
+          friendName: selectedFriendForAdjust,
+          amount: finalAmount,
+          displayAmount: amount,
+          isPaymentRecord: adjustType === 'minus',
+          isSettled: adjustType === 'minus' ? true : false,
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
+          date: new Date().toISOString().split('T')[0],
+          createdAt: Date.now()
+        };
+
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').add(newAdj);
+            showToast(`Adjustment of ${amount.toFixed(2)} RM saved`);
+          } catch (err) {
+            showToast("Save failed: Permission denied", "error");
+          }
+        }
+        setSelectedFriendForAdjust(null);
+        setAdjustAmount('');
+        setAdjustNote('');
+      };
+
+      const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
+        const fObj = friends.find(f => f.name === name);
+        if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
+        return acc;
+      }, 0);
+
+      const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
+        const fObj = friends.find(f => f.name === name);
+        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
+      }).length;
+
+      const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
+
+      // Feature #5: Filter Dashboard Friends by Debt Category
+      const filteredDashboardFriends = useMemo(() => {
+        return friends.filter(friend => {
+          if (friend.isSelf) return false;
+          const balance = friendBalances[friend.name] || { totalOwed: 0 };
+          if (balance.totalOwed === 0) return false;
+          
+          if (dashboardDebtFilter === 'receivable') return balance.totalOwed > 0;
+          if (dashboardDebtFilter === 'payable') return balance.totalOwed < 0;
+          return true;
+        });
+      }, [friends, friendBalances, dashboardDebtFilter]);
+
+      const receivableCount = Object.values(friendBalances).filter(b => b.totalOwed > 0).length;
+      const payableCount = Object.values(friendBalances).filter(b => b.totalOwed < 0).length;
 
       return (
         <div className="pb-16 min-h-screen">
@@ -1369,7 +2089,7 @@
                       </h2>
                     </div>
 
-                    {/* Debt Type Filter Buttons */}
+                    {/* Feature #5: Debt Type Filter Buttons */}
                     <div className="flex bg-subtle p-1 rounded-xl border border-line gap-1 text-xs">
                       <button
                         onClick={() => setDashboardDebtFilter('all')}
@@ -1423,7 +2143,16 @@
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              {/* Feature #2: Quick Copy text for chat in Dashboard */}
+                              <button
+                                onClick={() => copyStatementTextToClipboard(friend.name)}
+                                className="bg-surface hover:bg-line text-textSecondary hover:text-textPrimary p-2 rounded-lg border border-line transition"
+                                title={t('copyText')}
+                              >
+                                📋
+                              </button>
+
                               <span className={`text-lg font-extrabold font-mono tabular mr-1 ${isDebtor ? 'text-coral' : 'text-mint'}`}>
                                 {Math.abs(balance.totalOwed).toFixed(2)} RM
                               </span>
@@ -1632,6 +2361,7 @@
                         required
                       />
 
+                      {/* Feature #4: Quick Merchant Presets */}
                       {billType !== 'ride' && billType !== 'loan' && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
@@ -1801,6 +2531,7 @@
                           placeholder="e.g., Pavilion KL -> KL Sentral"
                         />
 
+                        {/* Feature #4: Quick Route Presets */}
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
                           {quickRoutePresets.map(preset => (
@@ -1909,6 +2640,7 @@
                           </div>
                         </div>
 
+                        {/* Feature #3: Penny Rounding Mode Toggle */}
                         <div className="pt-2 border-t border-line flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                           <label className="text-xs font-bold text-textSecondary">{t('remainderMode')}</label>
                           <div className="grid grid-cols-2 bg-surface p-1 rounded-xl border border-line gap-1">
@@ -2217,7 +2949,7 @@
                                 <p className="font-bold text-textMuted text-[11px] uppercase">{t('individualBreakdown')}</p>
                                 {Object.keys(bill.splits || {}).map(fName => {
                                   const isPaid = bill.paidStatus?.[fName];
-                                  const isPayer = isPayerOfThisBill(bill, fName);
+                                  const isPayerOfThisBill = (bill.paidBy || 'Me (Dom)').toLowerCase() === fName.toLowerCase();
                                   return (
                                     <div key={fName} className="flex justify-between items-center bg-subtle p-2.5 rounded-xl text-xs">
                                       <div 
@@ -2231,7 +2963,7 @@
                                         <p className="text-textSecondary text-[11px] font-mono mt-0.5">{bill.splits[fName]?.toFixed(2)} RM</p>
                                       </div>
                                       <div className="flex items-center gap-2">
-                                        {isPayer ? (
+                                        {isPayerOfThisBill ? (
                                           <span className="text-[11px] text-mint font-bold bg-mint-subtle/40 px-2 py-1 rounded-md border border-mint/30">
                                             👑 {t('payer')}
                                           </span>
@@ -2876,7 +3608,7 @@
                                   </span>
                                 ) : adj.amount !== undefined ? (
                                   <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
-                                    {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                                    {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
                                   </span>
                                 ) : null}
 
@@ -2907,6 +3639,7 @@
                 </div>
 
                 <div className="p-4 border-t border-line bg-surface flex flex-wrap gap-2">
+                  {/* Feature #2: Copy Text for Chat in Statement Modal */}
                   <button
                     onClick={() => copyStatementTextToClipboard(selectedFriendForHistory)}
                     className="flex-1 bg-mint/20 hover:bg-mint text-mint hover:text-bg font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 border border-mint/30"
@@ -3151,6 +3884,7 @@
                       <div className="text-right">{t('adj')}: {currentSelectedBalance.adjustedOwed > 0 ? '+' : ''}{currentSelectedBalance.adjustedOwed.toFixed(2)} RM</div>
                     </div>
 
+                    {/* SMART BATCH SETTLE BUTTON */}
                     {currentSelectedBalance.totalOwed > 0 && (
                       <div className="pt-2 border-t border-line/50 flex flex-col gap-2">
                         <button
