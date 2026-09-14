@@ -207,6 +207,7 @@
         netBalance: "Net Balance",
         savePng: "📸 PNG",
         downloadPdf: "📄 PDF",
+        copyText: "📋 Copy Text",
         whatsapp: "💬 WhatsApp",
         instagram: "📸 IG",
         taxModeTitle: "Tax Mode",
@@ -228,6 +229,13 @@
         calendarTitle: "📅 Daily Expense Calendar (My Expense)",
         dayNames: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
         paidByLabel: "💳 Paid By (Who paid the bill?):",
+        remainderMode: "Penny Rounding:",
+        remainderDistribute: "Distribute Remainder",
+        remainderPayer: "Payer Absorbs Remainder",
+        quickPresets: "Quick Presets:",
+        allDebts: "All ({n})",
+        receivableDebts: "They Owe Me ({n})",
+        payableDebts: "I Owe Them ({n})",
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
@@ -238,8 +246,8 @@
         adminSignIn: "🔑 เข้าสู่ระบบแอดมิน",
         dashboard: "แดชบอร์ด",
         history: "ประวัติบิล",
-        friends: "เพื่อน",
-        adjustments: "ประวัติการชำระ",
+        friends: "เพื่อน & ยอดค้าง",
+        adjustments: "ประวัติการชำระ & ปรับยอด",
         analytics: "สถิติ & สำรองข้อมูล",
         totalOutstanding: "ยอดรวมที่ต้องเก็บเพื่อน (รอโอน)",
         pendingFriends: "ค้างชำระทั้งหมด {n} คน",
@@ -257,7 +265,7 @@
         filterPending: "เฉพาะที่ยังค้าง",
         filterSettled: "เคลียร์ครบแล้ว",
         filterRide: "🚗 เฉพาะค่ารถ",
-        filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
+        filterFood: "🛵 สั่งอาหาร",
         filterLoan: "💸 ยืมเงิน",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
@@ -297,6 +305,7 @@
         netBalance: "ยอดสุทธิที่ต้องจ่าย",
         savePng: "📸 บันทึกรูป PNG",
         downloadPdf: "📄 เอกสาร PDF",
+        copyText: "📋 คัดลอกข้อความแชท",
         whatsapp: "💬 WhatsApp",
         instagram: "📸 IG Direct",
         taxModeTitle: "โหมดภาษี (Tax Mode)",
@@ -318,6 +327,13 @@
         calendarTitle: "📅 ปฏิทินรายจ่ายของฉันรายวัน (Daily My Expense)",
         dayNames: ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'],
         paidByLabel: "💳 ใครเป็นคนจ่ายเงินบิลนี้ (Paid By):",
+        remainderMode: "การจัดการเศษสตางค์:",
+        remainderDistribute: "กระจายเศษสตางค์เฉลี่ย",
+        remainderPayer: "คนจ่ายหลักรับเศษเอง",
+        quickPresets: "แท็กด่วน (สถานที่ / ร้านประจำ):",
+        allDebts: "ทั้งหมด ({n})",
+        receivableDebts: "เพื่อนค้างเรา ({n})",
+        payableDebts: "เราค้างเพื่อน ({n})",
       }
     };
 
@@ -384,6 +400,9 @@
       const [adjustments, setAdjustments] = useState([]);
       const [showArchivedFriends, setShowArchivedFriends] = useState(false);
 
+      // Feature #5: Dashboard Debt Filter
+      const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
+
       // Search, Filters & Analytics Month Selection
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
@@ -397,7 +416,10 @@
       const [billType, setBillType] = useState('delivery');
       const [newBillDate, setNewBillDate] = useState(new Date().toISOString().split('T')[0]);
       const [billFriends, setBillFriends] = useState([]);
-      const [paidBy, setPaidBy] = useState('Me (Dom)'); // Feature: เพื่อนจ่าย / ใครเป็นคนจ่าย
+      const [paidBy, setPaidBy] = useState('Me (Dom)');
+      
+      // Feature #3: Penny Rounding remainder mode
+      const [remainderMode, setRemainderMode] = useState('distribute'); // 'distribute' or 'payer'
       
       // Ride specific
       const [rideFare, setRideFare] = useState('');
@@ -446,6 +468,64 @@
       const showToast = (message, type = 'success') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3500);
+      };
+
+      // Feature #4: Dynamic Quick Presets from user history & popular spots
+      const quickMerchantPresets = useMemo(() => {
+        const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
+        const fromBills = bills.filter(b => b.billType !== 'ride' && b.billType !== 'loan').map(b => b.name).filter(Boolean);
+        const set = new Set([...fromBills, ...defaults]);
+        return Array.from(set).slice(0, 8);
+      }, [bills]);
+
+      const quickRoutePresets = useMemo(() => {
+        const defaults = ['Pavilion Bukit Jalil', 'One South', 'Sri Petaling', 'KL Sentral', 'Mid Valley', 'KLCC'];
+        const fromBills = bills.filter(b => b.billType === 'ride').map(b => b.rideRoute).filter(Boolean);
+        const set = new Set([...fromBills, ...defaults]);
+        return Array.from(set).slice(0, 6);
+      }, [bills]);
+
+      // Feature #2: Generate Quick Text for Chat
+      const copyStatementTextToClipboard = (friendName) => {
+        const hist = getFriendHistory(friendName);
+        const bal = friendBalances[friendName] || { totalOwed: 0, billsOwed: 0, adjustedOwed: 0 };
+        const isDebtor = bal.totalOwed > 0;
+        
+        const unpaidBills = hist.bills.filter(b => {
+          const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+          return !b.paidStatus?.[matchedKey];
+        });
+
+        let text = `🧾 *สรุปยอดหนี้คงค้าง: ${friendName}*\n`;
+        text += `📅 ข้อมูล ณ วันที่: ${new Date().toLocaleDateString('th-TH')}\n`;
+        text += `---------------------------------\n`;
+        
+        if (unpaidBills.length > 0) {
+          text += `*รายการที่ยังไม่เคลียร์ (${unpaidBills.length} บิล):*\n`;
+          unpaidBills.forEach(b => {
+            const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+            const amt = (b.splits[matchedKey] || 0).toFixed(2);
+            text += `• ${b.name} (${b.date}): ${amt} RM\n`;
+          });
+          text += `---------------------------------\n`;
+        }
+
+        if (bal.adjustedOwed !== 0) {
+          text += `⚙️ ยอดปรับลด/จ่ายบางส่วน: ${bal.adjustedOwed.toFixed(2)} RM\n`;
+        }
+
+        if (isDebtor) {
+          text += `💸 *ยอดสุทธิที่ต้องโอนให้ Dom: ${bal.totalOwed.toFixed(2)} RM*\n`;
+        } else {
+          text += `🤝 *ยอดสุทธิที่ Dom ต้องจ่ายให้ ${friendName}: ${Math.abs(bal.totalOwed).toFixed(2)} RM*\n`;
+        }
+        text += `ขอบคุณครับ 🙏✨`;
+
+        navigator.clipboard.writeText(text).then(() => {
+          showToast("📋 คัดลอกข้อความสรุปยอดส่งในแชทแล้ว!");
+        }).catch(() => {
+          showToast("ไม่สามารถคัดลอกข้อความได้", "error");
+        });
       };
 
       const shareToSocial = (text, platform = 'whatsapp') => {
@@ -979,7 +1059,6 @@
         for (let i = 0; i < cleanLines.length; i++) {
           const line = cleanLines[i];
 
-          // 1. Delivery Fee
           if (/delivery\s*fee|rider\s*fee|driver\s*fee|shipping/i.test(line)) {
             const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
             if (matches && matches.length > 0) {
@@ -988,7 +1067,6 @@
             continue;
           }
 
-          // 2. Packaging Charge
           if (/packaging|packing|takeaway\s*box|container|bag/i.test(line)) {
             const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
             if (matches && matches.length > 0) {
@@ -997,7 +1075,6 @@
             continue;
           }
 
-          // 3. Discount / Promo
           if (/discount|promo|voucher|off\b|cashback|rebate/i.test(line)) {
             const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
             if (matches && matches.length > 0) {
@@ -1007,7 +1084,6 @@
             continue;
           }
 
-          // 4. Toll Fee
           if (/toll|expressway|highway/i.test(line)) {
             const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
             if (matches) tFee = parseFloat(matches[1].replace(',', '.'));
@@ -1017,7 +1093,6 @@
           const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|sst\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery|invoice|receipt|cashier|terminal|change\b|rounding/i.test(line);
           if (isNoise) continue;
 
-          // 5. Items (รองรับบาร์โค้ด Aeon, 7-11 และ Grab)
           const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
           const match = line.match(itemRegex);
 
@@ -1147,7 +1222,8 @@
         }
       };
 
-      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower) => {
+      // Feature #3: Remainder & Split Calculation Logic
+      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
         const splits = {};
         const friendItemDetails = {};
         const activeFriendsCount = selectedFriends.length;
@@ -1178,8 +1254,16 @@
           let remainderCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
 
           selectedFriends.forEach(f => {
-            const shareCents = baseCents + (remainderCents > 0 ? 1 : 0);
-            if (remainderCents > 0) remainderCents--;
+            let shareCents = baseCents;
+            if (curRemainderMode === 'distribute') {
+              if (remainderCents > 0) {
+                shareCents += 1;
+                remainderCents--;
+              }
+            } else if (curRemainderMode === 'payer' && f.toLowerCase() === curPaidBy.toLowerCase()) {
+              shareCents += remainderCents;
+            }
+
             splits[f] = shareCents / 100;
 
             friendItemDetails[f] = {
@@ -1289,8 +1373,10 @@
 
         if (activeFriendsCount > 0 && totalDistributedCents !== targetTotalCents) {
           const diffCents = targetTotalCents - totalDistributedCents;
-          const lastPerson = selectedFriends[selectedFriends.length - 1];
-          splits[lastPerson] = Math.max(0, Math.round((splits[lastPerson] + (diffCents / 100)) * 100) / 100);
+          const targetPerson = (curRemainderMode === 'payer' && selectedFriends.includes(curPaidBy)) 
+            ? curPaidBy 
+            : selectedFriends[selectedFriends.length - 1];
+          splits[targetPerson] = Math.max(0, Math.round((splits[targetPerson] + (diffCents / 100)) * 100) / 100);
         }
 
         return {
@@ -1340,7 +1426,7 @@
             const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
 
             if (balances[realPayerName] && myShare > 0 && !isMySharePaid) {
-              balances[realPayerName].billsOwed -= myShare; // ติดลบคือเราต้องจ่ายให้เพื่อน
+              balances[realPayerName].billsOwed -= myShare;
             }
           }
         });
@@ -1415,6 +1501,7 @@
         setNewBillName(bill.name);
         setBillType(bill.billType || 'delivery');
         setPaidBy(bill.paidBy || 'Me (Dom)');
+        setRemainderMode(bill.remainderMode || 'distribute');
         setTaxMode(bill.taxMode || 'inclusive');
         setNewBillDate(bill.date);
         setRideFare(bill.rideFare || '');
@@ -1469,7 +1556,9 @@
           rideFare,
           tollFee,
           loanAmount,
-          loanBorrower
+          loanBorrower,
+          remainderMode,
+          paidBy
         );
 
         let initialPaidStatus = {};
@@ -1480,7 +1569,6 @@
 
         const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
 
-        // Auto-set the Payer to Paid: true
         participantsToProcess.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
             const isCurrentPayer = f.toLowerCase() === paidBy.toLowerCase();
@@ -1492,6 +1580,7 @@
           name: newBillName,
           billType,
           paidBy,
+          remainderMode,
           taxMode,
           date: newBillDate,
           rideFare: parseFloat(rideFare) || 0,
@@ -1841,6 +1930,22 @@
 
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
 
+      // Feature #5: Filter Dashboard Friends by Debt Category
+      const filteredDashboardFriends = useMemo(() => {
+        return friends.filter(friend => {
+          if (friend.isSelf) return false;
+          const balance = friendBalances[friend.name] || { totalOwed: 0 };
+          if (balance.totalOwed === 0) return false;
+          
+          if (dashboardDebtFilter === 'receivable') return balance.totalOwed > 0;
+          if (dashboardDebtFilter === 'payable') return balance.totalOwed < 0;
+          return true;
+        });
+      }, [friends, friendBalances, dashboardDebtFilter]);
+
+      const receivableCount = Object.values(friendBalances).filter(b => b.totalOwed > 0).length;
+      const payableCount = Object.values(friendBalances).filter(b => b.totalOwed < 0).length;
+
       return (
         <div className="pb-16 min-h-screen">
           {/* Header */}
@@ -1895,6 +2000,7 @@
                         setNewBillName('');
                         setBillType('delivery');
                         setPaidBy('Me (Dom)');
+                        setRemainderMode('distribute');
                         setTaxMode('inclusive');
                         setDeliveryFee(0);
                         setPackagingCharge(0);
@@ -1976,20 +2082,42 @@
                 </div>
 
                 <div className="bg-surface rounded-2xl p-6 border border-line">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xs font-bold text-textMuted uppercase tracking-wider font-mono">
-                      {t('unsettledFriends')}
-                    </h2>
-                    <span className="text-[11px] text-accent">Tap name to view ledger ↗</span>
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
+                    <div>
+                      <h2 className="text-xs font-bold text-textMuted uppercase tracking-wider font-mono">
+                        {t('unsettledFriends')}
+                      </h2>
+                    </div>
+
+                    {/* Feature #5: Debt Type Filter Buttons */}
+                    <div className="flex bg-subtle p-1 rounded-xl border border-line gap-1 text-xs">
+                      <button
+                        onClick={() => setDashboardDebtFilter('all')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'all' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+                      >
+                        {t('allDebts', { n: receivableCount + payableCount })}
+                      </button>
+                      <button
+                        onClick={() => setDashboardDebtFilter('receivable')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'receivable' ? 'bg-coral text-white shadow-sm' : 'text-textSecondary hover:text-coral'}`}
+                      >
+                        {t('receivableDebts', { n: receivableCount })}
+                      </button>
+                      <button
+                        onClick={() => setDashboardDebtFilter('payable')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'payable' ? 'bg-mint text-bg font-bold shadow-sm' : 'text-textSecondary hover:text-mint'}`}
+                      >
+                        {t('payableDebts', { n: payableCount })}
+                      </button>
+                    </div>
                   </div>
+
                   <div className="space-y-3">
-                    {friends.filter(f => !f.isSelf && (friendBalances[f.name]?.totalOwed || 0) !== 0).length === 0 ? (
+                    {filteredDashboardFriends.length === 0 ? (
                       <div className="py-8 text-center text-textMuted text-sm">{t('allSettled')}</div>
                     ) : (
-                      friends.map(friend => {
+                      filteredDashboardFriends.map(friend => {
                         const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
-                        if (friend.isSelf || balance.totalOwed === 0) return null;
-
                         const isDebtor = balance.totalOwed > 0;
 
                         return (
@@ -2015,7 +2143,16 @@
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              {/* Feature #2: Quick Copy text for chat in Dashboard */}
+                              <button
+                                onClick={() => copyStatementTextToClipboard(friend.name)}
+                                className="bg-surface hover:bg-line text-textSecondary hover:text-textPrimary p-2 rounded-lg border border-line transition"
+                                title={t('copyText')}
+                              >
+                                📋
+                              </button>
+
                               <span className={`text-lg font-extrabold font-mono tabular mr-1 ${isDebtor ? 'text-coral' : 'text-mint'}`}>
                                 {Math.abs(balance.totalOwed).toFixed(2)} RM
                               </span>
@@ -2038,7 +2175,7 @@
               </div>
             )}
 
-            {/* --- 2. CREATE / EDIT TRANSACTION (PAID BY FEATURE ADDED) --- */}
+            {/* --- 2. CREATE / EDIT TRANSACTION --- */}
             {activeTab === 'new-bill' && (
               isAdmin ? (
                 <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-6 border border-line space-y-6">
@@ -2094,7 +2231,7 @@
                     </button>
                   </div>
 
-                  {/* PAID BY SELECTOR (ฟังก์ชันเพื่อนจ่าย) */}
+                  {/* PAID BY SELECTOR */}
                   {billType !== 'loan' && (
                     <div className="bg-subtle p-3.5 rounded-xl border border-line space-y-2">
                       <label className="block text-xs font-bold text-textPrimary">
@@ -2118,7 +2255,7 @@
                     </div>
                   )}
 
-                  {/* SMART SCANNER (OFFLINE PRE-PROCESSING + ENHANCED REGEX) */}
+                  {/* SMART SCANNER */}
                   {billType !== 'loan' && (
                     <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
@@ -2223,6 +2360,23 @@
                         placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : billType === 'loan' ? 'e.g., ยืมเงินสดกินข้าว, ฝากโอน' : 'e.g., KFC GrabFood, Baby Cami'}
                         required
                       />
+
+                      {/* Feature #4: Quick Merchant Presets */}
+                      {billType !== 'ride' && billType !== 'loan' && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
+                          {quickMerchantPresets.map(preset => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setNewBillName(preset)}
+                              className="text-[10px] bg-subtle hover:bg-line border border-line px-2 py-0.5 rounded-lg text-textSecondary hover:text-textPrimary transition"
+                            >
+                              + {preset}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">Date</label>
@@ -2376,6 +2530,21 @@
                           className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-bolt outline-none"
                           placeholder="e.g., Pavilion KL -> KL Sentral"
                         />
+
+                        {/* Feature #4: Quick Route Presets */}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
+                          {quickRoutePresets.map(preset => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setRideRoute(preset)}
+                              className="text-[10px] bg-surface hover:bg-line border border-line px-2 py-0.5 rounded-lg text-textSecondary hover:text-textPrimary transition"
+                            >
+                              📍 {preset}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ) : billType === 'loan' ? null : (
@@ -2468,6 +2637,27 @@
                               className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
                               placeholder="0.00"
                             />
+                          </div>
+                        </div>
+
+                        {/* Feature #3: Penny Rounding Mode Toggle */}
+                        <div className="pt-2 border-t border-line flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                          <label className="text-xs font-bold text-textSecondary">{t('remainderMode')}</label>
+                          <div className="grid grid-cols-2 bg-surface p-1 rounded-xl border border-line gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setRemainderMode('distribute')}
+                              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${remainderMode === 'distribute' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary'}`}
+                            >
+                              {t('remainderDistribute')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRemainderMode('payer')}
+                              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${remainderMode === 'payer' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary'}`}
+                            >
+                              {t('remainderPayer')}
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -2885,6 +3075,13 @@
                           )}
                           {!isRenaming && !friend.isSelf && (
                             <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <button
+                                onClick={() => copyStatementTextToClipboard(friend.name)}
+                                className="bg-subtle hover:bg-line text-textSecondary hover:text-textPrimary p-1.5 rounded-lg border border-line transition text-xs"
+                                title={t('copyText')}
+                              >
+                                📋
+                              </button>
                               <button 
                                 onClick={() => setSelectedFriendForHistory(friend.name)} 
                                 className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
@@ -3411,7 +3608,7 @@
                                   </span>
                                 ) : adj.amount !== undefined ? (
                                   <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
-                                    {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                                    {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
                                   </span>
                                 ) : null}
 
@@ -3442,6 +3639,14 @@
                 </div>
 
                 <div className="p-4 border-t border-line bg-surface flex flex-wrap gap-2">
+                  {/* Feature #2: Copy Text for Chat in Statement Modal */}
+                  <button
+                    onClick={() => copyStatementTextToClipboard(selectedFriendForHistory)}
+                    className="flex-1 bg-mint/20 hover:bg-mint text-mint hover:text-bg font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 border border-mint/30"
+                  >
+                    {t('copyText')}
+                  </button>
+
                   <button
                     onClick={() => handleExportElement(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
                     className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 shadow-md shadow-accent/20"
@@ -3665,9 +3870,12 @@
                 {currentSelectedBalance && (
                   <div className="bg-subtle border border-line/80 rounded-2xl p-3.5 space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-textSecondary">Current Balance Owed:</span>
+                      <span className="text-xs text-textSecondary">Current Balance:</span>
                       <span className={`text-lg font-black font-mono tabular ${currentSelectedBalance.totalOwed > 0 ? 'text-coral' : currentSelectedBalance.totalOwed < 0 ? 'text-mint' : 'text-textMuted'}`}>
-                        {currentSelectedBalance.totalOwed.toFixed(2)} RM
+                        {Math.abs(currentSelectedBalance.totalOwed).toFixed(2)} RM
+                        <span className="text-xs ml-1 font-sans">
+                          {currentSelectedBalance.totalOwed > 0 ? '(ค้างเรา)' : currentSelectedBalance.totalOwed < 0 ? '(เราค้าง)' : ''}
+                        </span>
                       </span>
                     </div>
 
