@@ -167,7 +167,7 @@
         filterPending: "Pending Only",
         filterSettled: "Settled",
         filterRide: "🚗 Rides Only",
-        filterFood: "🛵 Food / Orders",
+        filterFood: "🛵 Food",
         filterLoan: "💸 Loans Only",
         noTransactions: "No transactions match your search or filter.",
         fare: "Fare",
@@ -200,6 +200,7 @@
         cancel: "Cancel",
         save: "Save",
         settleFullPrompt: "⚡ Settle Full Balance ({amt} RM)",
+        fifoNetOffBtn: "⚡ Smart FIFO Debt Auto Net-off",
         settleConfirmModal: "Mark all {n} unpaid bills and clear adjustments for {name}?",
         statementTitle: "Cumulative Debt Statement",
         fromBills: "From Bills",
@@ -241,13 +242,13 @@
         appTitle: "ใครไม่จ่ายมีเรื่อง",
         adminMode: "👑 โหมดแอดมิน",
         viewOnly: "👀 โหมดดูอย่างเดียว",
-        createTx: "+ สร้างรายการบิล / ยืมเงิน",
+        createTx: "+ สร้างรายการบิล",
         lock: "ล็อค 🔒",
         adminSignIn: "🔑 เข้าสู่ระบบแอดมิน",
         dashboard: "แดชบอร์ด",
         history: "ประวัติบิล",
-        friends: "เพื่อน & ยอดค้าง",
-        adjustments: "ประวัติการชำระ & ปรับยอด",
+        friends: "เพื่อน",
+        adjustments: "ประวัติการชำระ",
         analytics: "สถิติ & สำรองข้อมูล",
         totalOutstanding: "ยอดรวมที่ต้องเก็บเพื่อน (รอโอน)",
         pendingFriends: "ค้างชำระทั้งหมด {n} คน",
@@ -265,8 +266,8 @@
         filterPending: "เฉพาะที่ยังค้าง",
         filterSettled: "เคลียร์ครบแล้ว",
         filterRide: "🚗 เฉพาะค่ารถ",
-        filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
-        filterLoan: "💸 ยืมเงิน / Loan",
+        filterFood: "🛵 สั่งอาหาร",
+        filterLoan: "💸 ยืมเงิน",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
         subtotal: "ยอดรวมก่อนลด",
@@ -298,6 +299,7 @@
         cancel: "ยกเลิก",
         save: "บันทึก",
         settleFullPrompt: "⚡ เคลียร์บิลที่ค้างทั้งหมด ({amt} RM)",
+        fifoNetOffBtn: "⚡ หักล้างบิลเก่าอัตโนมัติ (Smart FIFO Net-off)",
         settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และบันทึกลงประวัติการชำระของ {name} ใช่หรือไม่?",
         statementTitle: "ใบแจ้งยอดหนี้คงค้างสะสม",
         fromBills: "จากบิลอาหาร/รถ",
@@ -400,7 +402,7 @@
       const [adjustments, setAdjustments] = useState([]);
       const [showArchivedFriends, setShowArchivedFriends] = useState(false);
 
-      // Feature #5: Dashboard Debt Filter
+      // Dashboard Debt Filter
       const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
 
       // Search, Filters & Analytics Month Selection
@@ -418,7 +420,7 @@
       const [billFriends, setBillFriends] = useState([]);
       const [paidBy, setPaidBy] = useState('Me (Dom)');
       
-      // Feature #3: Penny Rounding remainder mode
+      // Penny Rounding remainder mode
       const [remainderMode, setRemainderMode] = useState('distribute'); // 'distribute' or 'payer'
       
       // Ride specific
@@ -470,7 +472,7 @@
         setTimeout(() => setToast(null), 3500);
       };
 
-      // Feature #4: Dynamic Quick Presets from user history & popular spots
+      // Quick Presets from user history & popular spots
       const quickMerchantPresets = useMemo(() => {
         const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
         const fromBills = bills.filter(b => b.billType !== 'ride' && b.billType !== 'loan').map(b => b.name).filter(Boolean);
@@ -485,7 +487,7 @@
         return Array.from(set).slice(0, 6);
       }, [bills]);
 
-      // Feature #2: Generate Quick Text for Chat
+      // Generate Quick Text for Chat
       const copyStatementTextToClipboard = (friendName) => {
         const hist = getFriendHistory(friendName);
         const bal = friendBalances[friendName] || { totalOwed: 0, billsOwed: 0, adjustedOwed: 0 };
@@ -669,6 +671,137 @@
           await firebase.auth().signOut();
         } catch (e) {}
         showToast("Logged out. Returned to View-Only mode");
+      };
+
+      // --- SMART FIFO DEBT AUTO NET-OFF FUNCTION ---
+      const handleSmartFifoNetOff = async (friendName, creditAmount) => {
+        if (!isAdmin) {
+          showToast("Permission denied: Admin only", "error");
+          return;
+        }
+
+        const parsedCredit = parseFloat(creditAmount);
+        if (isNaN(parsedCredit) || parsedCredit <= 0) {
+          showToast("กรุณาระบุจำนวนเงินที่ถูกต้อง", "error");
+          return;
+        }
+
+        // 1. ดึงบิลทั้งหมดที่เพื่อนคนนี้ยังค้างเราอยู่ และเรียงลำดับจากเก่าสุดไปใหม่สุด (FIFO)
+        const unpaidBills = bills
+          .filter(b => {
+            const isDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
+            const splitsKeys = Object.keys(b.splits || {});
+            const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
+            const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey];
+            return isDomPayer && isUnpaid;
+          })
+          .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+        if (unpaidBills.length === 0) {
+          // กรณีไม่มีบิลค้างเลย แต่เพื่อนออกเงินให้ -> บันทึกเป็น Adjustment เครดิตติดลบไว้
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('adjustments').add({
+              friendName,
+              amount: -parsedCredit,
+              displayAmount: parsedCredit,
+              isPaymentRecord: true,
+              isSettled: true,
+              note: `🤝 เพื่อนออกเงินให้ล่วงหน้า (Credit): ${parsedCredit.toFixed(2)} RM`,
+              date: new Date().toISOString().split('T')[0],
+              createdAt: Date.now()
+            });
+            showToast(`บันทึกเครดิต ${parsedCredit.toFixed(2)} RM ให้ ${friendName} แล้ว`);
+            setSelectedFriendForAdjust(null);
+          } catch (e) {
+            showToast("บันทึกข้อมูลไม่สำเร็จ", "error");
+          }
+          return;
+        }
+
+        try {
+          if (db) {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+            
+            let remainingCredit = parsedCredit;
+            let settledBillsCount = 0;
+
+            for (const bill of unpaidBills) {
+              if (remainingCredit <= 0) break;
+
+              const splitsKeys = Object.keys(bill.splits || {});
+              const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+              const billDebt = bill.splits[matchedKey] || 0;
+
+              const bDoc = basePath.collection('bills').doc(bill.id);
+
+              if (remainingCredit >= billDebt) {
+                // ตัดหนี้บิลนี้ได้ครบ 100%
+                const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
+                batch.update(bDoc, { paidStatus: nextStatus });
+                
+                remainingCredit -= billDebt;
+                settledBillsCount++;
+              } else {
+                // ตัดได้บางส่วน: ปรับบิลนี้เป็น Paid แล้วบันทึก Adjustment หนี้ส่วนที่เหลือไว้
+                const remainingDebtOnThisBill = billDebt - remainingCredit;
+                const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
+                batch.update(bDoc, { paidStatus: nextStatus });
+
+                const partialAdjRef = basePath.collection('adjustments').doc();
+                batch.set(partialAdjRef, {
+                  friendName,
+                  amount: remainingDebtOnThisBill,
+                  displayAmount: remainingDebtOnThisBill,
+                  isPaymentRecord: false,
+                  isSettled: false,
+                  note: `⚙️ ยอดคงเหลือหลังหักกลบลบหนี้บิล: ${bill.name} (ตัดไป ${remainingCredit.toFixed(2)} RM)`,
+                  date: new Date().toISOString().split('T')[0],
+                  createdAt: Date.now()
+                });
+
+                remainingCredit = 0;
+                settledBillsCount++;
+                break;
+              }
+            }
+
+            // บันทึก Log การหักกลบลบหนี้ (FIFO Net-off Log)
+            const logRef = basePath.collection('adjustments').doc();
+            batch.set(logRef, {
+              friendName,
+              displayAmount: parsedCredit,
+              isPaymentRecord: true,
+              isSettled: true,
+              note: `⚡ Smart Net-off: เพื่อนออกเงินให้ ${parsedCredit.toFixed(2)} RM (ตัดหนี้บิลเก่า ${settledBillsCount} รายการ)`,
+              date: new Date().toISOString().split('T')[0],
+              createdAt: Date.now() + 1
+            });
+
+            // หากยังมี Credit เหลืออยู่หลังจากล้างทุกบิลจนหมดแล้ว
+            if (remainingCredit > 0) {
+              const excessRef = basePath.collection('adjustments').doc();
+              batch.set(excessRef, {
+                friendName,
+                amount: -remainingCredit,
+                displayAmount: remainingCredit,
+                isPaymentRecord: true,
+                isSettled: true,
+                note: `🤝 เครดิตคงเหลือหลังล้างหนี้ครบทุกบิล: ${remainingCredit.toFixed(2)} RM`,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: Date.now() + 2
+              });
+            }
+
+            await batch.commit();
+            showToast(`🎉 หักลบหนี้ FIFO สำเร็จ! เคลียร์ไป ${settledBillsCount} บิล`);
+            setSelectedFriendForAdjust(null);
+          }
+        } catch (err) {
+          console.error("FIFO Net-off Error:", err);
+          showToast("เกิดข้อผิดพลาดในการตัดหนี้: " + err.message, "error");
+        }
       };
 
       const handleSettleFullWithBatch = async (friendName) => {
@@ -1006,7 +1139,7 @@
         }
       };
 
-      // --- STRATEGY 2: CLIENT-SIDE CANVAS IMAGE PRE-PROCESSING ---
+      // --- CLIENT-SIDE CANVAS IMAGE PRE-PROCESSING ---
       const preprocessImageForOCR = (imageFile) => {
         return new Promise((resolve) => {
           const img = new Image();
@@ -1044,7 +1177,7 @@
         });
       };
 
-      // --- STRATEGY 3: ENHANCED REGEX PARSER (AEON, 7-11, GRAB, FOODPANDA) ---
+      // --- ENHANCED REGEX PARSER ---
       const parseTextContent = (fullText) => {
         const cleanLines = fullText
           .replace(/[—–]/g, '-')
@@ -1222,7 +1355,7 @@
         }
       };
 
-      // Feature #3: Remainder & Split Calculation Logic
+      // Remainder & Split Calculation Logic
       const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
         const splits = {};
         const friendItemDetails = {};
@@ -1395,7 +1528,7 @@
         };
       };
 
-      // --- DUAL-WAY DEBT CALCULATION (เพื่อนจ่าย / ME จ่าย) ---
+      // --- DUAL-WAY DEBT CALCULATION ---
       const getFriendBalances = () => {
         const balances = {};
         friends.forEach(f => {
@@ -1407,7 +1540,6 @@
           const isDomPayer = /me|dom/i.test(billPayer);
 
           if (isDomPayer) {
-            // กรณีเราจ่าย: เพื่อนทุกคนที่หารบิลนี้จะติดหนี้เรา
             Object.keys(bill.splits || {}).forEach(name => {
               const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
               const realName = fObj ? fObj.name : name;
@@ -1417,11 +1549,9 @@
               }
             });
           } else {
-            // กรณีเพื่อนจ่าย (เช่น A จ่าย): เราจะติดหนี้เพื่อนคนนั้น (- หนี้)
             const payerObj = friends.find(f => f.name.toLowerCase() === billPayer.toLowerCase());
             const realPayerName = payerObj ? payerObj.name : billPayer;
             
-            // หายอดส่วนของเราในบิลนั้น
             const myShare = bill.splits?.['Me (Dom)'] || bill.splits?.['ตัวฉันเอง'] || 0;
             const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
 
@@ -1930,7 +2060,7 @@
 
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
 
-      // Feature #5: Filter Dashboard Friends by Debt Category
+      // Filter Dashboard Friends by Debt Category
       const filteredDashboardFriends = useMemo(() => {
         return friends.filter(friend => {
           if (friend.isSelf) return false;
@@ -2089,7 +2219,6 @@
                       </h2>
                     </div>
 
-                    {/* Feature #5: Debt Type Filter Buttons */}
                     <div className="flex bg-subtle p-1 rounded-xl border border-line gap-1 text-xs">
                       <button
                         onClick={() => setDashboardDebtFilter('all')}
@@ -2144,7 +2273,6 @@
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {/* Feature #2: Quick Copy text for chat in Dashboard */}
                               <button
                                 onClick={() => copyStatementTextToClipboard(friend.name)}
                                 className="bg-surface hover:bg-line text-textSecondary hover:text-textPrimary p-2 rounded-lg border border-line transition"
@@ -2227,7 +2355,7 @@
                       }}
                       className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'loan' ? 'bg-coral/15 border-coral text-coral shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
-                      💸 Loan (ยืมเงิน)
+                      💸 Loan
                     </button>
                   </div>
 
@@ -2361,7 +2489,6 @@
                         required
                       />
 
-                      {/* Feature #4: Quick Merchant Presets */}
                       {billType !== 'ride' && billType !== 'loan' && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
@@ -2531,7 +2658,6 @@
                           placeholder="e.g., Pavilion KL -> KL Sentral"
                         />
 
-                        {/* Feature #4: Quick Route Presets */}
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
                           {quickRoutePresets.map(preset => (
@@ -2640,7 +2766,6 @@
                           </div>
                         </div>
 
-                        {/* Feature #3: Penny Rounding Mode Toggle */}
                         <div className="pt-2 border-t border-line flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                           <label className="text-xs font-bold text-textSecondary">{t('remainderMode')}</label>
                           <div className="grid grid-cols-2 bg-surface p-1 rounded-xl border border-line gap-1">
@@ -3175,7 +3300,7 @@
             {activeTab === 'analytics' && (
               <div className="space-y-6">
                 
-                {/* 1. Monthly Analytics Card */}
+                {/* Monthly Analytics Card */}
                 <div className="bg-surface rounded-2xl p-6 border border-line space-y-5">
                   <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 pb-3 border-b border-line">
                     <div>
@@ -3219,7 +3344,7 @@
                     </div>
                   </div>
 
-                  {/* CALENDAR VIEW FOR DAILY MY EXPENSE */}
+                  {/* CALENDAR VIEW */}
                   <div className="space-y-3 pt-4 border-t border-line">
                     <div className="flex justify-between items-center">
                       <h3 className="text-xs font-bold text-mint uppercase font-mono flex items-center gap-1.5">
@@ -3317,7 +3442,7 @@
                   </div>
                 </div>
 
-                {/* 2. Backup & Restore Card */}
+                {/* Backup & Restore Card */}
                 <div className="bg-surface rounded-2xl p-6 border border-line space-y-4">
                   <div>
                     <h2 className="text-base font-bold text-textPrimary flex items-center gap-2">
@@ -3397,12 +3522,10 @@
                 </div>
               </div>
 
-              {/* Calculator Screen */}
               <div className="bg-bg border border-line rounded-xl p-3 text-right text-lg font-mono text-textPrimary overflow-x-auto">
                 {calcInput}
               </div>
 
-              {/* Keypad */}
               <div className="grid grid-cols-4 gap-1.5 text-xs font-mono font-bold">
                 {['C', 'DEL', '/', '*'].map(btn => (
                   <button key={btn} onClick={() => handleCalcBtn(btn)} className="bg-subtle hover:bg-line text-amber py-2 rounded-lg">{btn}</button>
@@ -3639,7 +3762,6 @@
                 </div>
 
                 <div className="p-4 border-t border-line bg-surface flex flex-wrap gap-2">
-                  {/* Feature #2: Copy Text for Chat in Statement Modal */}
                   <button
                     onClick={() => copyStatementTextToClipboard(selectedFriendForHistory)}
                     className="flex-1 bg-mint/20 hover:bg-mint text-mint hover:text-bg font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 border border-mint/30"
@@ -3849,7 +3971,7 @@
             </div>
           )}
 
-          {/* --- ADJUSTMENT & PARTIAL SETTLE MODAL --- */}
+          {/* --- ADJUSTMENT & FIFO SETTLE MODAL --- */}
           {selectedFriendForAdjust && isAdmin && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -3884,9 +4006,9 @@
                       <div className="text-right">{t('adj')}: {currentSelectedBalance.adjustedOwed > 0 ? '+' : ''}{currentSelectedBalance.adjustedOwed.toFixed(2)} RM</div>
                     </div>
 
-                    {/* SMART BATCH SETTLE BUTTON */}
-                    {currentSelectedBalance.totalOwed > 0 && (
-                      <div className="pt-2 border-t border-line/50 flex flex-col gap-2">
+                    {/* ACTIONS: BATCH SETTLE & SMART FIFO NET-OFF */}
+                    <div className="pt-2 border-t border-line/50 flex flex-col gap-2">
+                      {currentSelectedBalance.totalOwed > 0 && (
                         <button
                           type="button"
                           onClick={() => handleSettleFullWithBatch(selectedFriendForAdjust)}
@@ -3894,8 +4016,20 @@
                         >
                           <span>{t('settleFullPrompt', { amt: currentSelectedBalance.totalOwed.toFixed(2) })}</span>
                         </button>
-                      </div>
-                    )}
+                      )}
+
+                      {/* SMART FIFO NET-OFF BUTTON */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const amt = prompt(`ระบุยอดเงินที่ ${selectedFriendForAdjust} ออกให้เรา (RM):`, adjustAmount || "");
+                          if (amt) handleSmartFifoNetOff(selectedFriendForAdjust, amt);
+                        }}
+                        className="w-full bg-accent/20 hover:bg-accent text-accent hover:text-white border border-accent/40 font-bold py-2 px-3 rounded-xl text-xs transition text-center flex items-center justify-center gap-1.5"
+                      >
+                        <span>{t('fifoNetOffBtn')}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
