@@ -167,7 +167,7 @@
         filterPending: "Pending Only",
         filterSettled: "Settled",
         filterRide: "🚗 Rides Only",
-        filterFood: "🛵 Food",
+        filterFood: "🛵 Food / Orders",
         filterLoan: "💸 Loans Only",
         noTransactions: "No transactions match your search or filter.",
         fare: "Fare",
@@ -242,13 +242,13 @@
         appTitle: "ใครไม่จ่ายมีเรื่อง",
         adminMode: "👑 โหมดแอดมิน",
         viewOnly: "👀 โหมดดูอย่างเดียว",
-        createTx: "+ สร้างรายการบิล",
+        createTx: "+ สร้างรายการบิล / ยืมเงิน",
         lock: "ล็อค 🔒",
         adminSignIn: "🔑 เข้าสู่ระบบแอดมิน",
         dashboard: "แดชบอร์ด",
         history: "ประวัติบิล",
-        friends: "เพื่อน",
-        adjustments: "ประวัติการชำระ",
+        friends: "เพื่อน & ยอดค้าง",
+        adjustments: "ประวัติการชำระ & ปรับยอด",
         analytics: "สถิติ & สำรองข้อมูล",
         totalOutstanding: "ยอดรวมที่ต้องเก็บเพื่อน (รอโอน)",
         pendingFriends: "ค้างชำระทั้งหมด {n} คน",
@@ -266,8 +266,8 @@
         filterPending: "เฉพาะที่ยังค้าง",
         filterSettled: "เคลียร์ครบแล้ว",
         filterRide: "🚗 เฉพาะค่ารถ",
-        filterFood: "🛵 สั่งอาหาร",
-        filterLoan: "💸 ยืมเงิน",
+        filterFood: "🛵 สั่งอาหาร / เดลิเวอรี",
+        filterLoan: "💸 ยืมเงิน / Loan",
         noTransactions: "ไม่พบบิลที่ตรงกับคำค้นหา",
         fare: "ค่าโดยสาร",
         subtotal: "ยอดรวมก่อนลด",
@@ -420,8 +420,7 @@
       const [billFriends, setBillFriends] = useState([]);
       const [paidBy, setPaidBy] = useState('Me (Dom)');
       
-      // Penny Rounding remainder mode
-      const [remainderMode, setRemainderMode] = useState('distribute'); // 'distribute' or 'payer'
+      const [remainderMode, setRemainderMode] = useState('distribute');
       
       // Ride specific
       const [rideFare, setRideFare] = useState('');
@@ -472,7 +471,6 @@
         setTimeout(() => setToast(null), 3500);
       };
 
-      // Quick Presets from user history & popular spots
       const quickMerchantPresets = useMemo(() => {
         const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
         const fromBills = bills.filter(b => b.billType !== 'ride' && b.billType !== 'loan').map(b => b.name).filter(Boolean);
@@ -487,7 +485,6 @@
         return Array.from(set).slice(0, 6);
       }, [bills]);
 
-      // Generate Quick Text for Chat
       const copyStatementTextToClipboard = (friendName) => {
         const hist = getFriendHistory(friendName);
         const bal = friendBalances[friendName] || { totalOwed: 0, billsOwed: 0, adjustedOwed: 0 };
@@ -673,8 +670,8 @@
         showToast("Logged out. Returned to View-Only mode");
       };
 
-      // --- SMART FIFO DEBT AUTO NET-OFF FUNCTION ---
-      const handleSmartFifoNetOff = async (friendName, creditAmount) => {
+      // --- SMART FIFO AUTO-NETOFF FUNCTION ---
+      const handleSmartFifoNetOff = async (friendName, creditAmount, sourceBillName = '') => {
         if (!isAdmin) {
           showToast("Permission denied: Admin only", "error");
           return;
@@ -686,19 +683,21 @@
           return;
         }
 
-        // 1. ดึงบิลทั้งหมดที่เพื่อนคนนี้ยังค้างเราอยู่ และเรียงลำดับจากเก่าสุดไปใหม่สุด (FIFO)
         const unpaidBills = bills
           .filter(b => {
             const isDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
             const splitsKeys = Object.keys(b.splits || {});
             const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
-            const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey];
+            const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
             return isDomPayer && isUnpaid;
           })
-          .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+          .sort((a, b) => {
+            const dateA = new Date(a.date || 0).getTime();
+            const dateB = new Date(b.date || 0).getTime();
+            return dateA !== dateB ? dateA - dateB : (a.createdAt || 0) - (b.createdAt || 0);
+          });
 
         if (unpaidBills.length === 0) {
-          // กรณีไม่มีบิลค้างเลย แต่เพื่อนออกเงินให้ -> บันทึกเป็น Adjustment เครดิตติดลบไว้
           try {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
             await basePath.collection('adjustments').add({
@@ -707,7 +706,7 @@
               displayAmount: parsedCredit,
               isPaymentRecord: true,
               isSettled: true,
-              note: `🤝 เพื่อนออกเงินให้ล่วงหน้า (Credit): ${parsedCredit.toFixed(2)} RM`,
+              note: `🤝 เครดิตล่วงหน้า: ${sourceBillName || 'บิลล่าสุด'} (${parsedCredit.toFixed(2)} RM)`,
               date: new Date().toISOString().split('T')[0],
               createdAt: Date.now()
             });
@@ -726,26 +725,25 @@
             
             let remainingCredit = parsedCredit;
             let settledBillsCount = 0;
+            const autoSettledBillIds = [];
 
             for (const bill of unpaidBills) {
-              if (remainingCredit <= 0) break;
+              if (remainingCredit <= 0.009) break;
 
               const splitsKeys = Object.keys(bill.splits || {});
               const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
               const billDebt = bill.splits[matchedKey] || 0;
-
               const bDoc = basePath.collection('bills').doc(bill.id);
 
               if (remainingCredit >= billDebt) {
-                // ตัดหนี้บิลนี้ได้ครบ 100%
                 const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
                 batch.update(bDoc, { paidStatus: nextStatus });
                 
-                remainingCredit -= billDebt;
+                remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
+                autoSettledBillIds.push(bill.id);
                 settledBillsCount++;
               } else {
-                // ตัดได้บางส่วน: ปรับบิลนี้เป็น Paid แล้วบันทึก Adjustment หนี้ส่วนที่เหลือไว้
-                const remainingDebtOnThisBill = billDebt - remainingCredit;
+                const remainingDebtOnThisBill = Math.round((billDebt - remainingCredit) * 100) / 100;
                 const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
                 batch.update(bDoc, { paidStatus: nextStatus });
 
@@ -756,31 +754,31 @@
                   displayAmount: remainingDebtOnThisBill,
                   isPaymentRecord: false,
                   isSettled: false,
-                  note: `⚙️ ยอดคงเหลือหลังหักกลบลบหนี้บิล: ${bill.name} (ตัดไป ${remainingCredit.toFixed(2)} RM)`,
+                  note: `⚙️ ยอดค้างส่วนต่างบิล: ${bill.name} (ตัดด้วยบิล ${sourceBillName || 'ล่าสุด'} ไป ${remainingCredit.toFixed(2)} RM)`,
                   date: new Date().toISOString().split('T')[0],
                   createdAt: Date.now()
                 });
 
+                autoSettledBillIds.push(bill.id);
                 remainingCredit = 0;
                 settledBillsCount++;
                 break;
               }
             }
 
-            // บันทึก Log การหักกลบลบหนี้ (FIFO Net-off Log)
             const logRef = basePath.collection('adjustments').doc();
             batch.set(logRef, {
               friendName,
               displayAmount: parsedCredit,
               isPaymentRecord: true,
               isSettled: true,
-              note: `⚡ Smart Net-off: เพื่อนออกเงินให้ ${parsedCredit.toFixed(2)} RM (ตัดหนี้บิลเก่า ${settledBillsCount} รายการ)`,
+              relatedBillIds: autoSettledBillIds,
+              note: `⚡ Smart Net-off: เพื่อนออกค่า ${sourceBillName || 'บิล'} ให้ (${parsedCredit.toFixed(2)} RM) -> ล้างบิลเก่า ${settledBillsCount} รายการ`,
               date: new Date().toISOString().split('T')[0],
               createdAt: Date.now() + 1
             });
 
-            // หากยังมี Credit เหลืออยู่หลังจากล้างทุกบิลจนหมดแล้ว
-            if (remainingCredit > 0) {
+            if (remainingCredit > 0.009) {
               const excessRef = basePath.collection('adjustments').doc();
               batch.set(excessRef, {
                 friendName,
@@ -795,11 +793,11 @@
             }
 
             await batch.commit();
-            showToast(`🎉 หักลบหนี้ FIFO สำเร็จ! เคลียร์ไป ${settledBillsCount} บิล`);
+            showToast(`🎉 หักกลบลบหนี้ FIFO สำเร็จ! ล้างบิลเก่าไป ${settledBillsCount} บิล`);
             setSelectedFriendForAdjust(null);
           }
         } catch (err) {
-          console.error("FIFO Net-off Error:", err);
+          console.error("FIFO Error:", err);
           showToast("เกิดข้อผิดพลาดในการตัดหนี้: " + err.message, "error");
         }
       };
@@ -841,7 +839,6 @@
               operationsCount++;
             });
 
-            // Mark all pending Add Debt adjustments as Settled
             adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase() && a.amount > 0 && !a.isSettled).forEach(adj => {
               const aDoc = basePath.collection('adjustments').doc(adj.id);
               batch.update(aDoc, { isSettled: true });
@@ -992,7 +989,6 @@
         return bills.filter(b => (b.date || '').startsWith(selectedMonth));
       }, [bills, selectedMonth]);
 
-      // Calculate Monthly Stats & Daily Expenses for Calendar
       const monthlyStats = useMemo(() => {
         let totalGroup = 0;
         let foodTotal = 0;
@@ -1014,7 +1010,6 @@
             foodTotal += tot;
           }
 
-          // Track personal daily expense
           const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
           if (b.date && selfAmount > 0) {
             if (!dailyMyExpenses[b.date]) {
@@ -1049,7 +1044,6 @@
         };
       }, [monthlyBills, friends]);
 
-      // Calendar Days Calculation
       const calendarMatrix = useMemo(() => {
         if (!selectedMonth) return [];
         const [year, month] = selectedMonth.split('-').map(Number);
@@ -1139,7 +1133,6 @@
         }
       };
 
-      // --- CLIENT-SIDE CANVAS IMAGE PRE-PROCESSING ---
       const preprocessImageForOCR = (imageFile) => {
         return new Promise((resolve) => {
           const img = new Image();
@@ -1177,7 +1170,6 @@
         });
       };
 
-      // --- ENHANCED REGEX PARSER ---
       const parseTextContent = (fullText) => {
         const cleanLines = fullText
           .replace(/[—–]/g, '-')
@@ -1355,7 +1347,6 @@
         }
       };
 
-      // Remainder & Split Calculation Logic
       const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
         const splits = {};
         const friendItemDetails = {};
@@ -1662,6 +1653,7 @@
         setActiveTab('new-bill');
       };
 
+      // --- SAVE BILL + FIFO AUTO NET-OFF ---
       const handleSaveBill = async (e) => {
         e.preventDefault();
         if (!isAdmin) {
@@ -1742,24 +1734,98 @@
           updatedAt: Date.now()
         };
 
-        if (editingBillId) {
-          if (db) {
-            try {
-              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(editingBillId).update(billPayload);
-              showToast("Bill updated successfully");
-            } catch (err) {
-              showToast("Update failed: Permission denied", "error");
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            let billDocRef;
+            if (editingBillId) {
+              billDocRef = basePath.collection('bills').doc(editingBillId);
+              batch.update(billDocRef, billPayload);
+            } else {
+              billPayload.createdAt = Date.now();
+              billDocRef = basePath.collection('bills').doc();
+              batch.set(billDocRef, billPayload);
             }
-          }
-        } else {
-          billPayload.createdAt = Date.now();
-          if (db) {
-            try {
-              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').add(billPayload);
-              showToast("New transaction saved to cloud");
-            } catch (err) {
-              showToast("Save failed: Permission denied", "error");
+
+            // ⚡ SMART FIFO AUTO-NETOFF: ถ้าเพื่อนจ่าย และ Dom มีส่วนต้องออก ให้วิ่งไปตัดบิลเก่าที่เพื่อนค้างเราทันที
+            const isDomPayer = /me|dom/i.test(paidBy);
+            const myShareInThisBill = calculated.splits?.['Me (Dom)'] || calculated.splits?.['ตัวฉันเอง'] || 0;
+
+            if (!isDomPayer && myShareInThisBill > 0) {
+              const friendPayerName = paidBy;
+              const unpaidBills = bills
+                .filter(b => {
+                  const bDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
+                  const splitsKeys = Object.keys(b.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase());
+                  const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
+                  return bDomPayer && isUnpaid;
+                })
+                .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+              if (unpaidBills.length > 0) {
+                let remainingCredit = myShareInThisBill;
+                let autoSettledBillIds = [];
+                let settledCount = 0;
+
+                for (const oldBill of unpaidBills) {
+                  if (remainingCredit <= 0.009) break;
+
+                  const splitsKeys = Object.keys(oldBill.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase()) || friendPayerName;
+                  const billDebt = oldBill.splits[matchedKey] || 0;
+                  const oldBDoc = basePath.collection('bills').doc(oldBill.id);
+
+                  if (remainingCredit >= billDebt) {
+                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
+                    batch.update(oldBDoc, { paidStatus: nextStatus });
+                    remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
+                    autoSettledBillIds.push(oldBill.id);
+                    settledCount++;
+                  } else {
+                    const remainingDebt = Math.round((billDebt - remainingCredit) * 100) / 100;
+                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
+                    batch.update(oldBDoc, { paidStatus: nextStatus });
+
+                    const partAdjRef = basePath.collection('adjustments').doc();
+                    batch.set(partAdjRef, {
+                      friendName: friendPayerName,
+                      amount: remainingDebt,
+                      displayAmount: remainingDebt,
+                      isPaymentRecord: false,
+                      isSettled: false,
+                      note: `⚙️ ยอดคงเหลือบิล: ${oldBill.name} (หักล้างอัตโนมัติด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM)`,
+                      date: newBillDate,
+                      createdAt: Date.now()
+                    });
+
+                    autoSettledBillIds.push(oldBill.id);
+                    remainingCredit = 0;
+                    settledCount++;
+                    break;
+                  }
+                }
+
+                const autoLogRef = basePath.collection('adjustments').doc();
+                batch.set(autoLogRef, {
+                  friendName: friendPayerName,
+                  displayAmount: myShareInThisBill,
+                  isPaymentRecord: true,
+                  isSettled: true,
+                  relatedBillIds: autoSettledBillIds,
+                  note: `⚡ Auto Net-off: ${friendPayerName} ออกค่า ${newBillName} ให้ (${myShareInThisBill.toFixed(2)} RM) -> ล้างบิลเก่าอัตโนมัติ ${settledCount} บิล`,
+                  date: newBillDate,
+                  createdAt: Date.now() + 1
+                });
+              }
             }
+
+            await batch.commit();
+            showToast("บันทึกบิลและคำนวณยอดเรียบร้อย! 🎉");
+          } catch (err) {
+            showToast("Save failed: Permission denied", "error");
           }
         }
 
@@ -1963,12 +2029,13 @@
         handleCancelRenameFriend();
       };
 
+      // --- TWO-WAY UNSETTLE SYNC ON DELETE ADJUSTMENT ---
       const handleDeleteAdjustment = async (adj) => {
         if (!isAdmin) {
           showToast("Only Admin can delete adjustments", "error");
           return;
         }
-        if (!confirm(`Delete adjustment log for "${adj.friendName}"?`)) return;
+        if (!confirm(`ต้องการลบประวัติ "${adj.note}" ใช่หรือไม่? (สถานะบิลที่เคยถูกเคลียร์จะถูกปลดกลับมาค้างชำระตามเดิม)`)) return;
 
         if (db) {
           try {
@@ -2003,7 +2070,7 @@
             }
 
             await batch.commit();
-            showToast("Adjustment removed");
+            showToast("ลบประวัติและดึงสถานะบิลกลับมาค้างชำระเรียบร้อย! 🔄");
           } catch (err) {
             showToast("Delete failed: Permission denied", "error");
           }
@@ -2060,7 +2127,6 @@
 
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
 
-      // Filter Dashboard Friends by Debt Category
       const filteredDashboardFriends = useMemo(() => {
         return friends.filter(friend => {
           if (friend.isSelf) return false;
@@ -2102,7 +2168,6 @@
                   </span>
                 </h1>
 
-                {/* Mobile Language Switcher */}
                 <div className="flex items-center gap-1.5 sm:hidden">
                   <button
                     onClick={handleLangToggle}
@@ -2113,7 +2178,6 @@
                 </div>
               </div>
 
-              {/* Action Buttons & Desktop Language Switcher */}
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
                   onClick={handleLangToggle}
@@ -2355,7 +2419,7 @@
                       }}
                       className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'loan' ? 'bg-coral/15 border-coral text-coral shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
-                      💸 Loan
+                      💸 Loan (ยืมเงิน)
                     </button>
                   </div>
 
@@ -2380,6 +2444,11 @@
                           );
                         })}
                       </div>
+                      {paidBy !== 'Me (Dom)' && (
+                        <p className="text-[11px] text-amber mt-1">
+                          💡 เมื่อบันทึกบิลนี้ ระบบจะนำยอดส่วนของฉัน (Dom) ไป<b>ล้างบิลเก่าๆ</b> ที่ {paidBy} เคยค้างเราให้อัตโนมัติ (FIFO Net-off)
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -3283,9 +3352,10 @@
                           {isAdmin && (
                             <button
                               onClick={() => handleDeleteAdjustment(adj)}
-                              className="text-textMuted hover:text-coral text-xs underline ml-1"
+                              className="text-coral hover:underline text-xs"
+                              title="ลบและคืนสถานะบิลกลับเป็น Pending"
                             >
-                              {t('delete')}
+                              ยกเลิก / ลบ
                             </button>
                           )}
                         </div>
@@ -3300,7 +3370,6 @@
             {activeTab === 'analytics' && (
               <div className="space-y-6">
                 
-                {/* Monthly Analytics Card */}
                 <div className="bg-surface rounded-2xl p-6 border border-line space-y-5">
                   <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 pb-3 border-b border-line">
                     <div>
@@ -3320,7 +3389,6 @@
                     </div>
                   </div>
 
-                  {/* Summary Metric Cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="bg-subtle p-4 rounded-xl border border-line">
                       <p className="text-[10px] text-textMuted uppercase font-bold">{t('totalGroupSpend')}</p>
@@ -3344,7 +3412,6 @@
                     </div>
                   </div>
 
-                  {/* CALENDAR VIEW */}
                   <div className="space-y-3 pt-4 border-t border-line">
                     <div className="flex justify-between items-center">
                       <h3 className="text-xs font-bold text-mint uppercase font-mono flex items-center gap-1.5">
@@ -3424,7 +3491,6 @@
                     </div>
                   </div>
 
-                  {/* Top Members Breakdown */}
                   <div className="space-y-3 pt-3 border-t border-line">
                     <p className="text-xs font-bold text-textPrimary uppercase font-sans">👥 {t('topSpenders')}:</p>
                     {monthlyStats.sortedSpenders.length === 0 ? (
@@ -3442,7 +3508,6 @@
                   </div>
                 </div>
 
-                {/* Backup & Restore Card */}
                 <div className="bg-surface rounded-2xl p-6 border border-line space-y-4">
                   <div>
                     <h2 className="text-base font-bold text-textPrimary flex items-center gap-2">
@@ -3607,7 +3672,7 @@
             </div>
           )}
 
-          {/* --- STATEMENT MODAL --- */}
+          {/* --- STATEMENT & LEDGER MODAL --- */}
           {selectedFriendForHistory && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
@@ -3676,37 +3741,56 @@
                             const isPaid = b.paidStatus?.[matchedKey];
                             const userShare = b.splits[matchedKey] || 0;
                             const isFriendPayer = (b.paidBy || '').toLowerCase() === selectedFriendForHistory.toLowerCase();
+                            const domShareInThisBill = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
 
                             return (
-                              <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
-                                <div>
-                                  <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
-                                    {b.billType === 'ride' ? '🚗 ' : b.billType === 'loan' ? '💸 ' : '🛵 '} {b.name}
-                                  </p>
-                                  <p className="text-[10px] text-textMuted">
-                                    {b.date} • {isFriendPayer ? `👑 ${selectedFriendForHistory} เป็นคนจ่าย` : (b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split'))}
-                                  </p>
-                                </div>
-                                <div className="text-right flex items-center gap-2">
+                              <div key={b.id} className={`p-3 rounded-xl border flex flex-col gap-2 ${isFriendPayer ? 'bg-mint-subtle/20 border-mint/40' : 'bg-subtle border-line'}`}>
+                                <div className="flex justify-between items-center">
                                   <div>
-                                    <p className="font-bold text-sm text-textPrimary font-mono tabular">
-                                      {isFriendPayer ? `Total: ${b.total?.toFixed(2)} RM` : `${userShare.toFixed(2)} RM`}
+                                    <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
+                                      {b.billType === 'ride' ? '🚗 ' : b.billType === 'loan' ? '💸 ' : '🛵 '} {b.name}
+                                    </p>
+                                    <p className="text-[10px] text-textMuted">
+                                      {b.date} • {isFriendPayer ? `👑 ${selectedFriendForHistory} เป็นคนจ่าย (รวม ${b.total?.toFixed(2)} RM)` : (b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : `ส่วนของเพื่อน: ${userShare.toFixed(2)} RM`)}
                                     </p>
                                   </div>
-                                  {isAdmin ? (
-                                    <button
-                                      onClick={() => handleTogglePaid(b, selectedFriendForHistory)}
-                                      className={`text-[11px] font-bold px-2 py-1 rounded-lg transition ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
-                                      title="Toggle Paid Status"
-                                    >
-                                      {isPaid ? t('paid') : t('pending')}
-                                    </button>
-                                  ) : (
-                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
-                                      {isPaid ? t('paid') : t('pending')}
-                                    </span>
-                                  )}
+                                  <div className="text-right flex items-center gap-2">
+                                    <div>
+                                      <p className="font-bold text-sm text-textPrimary font-mono tabular">
+                                        {isFriendPayer ? `Total: ${b.total?.toFixed(2)} RM` : `${userShare.toFixed(2)} RM`}
+                                      </p>
+                                    </div>
+                                    {isAdmin ? (
+                                      <button
+                                        onClick={() => handleTogglePaid(b, selectedFriendForHistory)}
+                                        className={`text-[11px] font-bold px-2 py-1 rounded-lg transition ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                        title="Toggle Paid Status"
+                                      >
+                                        {isPaid ? t('paid') : t('pending')}
+                                      </button>
+                                    ) : (
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
+                                        {isPaid ? t('paid') : t('pending')}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
+
+                                {/* ⚡ 1-CLICK MANUAL FIFO NET-OFF BUTTON */}
+                                {isFriendPayer && domShareInThisBill > 0 && isAdmin && (
+                                  <div className="pt-2 border-t border-line/40 flex justify-between items-center bg-surface/50 p-2 rounded-lg">
+                                    <span className="text-[11px] text-mint font-sans">
+                                      ยอดที่เราติดเพื่อนบิลนี้: <b>{domShareInThisBill.toFixed(2)} RM</b>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSmartFifoNetOff(selectedFriendForHistory, domShareInThisBill, b.name)}
+                                      className="bg-accent hover:bg-accent-hover text-white font-bold px-3 py-1 rounded-lg text-xs transition active:scale-95 shadow-md flex items-center gap-1"
+                                    >
+                                      ⚡ หักล้างหนี้บิลเก่า (FIFO)
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -3747,7 +3831,8 @@
                                 {isAdmin && (
                                   <button
                                     onClick={() => handleDeleteAdjustment(adj)}
-                                    className="text-textMuted hover:text-coral text-xs underline ml-1"
+                                    className="text-coral hover:underline text-xs ml-1"
+                                    title="ลบและคืนสถานะบิลกลับเป็น Pending"
                                   >
                                     {t('delete')}
                                   </button>
@@ -3971,7 +4056,7 @@
             </div>
           )}
 
-          {/* --- ADJUSTMENT & FIFO SETTLE MODAL --- */}
+          {/* --- ADJUSTMENT & PARTIAL SETTLE MODAL --- */}
           {selectedFriendForAdjust && isAdmin && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -4006,7 +4091,6 @@
                       <div className="text-right">{t('adj')}: {currentSelectedBalance.adjustedOwed > 0 ? '+' : ''}{currentSelectedBalance.adjustedOwed.toFixed(2)} RM</div>
                     </div>
 
-                    {/* ACTIONS: BATCH SETTLE & SMART FIFO NET-OFF */}
                     <div className="pt-2 border-t border-line/50 flex flex-col gap-2">
                       {currentSelectedBalance.totalOwed > 0 && (
                         <button
@@ -4018,7 +4102,6 @@
                         </button>
                       )}
 
-                      {/* SMART FIFO NET-OFF BUTTON */}
                       <button
                         type="button"
                         onClick={() => {
