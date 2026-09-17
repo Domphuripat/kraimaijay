@@ -65,7 +65,7 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- Tesseract.js (Fallback OCR) -->
+  <!-- Tesseract.js (Client-side Offline OCR) -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- html2canvas & jsPDF -->
@@ -200,6 +200,7 @@
         cancel: "Cancel",
         save: "Save",
         settleFullPrompt: "⚡ Settle Full Balance ({amt} RM)",
+        fifoNetOffBtn: "⚡ Smart FIFO Debt Auto Net-off",
         settleConfirmModal: "Mark all {n} unpaid bills and clear adjustments for {name}?",
         statementTitle: "Cumulative Debt Statement",
         fromBills: "From Bills",
@@ -207,6 +208,7 @@
         netBalance: "Net Balance",
         savePng: "📸 PNG",
         downloadPdf: "📄 PDF",
+        copyText: "📋 Copy Text",
         whatsapp: "💬 WhatsApp",
         instagram: "📸 IG",
         taxModeTitle: "Tax Mode",
@@ -227,6 +229,14 @@
         topSpenders: "Top Friends Share Breakdown",
         calendarTitle: "📅 Daily Expense Calendar (My Expense)",
         dayNames: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+        paidByLabel: "💳 Paid By (Who paid the bill?):",
+        remainderMode: "Penny Rounding:",
+        remainderDistribute: "Distribute Remainder",
+        remainderPayer: "Payer Absorbs Remainder",
+        quickPresets: "Quick Presets:",
+        allDebts: "All ({n})",
+        receivableDebts: "They Owe Me ({n})",
+        payableDebts: "I Owe Them ({n})",
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
@@ -289,6 +299,7 @@
         cancel: "ยกเลิก",
         save: "บันทึก",
         settleFullPrompt: "⚡ เคลียร์บิลที่ค้างทั้งหมด ({amt} RM)",
+        fifoNetOffBtn: "⚡ หักล้างบิลเก่าอัตโนมัติ (Smart FIFO Net-off)",
         settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) และบันทึกลงประวัติการชำระของ {name} ใช่หรือไม่?",
         statementTitle: "ใบแจ้งยอดหนี้คงค้างสะสม",
         fromBills: "จากบิลอาหาร/รถ",
@@ -296,6 +307,7 @@
         netBalance: "ยอดสุทธิที่ต้องจ่าย",
         savePng: "📸 บันทึกรูป PNG",
         downloadPdf: "📄 เอกสาร PDF",
+        copyText: "📋 คัดลอกข้อความแชท",
         whatsapp: "💬 WhatsApp",
         instagram: "📸 IG Direct",
         taxModeTitle: "โหมดภาษี (Tax Mode)",
@@ -316,6 +328,14 @@
         topSpenders: "สรุปยอดส่วนแบ่งรายบุคคลในเดือนนี้",
         calendarTitle: "📅 ปฏิทินรายจ่ายของฉันรายวัน (Daily My Expense)",
         dayNames: ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'],
+        paidByLabel: "💳 ใครเป็นคนจ่ายเงินบิลนี้ (Paid By):",
+        remainderMode: "การจัดการเศษสตางค์:",
+        remainderDistribute: "กระจายเศษสตางค์เฉลี่ย",
+        remainderPayer: "คนจ่ายหลักรับเศษเอง",
+        quickPresets: "แท็กด่วน (สถานที่ / ร้านประจำ):",
+        allDebts: "ทั้งหมด ({n})",
+        receivableDebts: "เพื่อนค้างเรา ({n})",
+        payableDebts: "เราค้างเพื่อน ({n})",
       }
     };
 
@@ -333,9 +353,6 @@
 
     function App() {
       const [lang, setLang] = useState(() => localStorage.getItem('kraimaijay_lang') || 'th');
-      const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('kraimaijay_gemini_api_key') || '');
-      const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-      const [tempApiKey, setTempApiKey] = useState(geminiApiKey);
 
       const t = (key, params = {}) => {
         let str = TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || key;
@@ -385,7 +402,8 @@
       const [adjustments, setAdjustments] = useState([]);
       const [showArchivedFriends, setShowArchivedFriends] = useState(false);
 
-      // Search, Filters & Analytics Month Selection
+      const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
+
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
@@ -398,6 +416,9 @@
       const [billType, setBillType] = useState('delivery');
       const [newBillDate, setNewBillDate] = useState(new Date().toISOString().split('T')[0]);
       const [billFriends, setBillFriends] = useState([]);
+      const [paidBy, setPaidBy] = useState('Me (Dom)');
+      
+      const [remainderMode, setRemainderMode] = useState('distribute');
       
       // Ride specific
       const [rideFare, setRideFare] = useState('');
@@ -446,6 +467,62 @@
       const showToast = (message, type = 'success') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3500);
+      };
+
+      const quickMerchantPresets = useMemo(() => {
+        const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
+        const fromBills = bills.filter(b => b.billType !== 'ride' && b.billType !== 'loan').map(b => b.name).filter(Boolean);
+        const set = new Set([...fromBills, ...defaults]);
+        return Array.from(set).slice(0, 8);
+      }, [bills]);
+
+      const quickRoutePresets = useMemo(() => {
+        const defaults = ['Pavilion Bukit Jalil', 'One South', 'Sri Petaling', 'KL Sentral', 'Mid Valley', 'KLCC'];
+        const fromBills = bills.filter(b => b.billType === 'ride').map(b => b.rideRoute).filter(Boolean);
+        const set = new Set([...fromBills, ...defaults]);
+        return Array.from(set).slice(0, 6);
+      }, [bills]);
+
+      const copyStatementTextToClipboard = (friendName) => {
+        const hist = getFriendHistory(friendName);
+        const bal = friendBalances[friendName] || { totalOwed: 0, billsOwed: 0, adjustedOwed: 0 };
+        const isDebtor = bal.totalOwed > 0;
+        
+        const unpaidBills = hist.bills.filter(b => {
+          const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+          return !b.paidStatus?.[matchedKey];
+        });
+
+        let text = `🧾 *สรุปยอดหนี้คงค้าง: ${friendName}*\n`;
+        text += `📅 ข้อมูล ณ วันที่: ${new Date().toLocaleDateString('th-TH')}\n`;
+        text += `---------------------------------\n`;
+        
+        if (unpaidBills.length > 0) {
+          text += `*รายการที่ยังไม่เคลียร์ (${unpaidBills.length} บิล):*\n`;
+          unpaidBills.forEach(b => {
+            const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+            const amt = (b.splits[matchedKey] || 0).toFixed(2);
+            text += `• ${b.name} (${b.date}): ${amt} RM\n`;
+          });
+          text += `---------------------------------\n`;
+        }
+
+        if (bal.adjustedOwed !== 0) {
+          text += `⚙️ ยอดปรับลด/จ่ายบางส่วน: ${bal.adjustedOwed.toFixed(2)} RM\n`;
+        }
+
+        if (isDebtor) {
+          text += `💸 *ยอดสุทธิที่ต้องโอนให้ Dom: ${bal.totalOwed.toFixed(2)} RM*\n`;
+        } else {
+          text += `🤝 *ยอดสุทธิที่ Dom ต้องจ่ายให้ ${friendName}: ${Math.abs(bal.totalOwed).toFixed(2)} RM*\n`;
+        }
+        text += `ขอบคุณครับ 🙏✨`;
+
+        navigator.clipboard.writeText(text).then(() => {
+          showToast("📋 คัดลอกข้อความสรุปยอดส่งในแชทแล้ว!");
+        }).catch(() => {
+          showToast("ไม่สามารถคัดลอกข้อความได้", "error");
+        });
       };
 
       const shareToSocial = (text, platform = 'whatsapp') => {
@@ -591,6 +668,131 @@
         showToast("Logged out. Returned to View-Only mode");
       };
 
+      // --- SMART FIFO AUTO-NETOFF FUNCTION ---
+      const handleSmartFifoNetOff = async (friendName, creditAmount, sourceBillId = '', sourceBillName = '') => {
+        if (!isAdmin) {
+          showToast("Permission denied: Admin only", "error");
+          return;
+        }
+
+        const parsedCredit = parseFloat(creditAmount);
+        if (isNaN(parsedCredit) || parsedCredit <= 0) {
+          showToast("กรุณาระบุจำนวนเงินที่ถูกต้อง", "error");
+          return;
+        }
+
+        const unpaidBills = bills
+          .filter(b => {
+            const isDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
+            const splitsKeys = Object.keys(b.splits || {});
+            const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
+            const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
+            return isDomPayer && isUnpaid;
+          })
+          .sort((a, b) => {
+            const dateA = new Date(a.date || 0).getTime();
+            const dateB = new Date(b.date || 0).getTime();
+            return dateA !== dateB ? dateA - dateB : (a.createdAt || 0) - (b.createdAt || 0);
+          });
+
+        try {
+          if (db) {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+            
+            let remainingCredit = parsedCredit;
+            let settledBillsCount = 0;
+            const autoSettledBillIds = [];
+
+            for (const bill of unpaidBills) {
+              if (remainingCredit <= 0.009) break;
+
+              const splitsKeys = Object.keys(bill.splits || {});
+              const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+              const billDebt = bill.splits[matchedKey] || 0;
+              const bDoc = basePath.collection('bills').doc(bill.id);
+
+              if (remainingCredit >= billDebt) {
+                const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
+                batch.update(bDoc, { paidStatus: nextStatus });
+                remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
+                autoSettledBillIds.push(bill.id);
+                settledBillsCount++;
+              } else {
+                const remainingDebtOnThisBill = Math.round((billDebt - remainingCredit) * 100) / 100;
+                const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
+                batch.update(bDoc, { paidStatus: nextStatus });
+
+                const partialAdjRef = basePath.collection('adjustments').doc();
+                batch.set(partialAdjRef, {
+                  friendName,
+                  amount: remainingDebtOnThisBill,
+                  displayAmount: remainingDebtOnThisBill,
+                  isPaymentRecord: false,
+                  isSettled: false,
+                  note: `⚙️ ยอดค้างส่วนต่างบิล: ${bill.name} (ตัดด้วยบิล ${sourceBillName || 'ล่าสุด'} ไป ${remainingCredit.toFixed(2)} RM)`,
+                  date: new Date().toISOString().split('T')[0],
+                  createdAt: Date.now()
+                });
+
+                autoSettledBillIds.push(bill.id);
+                remainingCredit = 0;
+                settledBillsCount++;
+                break;
+              }
+            }
+
+            // ⚠️ ป้องกันการหักซ้ำ 2 เด้ง: เซตสถานะบิลต้นทางที่เพื่อนออกเงินให้ ให้ส่วนของ Dom กลายเป็น Paid ทันที
+            if (sourceBillId) {
+              const srcDoc = basePath.collection('bills').doc(sourceBillId);
+              const srcBill = bills.find(b => b.id === sourceBillId);
+              if (srcBill) {
+                const nextStatus = { ...(srcBill.paidStatus || {}) };
+                Object.keys(srcBill.splits || {}).forEach(k => {
+                  if (/me|dom|ตัวฉันเอง/i.test(k)) nextStatus[k] = true;
+                });
+                batch.update(srcDoc, { paidStatus: nextStatus });
+                autoSettledBillIds.push(sourceBillId);
+              }
+            }
+
+            // บันทึก Log การหักกลบลบหนี้
+            const logRef = basePath.collection('adjustments').doc();
+            batch.set(logRef, {
+              friendName,
+              displayAmount: parsedCredit,
+              isPaymentRecord: true,
+              isSettled: true,
+              relatedBillIds: autoSettledBillIds,
+              note: `⚡ Smart Net-off: ตัดล้างหนี้บิลเก่าด้วยบิล ${sourceBillName || 'ล่าสุด'} (${parsedCredit.toFixed(2)} RM)`,
+              date: new Date().toISOString().split('T')[0],
+              createdAt: Date.now() + 1
+            });
+
+            if (remainingCredit > 0.009) {
+              const excessRef = basePath.collection('adjustments').doc();
+              batch.set(excessRef, {
+                friendName,
+                amount: -remainingCredit,
+                displayAmount: remainingCredit,
+                isPaymentRecord: true,
+                isSettled: true,
+                note: `🤝 เครดิตคงเหลือหลังล้างหนี้ครบทุกบิล: ${remainingCredit.toFixed(2)} RM`,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: Date.now() + 2
+              });
+            }
+
+            await batch.commit();
+            showToast(`🎉 หักกลบลบหนี้สำเร็จ! ล้างบิลเก่าไป ${settledBillsCount} รายการ`);
+            setSelectedFriendForAdjust(null);
+          }
+        } catch (err) {
+          console.error("FIFO Error:", err);
+          showToast("เกิดข้อผิดพลาดในการตัดหนี้: " + err.message, "error");
+        }
+      };
+
       const handleSettleFullWithBatch = async (friendName) => {
         if (!isAdmin) {
           showToast("Only Admin can change payment status", "error");
@@ -628,7 +830,6 @@
               operationsCount++;
             });
 
-            // Mark all pending Add Debt adjustments as Settled
             adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase() && a.amount > 0 && !a.isSettled).forEach(adj => {
               const aDoc = basePath.collection('adjustments').doc(adj.id);
               batch.update(aDoc, { isSettled: true });
@@ -696,19 +897,20 @@
 
       const handleExportCSVReport = () => {
         let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-        csvContent += "Date,Type,Title,Route,Subtotal(RM),Total(RM),Participants,Unpaid Pax\n";
+        csvContent += "Date,Type,Title,Route,PaidBy,Subtotal(RM),Total(RM),Participants,Unpaid Pax\n";
 
         bills.forEach(b => {
           const type = b.billType === 'ride' ? 'Ride' : b.billType === 'loan' ? 'Loan' : 'Food/Delivery';
           const title = `"${(b.name || '').replace(/"/g, '""')}"`;
           const route = `"${(b.rideRoute || '').replace(/"/g, '""')}"`;
+          const pBy = `"${b.paidBy || 'Me (Dom)'}"`;
           const sub = (b.subtotal || 0).toFixed(2);
           const tot = (b.total || 0).toFixed(2);
           const parts = `"${Object.keys(b.splits || {}).join(', ')}"`;
           const unpaidList = Object.keys(b.splits || {}).filter(name => !b.paidStatus?.[name]);
           const unpaid = `"${unpaidList.join(', ')}"`;
 
-          csvContent += `${b.date},${type},${title},${route},${sub},${tot},${parts},${unpaid}\n`;
+          csvContent += `${b.date},${type},${title},${route},${pBy},${sub},${tot},${parts},${unpaid}\n`;
         });
 
         const encodedUri = encodeURI(csvContent);
@@ -778,7 +980,6 @@
         return bills.filter(b => (b.date || '').startsWith(selectedMonth));
       }, [bills, selectedMonth]);
 
-      // Calculate Monthly Stats & Daily Expenses for Calendar
       const monthlyStats = useMemo(() => {
         let totalGroup = 0;
         let foodTotal = 0;
@@ -800,7 +1001,6 @@
             foodTotal += tot;
           }
 
-          // Track personal daily expense
           const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
           if (b.date && selfAmount > 0) {
             if (!dailyMyExpenses[b.date]) {
@@ -835,7 +1035,6 @@
         };
       }, [monthlyBills, friends]);
 
-      // Calendar Days Calculation
       const calendarMatrix = useMemo(() => {
         if (!selectedMonth) return [];
         const [year, month] = selectedMonth.split('-').map(Number);
@@ -925,93 +1124,120 @@
         }
       };
 
-      // --- ROBUST GEMINI AI VISION RECEIPT SCANNER ---
-      const scanReceiptWithGeminiAI = async (imageFile, apiKey) => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(imageFile);
-          reader.onloadend = async () => {
-            try {
-              const base64Raw = reader.result.toString();
-              const base64Data = base64Raw.includes(',') ? base64Raw.split(',')[1] : base64Raw;
-              const mimeType = imageFile.type || 'image/jpeg';
-              
-              const prompt = `Analyze this receipt image. Extract and return ONLY a strict JSON object with this structure:
-{
-  "merchantName": "Store/Merchant name",
-  "items": [
-    { "name": "Item description", "price": 0.00, "qty": 1 }
-  ],
-  "deliveryFee": 0.00,
-  "packagingCharge": 0.00,
-  "discountAmount": 0.00,
-  "tollFee": 0.00,
-  "rideFare": 0.00
-}
-Rules:
-- price must be numeric unit price.
-- qty must be integer.
-- discountAmount must be a positive number if discount exists.
-- Return pure JSON only without markdown fences.`;
+      const preprocessImageForOCR = (imageFile) => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          const objectUrl = URL.createObjectURL(imageFile);
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
 
-              const payload = {
-                contents: [{
-                  parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType: mimeType, data: base64Data } }
-                  ]
-                }],
-                generationConfig: {
-                  responseMimeType: "application/json"
-                }
-              };
+            const scale = 1.5;
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
 
-              const candidateEndpoints = [
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${apiKey}`,
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent?key=${apiKey}`,
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
-                `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`
-              ];
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-              let lastError = null;
-              let successData = null;
-
-              for (const url of candidateEndpoints) {
-                try {
-                  const res = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                  });
-
-                  if (res.ok) {
-                    successData = await res.json();
-                    break;
-                  } else {
-                    const errRes = await res.json().catch(() => ({}));
-                    lastError = errRes.error?.message || `HTTP ${res.status}`;
-                  }
-                } catch (e) {
-                  lastError = e.message;
-                }
-              }
-
-              if (!successData) {
-                throw new Error(lastError || "Could not connect to Gemini AI Models");
-              }
-
-              const resultText = successData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-              const cleanedJSON = resultText.replace(/```json|```/gi, '').trim();
-              const parsed = JSON.parse(cleanedJSON);
-              resolve(parsed);
-            } catch (err) {
-              reject(err);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              const v = gray > 145 ? 255 : 0;
+              d[i] = v;
+              d[i + 1] = v;
+              d[i + 2] = v;
             }
+            ctx.putImageData(imgData, 0, 0);
+
+            canvas.toBlob((blob) => {
+              if (blob) resolve(blob);
+              else resolve(imageFile);
+            }, 'image/png');
           };
+          img.onerror = () => resolve(imageFile);
+          img.src = objectUrl;
         });
+      };
+
+      const parseTextContent = (fullText) => {
+        const cleanLines = fullText
+          .replace(/[—–]/g, '-')
+          .replace(/[oO](?=[0-9])/g, '0')
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean);
+
+        let extractedItems = [];
+        let rFare = 0, tFee = 0, dFee = 0, pCharge = 0, dAmount = 0;
+
+        for (let i = 0; i < cleanLines.length; i++) {
+          const line = cleanLines[i];
+
+          if (/delivery\s*fee|rider\s*fee|driver\s*fee|shipping/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              dFee = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
+            }
+            continue;
+          }
+
+          if (/packaging|packing|takeaway\s*box|container|bag/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              pCharge = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
+            }
+            continue;
+          }
+
+          if (/discount|promo|voucher|off\b|cashback|rebate/i.test(line)) {
+            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              const rawVal = matches[matches.length - 1].replace(/[-−\sRM]/gi, '').replace(',', '.');
+              dAmount = Math.abs(parseFloat(rawVal) || 0);
+            }
+            continue;
+          }
+
+          if (/toll|expressway|highway/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
+            if (matches) tFee = parseFloat(matches[1].replace(',', '.'));
+            continue;
+          }
+
+          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|sst\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery|invoice|receipt|cashier|terminal|change\b|rounding/i.test(line);
+          if (isNoise) continue;
+
+          const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
+          const match = line.match(itemRegex);
+
+          if (match) {
+            let qty = parseInt(match[1]) || 1;
+            let itemName = match[2].replace(/^[0-9]+x?\s*/i, '').trim();
+            let itemPrice = parseFloat(match[3].replace(',', '.'));
+
+            if (i + 1 < cleanLines.length && /^[0-9]+\s*[xX]$/i.test(cleanLines[i + 1])) {
+              qty = parseInt(cleanLines[i + 1]) || qty;
+            }
+
+            if (itemPrice > 0 && itemName.length >= 2 && !/total|amount|cash|balance/i.test(itemName)) {
+              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
+              if (!exists) {
+                extractedItems.push({
+                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                  name: itemName,
+                  price: itemPrice.toFixed(2),
+                  qty: qty,
+                  taxRate: 0,
+                  sharedWith: [...billFriends]
+                });
+              }
+            }
+          }
+        }
+
+        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
       };
 
       const handleAddImages = (e) => {
@@ -1024,7 +1250,6 @@ Rules:
         setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
       };
 
-      // Process All Images using Gemini AI (or Fallback to Tesseract)
       const handleProcessAllImages = async () => {
         if (!selectedImages.length) return;
         setOcrProcessing(true);
@@ -1032,160 +1257,69 @@ Rules:
 
         let combinedExtractedItems = [];
         let extractedRideFare = 0, detectedToll = 0, detectedDiscount = 0, detectedDelivery = 0, detectedPackaging = 0;
-        let detectedMerchant = '';
 
         try {
-          if (geminiApiKey.trim()) {
-            showToast("🤖 Analyzing receipts with Gemini AI Vision...");
-            for (let i = 0; i < selectedImages.length; i++) {
-              const file = selectedImages[i];
-              const aiResult = await scanReceiptWithGeminiAI(file, geminiApiKey.trim());
-              setOcrProgress(Math.round(((i + 1) / selectedImages.length) * 100));
+          showToast("⚡ กำลังปรับแต่งภาพ & สแกนบิลแบบ Offline...");
+          for (let i = 0; i < selectedImages.length; i++) {
+            const rawFile = selectedImages[i];
+            const processedBlob = await preprocessImageForOCR(rawFile);
 
-              if (aiResult.merchantName && !newBillName) detectedMerchant = aiResult.merchantName;
-              if (aiResult.deliveryFee) detectedDelivery = aiResult.deliveryFee;
-              if (aiResult.packagingCharge) detectedPackaging = aiResult.packagingCharge;
-              if (aiResult.discountAmount) detectedDiscount = aiResult.discountAmount;
-              if (aiResult.tollFee) detectedToll = aiResult.tollFee;
-              if (aiResult.rideFare) extractedRideFare = Math.max(extractedRideFare, aiResult.rideFare);
-
-              (aiResult.items || []).forEach(item => {
-                if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === (item.name || '').toLowerCase())) {
-                  combinedExtractedItems.push({
-                    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                    name: item.name || 'Item',
-                    price: parseFloat(item.price) || 0,
-                    qty: parseInt(item.qty) || 1,
-                    taxRate: 0,
-                    sharedWith: [...billFriends]
-                  });
-                }
-              });
-            }
-          } else {
-            showToast("Using local OCR (Add Gemini API Key for 99% accuracy)");
-            for (let i = 0; i < selectedImages.length; i++) {
-              const file = selectedImages[i];
-              const { data: { text } } = await Tesseract.recognize(
-                file,
-                'eng+tha',
-                {
-                  logger: m => {
-                    if (m.status === 'recognizing text') {
-                      const singleProgress = m.progress || 0;
-                      setOcrProgress(Math.round(((i + singleProgress) / selectedImages.length) * 100));
-                    }
+            const { data: { text } } = await Tesseract.recognize(
+              processedBlob,
+              'eng+tha',
+              {
+                logger: m => {
+                  if (m.status === 'recognizing text') {
+                    const singleProgress = m.progress || 0;
+                    setOcrProgress(Math.round(((i + singleProgress) / selectedImages.length) * 100));
                   }
                 }
-              );
+              }
+            );
 
-              const parsed = parseTextContent(text);
-              parsed.extractedItems.forEach(item => {
-                if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
-                  combinedExtractedItems.push(item);
-                }
-              });
+            const parsed = parseTextContent(text);
+            parsed.extractedItems.forEach(item => {
+              if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
+                combinedExtractedItems.push(item);
+              }
+            });
 
-              if (parsed.dFee) detectedDelivery = parsed.dFee;
-              if (parsed.pCharge) detectedPackaging = parsed.pCharge;
-              if (parsed.dAmount) detectedDiscount = parsed.dAmount;
-              if (parsed.tFee) detectedToll = parsed.tFee;
+            if (parsed.dFee) detectedDelivery = parsed.dFee;
+            if (parsed.pCharge) detectedPackaging = parsed.pCharge;
+            if (parsed.dAmount) detectedDiscount = parsed.dAmount;
+            if (parsed.tFee) detectedToll = parsed.tFee;
+
+            if (billType === 'ride') {
+              const prices = text.split('\n').map(l => {
+                const m = l.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
+                return m ? parseFloat(m[1].replace(',', '.')) : 0;
+              }).filter(p => p > 0);
+              if (prices.length > 0) extractedRideFare = Math.max(extractedRideFare, ...prices);
             }
           }
-
-          if (detectedMerchant && !newBillName) setNewBillName(detectedMerchant);
 
           if (billType === 'ride' && extractedRideFare > 0) {
             setRideFare(extractedRideFare);
             if (detectedToll) setTollFee(detectedToll);
             if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast("Ride fare scanned successfully");
+            showToast("สแกนค่าโดยสารสำเร็จ!");
           } else if (combinedExtractedItems.length > 0 || detectedDelivery > 0 || detectedPackaging > 0 || detectedDiscount > 0) {
             if (combinedExtractedItems.length > 0) setBillItems(combinedExtractedItems);
             if (detectedPackaging) setPackagingCharge(detectedPackaging);
             if (detectedDelivery) setDeliveryFee(detectedDelivery);
             if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast(`✨ Scanned ${combinedExtractedItems.length} items with AI accuracy! 🎉`);
+            showToast(`🎉 สแกนสำเร็จ ${combinedExtractedItems.length} รายการ!`);
           } else {
-            showToast("OCR couldn't extract items. Try 'Paste Text' button!", "error");
+            showToast("OCR อ่านรายการไม่ชัดเจน แนะนำให้ใช้ปุ่ม '📝 วางข้อความ'", "error");
           }
         } catch (err) {
           console.error("Scanning Error:", err);
-          showToast(`Scanning failed: ${err.message || "Please check API Key"}`, "error");
+          showToast(`เกิดข้อผิดพลาดในการสแกน: ${err.message}`, "error");
         } finally {
           setOcrProcessing(false);
           setSelectedImages([]);
           if (fileInputRef.current) fileInputRef.current.value = '';
         }
-      };
-
-      const parseTextContent = (fullText) => {
-        const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
-        let extractedItems = [];
-        let rFare = 0, tFee = 0, dFee = 0, pCharge = 0, dAmount = 0;
-
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-
-          if (/delivery\s*fee|rider|driver/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/gi);
-            if (matches && matches.length > 0) dFee = parseFloat(matches[0].replace(/RM\s*/i, ''));
-            continue;
-          }
-
-          if (/packaging|packing|box|takeaway/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/gi);
-            if (matches && matches.length > 0) pCharge = parseFloat(matches[0].replace(/RM\s*/i, ''));
-            continue;
-          }
-
-          if (/off|discount|promo|voucher/i.test(line)) {
-            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+(?:\.[0-9]{2})?)/gi);
-            if (matches && matches.length > 0) {
-              const candidate = matches[matches.length - 1].replace(/[-−\sRM]/gi, '');
-              dAmount = parseFloat(candidate);
-            }
-            continue;
-          }
-
-          if (/toll|expressway|highway/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+\.[0-9]{2})/i);
-            if (matches) tFee = parseFloat(matches[1]);
-            continue;
-          }
-
-          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery/i.test(line);
-          if (isNoise) continue;
-
-          const priceMatch = line.match(/(.+?)\s+(?:RM\s*)?([0-9]+\.[0-9]{2})$/i);
-          if (priceMatch) {
-            const itemName = priceMatch[1].replace(/^[0-9]+x?\s*/i, '').trim();
-            const itemPrice = parseFloat(priceMatch[2]);
-
-            let itemQty = 1;
-            if (i + 1 < lines.length && /^[0-9]+x$/i.test(lines[i + 1])) {
-              itemQty = parseInt(lines[i + 1]) || 1;
-            } else if (i + 2 < lines.length && /^[0-9]+x$/i.test(lines[i + 2])) {
-              itemQty = parseInt(lines[i + 2]) || 1;
-            }
-
-            if (itemPrice > 0 && itemName.length >= 2) {
-              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
-              if (!exists) {
-                extractedItems.push({
-                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                  name: itemName,
-                  price: itemPrice.toFixed(2),
-                  qty: itemQty,
-                  taxRate: 0,
-                  sharedWith: [...billFriends]
-                });
-              }
-            }
-          }
-        }
-
-        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
       };
 
       const handleParseRawText = () => {
@@ -1196,15 +1330,15 @@ Rules:
           if (parsed.dFee) setDeliveryFee(parsed.dFee);
           if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
           if (parsed.dAmount) setDiscountAmount(parsed.dAmount);
-          showToast(`Parsed ${parsed.extractedItems.length} items from text! 🎉`);
+          showToast(`แกะข้อมูลได้ ${parsed.extractedItems.length} รายการ! 🎉`);
           setShowRawTextInput(false);
           setRawOrderText('');
         } else {
-          showToast("No clear items detected from text", "error");
+          showToast("ไม่พบรายการสินค้าที่ระบุราคาชัดเจน", "error");
         }
       };
 
-      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower) => {
+      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
         const splits = {};
         const friendItemDetails = {};
         const activeFriendsCount = selectedFriends.length;
@@ -1235,8 +1369,16 @@ Rules:
           let remainderCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
 
           selectedFriends.forEach(f => {
-            const shareCents = baseCents + (remainderCents > 0 ? 1 : 0);
-            if (remainderCents > 0) remainderCents--;
+            let shareCents = baseCents;
+            if (curRemainderMode === 'distribute') {
+              if (remainderCents > 0) {
+                shareCents += 1;
+                remainderCents--;
+              }
+            } else if (curRemainderMode === 'payer' && f.toLowerCase() === curPaidBy.toLowerCase()) {
+              shareCents += remainderCents;
+            }
+
             splits[f] = shareCents / 100;
 
             friendItemDetails[f] = {
@@ -1346,8 +1488,10 @@ Rules:
 
         if (activeFriendsCount > 0 && totalDistributedCents !== targetTotalCents) {
           const diffCents = targetTotalCents - totalDistributedCents;
-          const lastPerson = selectedFriends[selectedFriends.length - 1];
-          splits[lastPerson] = Math.max(0, Math.round((splits[lastPerson] + (diffCents / 100)) * 100) / 100);
+          const targetPerson = (curRemainderMode === 'payer' && selectedFriends.includes(curPaidBy)) 
+            ? curPaidBy 
+            : selectedFriends[selectedFriends.length - 1];
+          splits[targetPerson] = Math.max(0, Math.round((splits[targetPerson] + (diffCents / 100)) * 100) / 100);
         }
 
         return {
@@ -1366,6 +1510,7 @@ Rules:
         };
       };
 
+      // --- DUAL-WAY DEBT CALCULATION (ป้องกันการหักยอดซ้ำ) ---
       const getFriendBalances = () => {
         const balances = {};
         friends.forEach(f => {
@@ -1373,14 +1518,30 @@ Rules:
         });
 
         bills.forEach(bill => {
-          Object.keys(bill.splits || {}).forEach(name => {
-            const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
-            const realName = fObj ? fObj.name : name;
-            const isSelf = fObj?.isSelf || realName === 'Me (Dom)' || realName === 'ตัวฉันเอง';
-            if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
-              balances[realName].billsOwed += bill.splits[name];
+          const billPayer = bill.paidBy || 'Me (Dom)';
+          const isDomPayer = /me|dom/i.test(billPayer);
+
+          if (isDomPayer) {
+            Object.keys(bill.splits || {}).forEach(name => {
+              const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+              const realName = fObj ? fObj.name : name;
+              const isSelf = fObj?.isSelf || /me|dom/i.test(realName);
+              if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
+                balances[realName].billsOwed += bill.splits[name];
+              }
+            });
+          } else {
+            const payerObj = friends.find(f => f.name.toLowerCase() === billPayer.toLowerCase());
+            const realPayerName = payerObj ? payerObj.name : billPayer;
+            
+            const myShare = bill.splits?.['Me (Dom)'] || bill.splits?.['ตัวฉันเอง'] || 0;
+            const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
+
+            // หักลบเฉพาะเมื่อส่วนของเราในบิลนี้ยังไม่ได้เคลียร์/ยังไม่ได้นำไปตัดหนี้ FIFO
+            if (balances[realPayerName] && myShare > 0 && !isMySharePaid) {
+              balances[realPayerName].billsOwed -= myShare;
             }
-          });
+          }
         });
 
         adjustments.forEach(adj => {
@@ -1392,7 +1553,7 @@ Rules:
         });
 
         Object.keys(balances).forEach(name => {
-          balances[name].totalOwed = balances[name].billsOwed + balances[name].adjustedOwed;
+          balances[name].totalOwed = Math.round((balances[name].billsOwed + balances[name].adjustedOwed) * 100) / 100;
         });
 
         return balances;
@@ -1412,7 +1573,9 @@ Rules:
       const getFriendHistory = (friendName) => {
         const friendBills = bills.filter(b => {
           const keys = Object.keys(b.splits || {});
-          return keys.some(k => k.toLowerCase() === friendName.toLowerCase());
+          const touchesFriend = keys.some(k => k.toLowerCase() === friendName.toLowerCase());
+          const isFriendPayer = (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
+          return touchesFriend || isFriendPayer;
         });
         const friendAdjustments = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
         return { bills: friendBills, adjustments: friendAdjustments };
@@ -1450,6 +1613,8 @@ Rules:
         setEditingBillId(bill.id);
         setNewBillName(bill.name);
         setBillType(bill.billType || 'delivery');
+        setPaidBy(bill.paidBy || 'Me (Dom)');
+        setRemainderMode(bill.remainderMode || 'distribute');
         setTaxMode(bill.taxMode || 'inclusive');
         setNewBillDate(bill.date);
         setRideFare(bill.rideFare || '');
@@ -1480,6 +1645,7 @@ Rules:
         setActiveTab('new-bill');
       };
 
+      // --- SAVE BILL + FIFO AUTO NET-OFF ---
       const handleSaveBill = async (e) => {
         e.preventDefault();
         if (!isAdmin) {
@@ -1504,7 +1670,9 @@ Rules:
           rideFare,
           tollFee,
           loanAmount,
-          loanBorrower
+          loanBorrower,
+          remainderMode,
+          paidBy
         );
 
         let initialPaidStatus = {};
@@ -1517,15 +1685,16 @@ Rules:
 
         participantsToProcess.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
-            const fObj = friends.find(fr => fr.name.toLowerCase() === f.toLowerCase());
-            const isMe = fObj?.isSelf || /me|dom/i.test(f);
-            initialPaidStatus[f] = isMe ? true : false;
+            const isCurrentPayer = f.toLowerCase() === paidBy.toLowerCase();
+            initialPaidStatus[f] = isCurrentPayer ? true : false;
           }
         });
 
         const billPayload = {
           name: newBillName,
           billType,
+          paidBy,
+          remainderMode,
           taxMode,
           date: newBillDate,
           rideFare: parseFloat(rideFare) || 0,
@@ -1557,24 +1726,103 @@ Rules:
           updatedAt: Date.now()
         };
 
-        if (editingBillId) {
-          if (db) {
-            try {
-              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(editingBillId).update(billPayload);
-              showToast("Bill updated successfully");
-            } catch (err) {
-              showToast("Update failed: Permission denied", "error");
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            let billDocRef;
+            if (editingBillId) {
+              billDocRef = basePath.collection('bills').doc(editingBillId);
+              batch.update(billDocRef, billPayload);
+            } else {
+              billPayload.createdAt = Date.now();
+              billDocRef = basePath.collection('bills').doc();
+              batch.set(billDocRef, billPayload);
             }
-          }
-        } else {
-          billPayload.createdAt = Date.now();
-          if (db) {
-            try {
-              await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').add(billPayload);
-              showToast("New transaction saved to cloud");
-            } catch (err) {
-              showToast("Save failed: Permission denied", "error");
+
+            // ⚡ SMART FIFO AUTO-NETOFF: ถ้าเพื่อนจ่าย และ Dom มีส่วนต้องออก ให้วิ่งไปตัดบิลเก่าที่เพื่อนค้างเราทันที
+            const isDomPayer = /me|dom/i.test(paidBy);
+            const myShareInThisBill = calculated.splits?.['Me (Dom)'] || calculated.splits?.['ตัวฉันเอง'] || 0;
+
+            if (!isDomPayer && myShareInThisBill > 0) {
+              const friendPayerName = paidBy;
+              const unpaidBills = bills
+                .filter(b => {
+                  const bDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
+                  const splitsKeys = Object.keys(b.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase());
+                  const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
+                  return bDomPayer && isUnpaid;
+                })
+                .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+              if (unpaidBills.length > 0) {
+                let remainingCredit = myShareInThisBill;
+                let autoSettledBillIds = [billDocRef.id];
+                let settledCount = 0;
+
+                for (const oldBill of unpaidBills) {
+                  if (remainingCredit <= 0.009) break;
+
+                  const splitsKeys = Object.keys(oldBill.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase()) || friendPayerName;
+                  const billDebt = oldBill.splits[matchedKey] || 0;
+                  const oldBDoc = basePath.collection('bills').doc(oldBill.id);
+
+                  if (remainingCredit >= billDebt) {
+                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
+                    batch.update(oldBDoc, { paidStatus: nextStatus });
+                    remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
+                    autoSettledBillIds.push(oldBill.id);
+                    settledCount++;
+                  } else {
+                    const remainingDebt = Math.round((billDebt - remainingCredit) * 100) / 100;
+                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
+                    batch.update(oldBDoc, { paidStatus: nextStatus });
+
+                    const partAdjRef = basePath.collection('adjustments').doc();
+                    batch.set(partAdjRef, {
+                      friendName: friendPayerName,
+                      amount: remainingDebt,
+                      displayAmount: remainingDebt,
+                      isPaymentRecord: false,
+                      isSettled: false,
+                      note: `⚙️ ยอดคงเหลือบิล: ${oldBill.name} (หักล้างอัตโนมัติด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM)`,
+                      date: newBillDate,
+                      createdAt: Date.now()
+                    });
+
+                    autoSettledBillIds.push(oldBill.id);
+                    remainingCredit = 0;
+                    settledCount++;
+                    break;
+                  }
+                }
+
+                // เซตให้ส่วนของ Dom ในบิลนี้เป็น Paid เพื่อป้องกันการหักยอดซ้ำใน getFriendBalances
+                initialPaidStatus['Me (Dom)'] = true;
+                initialPaidStatus['ตัวฉันเอง'] = true;
+                batch.update(billDocRef, { paidStatus: initialPaidStatus });
+
+                const autoLogRef = basePath.collection('adjustments').doc();
+                batch.set(autoLogRef, {
+                  friendName: friendPayerName,
+                  displayAmount: myShareInThisBill,
+                  isPaymentRecord: true,
+                  isSettled: true,
+                  relatedBillIds: autoSettledBillIds,
+                  note: `⚡ Auto Net-off: ${friendPayerName} ออกค่า ${newBillName} ให้ (${myShareInThisBill.toFixed(2)} RM) -> ล้างบิลเก่าอัตโนมัติ ${settledCount} บิล`,
+                  date: newBillDate,
+                  createdAt: Date.now() + 1
+                });
+              }
             }
+
+            await batch.commit();
+            showToast("บันทึกบิลและคำนวณยอดเรียบร้อย! 🎉");
+          } catch (err) {
+            showToast("Save failed: Permission denied", "error");
           }
         }
 
@@ -1744,7 +1992,7 @@ Rules:
           Object.entries(bill.paidStatus || {}).forEach(([k, v]) => {
             newPaidStatus[k === oldName ? newName : k] = v;
           });
-          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus };
+          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus, paidBy: bill.paidBy === oldName ? newName : bill.paidBy };
         };
 
         try {
@@ -1754,11 +2002,11 @@ Rules:
             batch.update(friendRef, { name: newName });
 
             bills.forEach(bill => {
-              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName));
+              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName)) || bill.paidBy === oldName;
               if (touches) {
                 const updated = renameInBill(bill);
                 const billRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id);
-                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus });
+                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus, paidBy: updated.paidBy });
               }
             });
 
@@ -1778,12 +2026,13 @@ Rules:
         handleCancelRenameFriend();
       };
 
+      // --- TWO-WAY UNSETTLE SYNC ON DELETE ADJUSTMENT ---
       const handleDeleteAdjustment = async (adj) => {
         if (!isAdmin) {
           showToast("Only Admin can delete adjustments", "error");
           return;
         }
-        if (!confirm(`Delete adjustment log for "${adj.friendName}"?`)) return;
+        if (!confirm(`ต้องการลบประวัติ "${adj.note}" ใช่หรือไม่? (สถานะบิลที่เคยถูกเคลียร์จะถูกปลดกลับมาค้างชำระตามเดิม)`)) return;
 
         if (db) {
           try {
@@ -1808,17 +2057,20 @@ Rules:
               adj.relatedBillIds.forEach(bId => {
                 const billObj = bills.find(b => b.id === bId);
                 if (billObj) {
-                  const splitsKeys = Object.keys(billObj.splits || {});
-                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
-                  const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                  const nextStatus = { ...(billObj.paidStatus || {}) };
+                  Object.keys(nextStatus).forEach(k => {
+                    if (k.toLowerCase() === adj.friendName.toLowerCase() || /me|dom|ตัวฉันเอง/i.test(k)) {
+                      nextStatus[k] = false;
+                    }
+                  });
                   const billRef = basePath.collection('bills').doc(bId);
-                  batch.update(billRef, { paidStatus: newPaidStatus });
+                  batch.update(billRef, { paidStatus: nextStatus });
                 }
               });
             }
 
             await batch.commit();
-            showToast("Adjustment removed");
+            showToast("ลบประวัติและดึงสถานะบิลกลับมาค้างชำระเรียบร้อย! 🔄");
           } catch (err) {
             showToast("Delete failed: Permission denied", "error");
           }
@@ -1862,14 +2114,6 @@ Rules:
         setAdjustNote('');
       };
 
-      const handleSaveApiKey = () => {
-        const key = tempApiKey.trim();
-        setGeminiApiKey(key);
-        localStorage.setItem('kraimaijay_gemini_api_key', key);
-        setShowApiKeyModal(false);
-        showToast(key ? "Gemini API Key Saved! 🤖" : "Gemini API Key Cleared");
-      };
-
       const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
         const fObj = friends.find(f => f.name === name);
         if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
@@ -1882,6 +2126,21 @@ Rules:
       }).length;
 
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
+
+      const filteredDashboardFriends = useMemo(() => {
+        return friends.filter(friend => {
+          if (friend.isSelf) return false;
+          const balance = friendBalances[friend.name] || { totalOwed: 0 };
+          if (balance.totalOwed === 0) return false;
+          
+          if (dashboardDebtFilter === 'receivable') return balance.totalOwed > 0;
+          if (dashboardDebtFilter === 'payable') return balance.totalOwed < 0;
+          return true;
+        });
+      }, [friends, friendBalances, dashboardDebtFilter]);
+
+      const receivableCount = Object.values(friendBalances).filter(b => b.totalOwed > 0).length;
+      const payableCount = Object.values(friendBalances).filter(b => b.totalOwed < 0).length;
 
       return (
         <div className="pb-16 min-h-screen">
@@ -1909,7 +2168,6 @@ Rules:
                   </span>
                 </h1>
 
-                {/* Mobile Controls */}
                 <div className="flex items-center gap-1.5 sm:hidden">
                   <button
                     onClick={handleLangToggle}
@@ -1917,31 +2175,10 @@ Rules:
                   >
                     {lang === 'en' ? '🇹🇭 TH' : '🇬🇧 EN'}
                   </button>
-                  {isAdmin && (
-                    <button
-                      onClick={() => { setTempApiKey(geminiApiKey); setShowApiKeyModal(true); }}
-                      className="bg-accent/15 border border-accent/40 text-xs px-2 py-1 rounded-lg text-accent font-bold"
-                      title="Gemini AI Key"
-                    >
-                      🤖
-                    </button>
-                  )}
                 </div>
               </div>
 
-              {/* Action Buttons & Desktop Language Switcher */}
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                {isAdmin && (
-                  <button
-                    onClick={() => { setTempApiKey(geminiApiKey); setShowApiKeyModal(true); }}
-                    className="hidden sm:flex bg-subtle hover:bg-line border border-line text-xs font-bold px-3 py-2 rounded-xl text-textPrimary transition items-center gap-1.5"
-                    title="Configure Gemini AI Key"
-                  >
-                    <span>🤖 AI Key</span>
-                    <span className={`w-2 h-2 rounded-full ${geminiApiKey ? 'bg-mint' : 'bg-coral'}`}></span>
-                  </button>
-                )}
-
                 <button
                   onClick={handleLangToggle}
                   className="hidden sm:flex bg-subtle hover:bg-line border border-line text-xs font-bold px-3 py-2 rounded-xl text-textPrimary transition"
@@ -1956,6 +2193,8 @@ Rules:
                         setEditingBillId(null);
                         setNewBillName('');
                         setBillType('delivery');
+                        setPaidBy('Me (Dom)');
+                        setRemainderMode('distribute');
                         setTaxMode('inclusive');
                         setDeliveryFee(0);
                         setPackagingCharge(0);
@@ -2037,19 +2276,42 @@ Rules:
                 </div>
 
                 <div className="bg-surface rounded-2xl p-6 border border-line">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xs font-bold text-textMuted uppercase tracking-wider font-mono">
-                      {t('unsettledFriends')}
-                    </h2>
-                    <span className="text-[11px] text-accent">Tap name to view ledger ↗</span>
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
+                    <div>
+                      <h2 className="text-xs font-bold text-textMuted uppercase tracking-wider font-mono">
+                        {t('unsettledFriends')}
+                      </h2>
+                    </div>
+
+                    <div className="flex bg-subtle p-1 rounded-xl border border-line gap-1 text-xs">
+                      <button
+                        onClick={() => setDashboardDebtFilter('all')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'all' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+                      >
+                        {t('allDebts', { n: receivableCount + payableCount })}
+                      </button>
+                      <button
+                        onClick={() => setDashboardDebtFilter('receivable')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'receivable' ? 'bg-coral text-white shadow-sm' : 'text-textSecondary hover:text-coral'}`}
+                      >
+                        {t('receivableDebts', { n: receivableCount })}
+                      </button>
+                      <button
+                        onClick={() => setDashboardDebtFilter('payable')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'payable' ? 'bg-mint text-bg font-bold shadow-sm' : 'text-textSecondary hover:text-mint'}`}
+                      >
+                        {t('payableDebts', { n: payableCount })}
+                      </button>
+                    </div>
                   </div>
+
                   <div className="space-y-3">
-                    {friends.filter(f => !f.isSelf && (friendBalances[f.name]?.totalOwed || 0) > 0).length === 0 ? (
+                    {filteredDashboardFriends.length === 0 ? (
                       <div className="py-8 text-center text-textMuted text-sm">{t('allSettled')}</div>
                     ) : (
-                      friends.map(friend => {
+                      filteredDashboardFriends.map(friend => {
                         const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
-                        if (friend.isSelf || balance.totalOwed <= 0) return null;
+                        const isDebtor = balance.totalOwed > 0;
 
                         return (
                           <div key={friend.id} className="bg-subtle border border-line/80 hover:border-accent/40 p-4 rounded-xl flex justify-between items-center transition duration-150">
@@ -2061,7 +2323,9 @@ Rules:
                                 {friend.name}
                                 {friend.isArchived && <span className="text-[10px] bg-line text-textMuted px-1.5 py-0.2 rounded">{t('archivedBadge')}</span>}
                                 <span className="text-[10px] text-accent font-normal underline group-hover:opacity-100 opacity-80">{t('viewHistory')}</span>
-                                <span className="text-[10px] text-coral bg-coral-subtle/50 px-1.5 py-0.5 rounded font-mono">{t('pending')}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${isDebtor ? 'text-coral bg-coral-subtle/50' : 'text-mint bg-mint-subtle/50'}`}>
+                                  {isDebtor ? 'ค้างจ่ายเรา' : 'เราค้างเพื่อน'}
+                                </span>
                               </span>
                               <div className="flex gap-4 mt-1 text-xs text-textSecondary font-mono tabular">
                                 <span>{t('bills')}: {balance.billsOwed.toFixed(2)} RM</span>
@@ -2072,8 +2336,18 @@ Rules:
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg font-extrabold text-coral font-mono tabular mr-1">{balance.totalOwed.toFixed(2)} RM</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => copyStatementTextToClipboard(friend.name)}
+                                className="bg-surface hover:bg-line text-textSecondary hover:text-textPrimary p-2 rounded-lg border border-line transition"
+                                title={t('copyText')}
+                              >
+                                📋
+                              </button>
+
+                              <span className={`text-lg font-extrabold font-mono tabular mr-1 ${isDebtor ? 'text-coral' : 'text-mint'}`}>
+                                {Math.abs(balance.totalOwed).toFixed(2)} RM
+                              </span>
                               
                               {isAdmin && (
                                 <button
@@ -2149,20 +2423,44 @@ Rules:
                     </button>
                   </div>
 
-                  {/* AI VISION SMART SCANNER */}
+                  {/* PAID BY SELECTOR */}
+                  {billType !== 'loan' && (
+                    <div className="bg-subtle p-3.5 rounded-xl border border-line space-y-2">
+                      <label className="block text-xs font-bold text-textPrimary">
+                        {t('paidByLabel')}
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {friends.filter(f => !f.isArchived).map(friend => {
+                          const isPayer = paidBy.toLowerCase() === friend.name.toLowerCase();
+                          return (
+                            <button
+                              key={friend.id}
+                              type="button"
+                              onClick={() => setPaidBy(friend.name)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${isPayer ? 'bg-mint text-bg shadow-md shadow-mint/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                            >
+                              {isPayer ? '✓ ' : ''} {friend.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {paidBy !== 'Me (Dom)' && (
+                        <p className="text-[11px] text-amber mt-1">
+                          💡 เมื่อบันทึกบิลนี้ ระบบจะนำยอดส่วนของฉัน (Dom) ไป<b>ล้างบิลเก่าๆ</b> ที่ {paidBy} เคยค้างเราให้อัตโนมัติ (FIFO Net-off)
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SMART SCANNER */}
                   {billType !== 'loan' && (
                     <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                         <div>
                           <p className="text-sm font-bold text-textPrimary flex items-center gap-2">
-                            <span>📸 AI Vision Scanner</span>
-                            {geminiApiKey ? (
-                              <span className="text-[10px] bg-mint/20 text-mint font-bold px-2 py-0.5 rounded-full">Gemini AI Active</span>
-                            ) : (
-                              <span className="text-[10px] bg-amber/20 text-amber font-bold px-2 py-0.5 rounded-full cursor-pointer" onClick={() => setShowApiKeyModal(true)}>+ Add API Key for 99% accuracy</span>
-                            )}
+                            <span>📸 Offline Smart Scanner (100% Free)</span>
                           </p>
-                          <p className="text-xs text-textSecondary mt-0.5">Scans GrabFood, Aeon, 7-Eleven receipts with AI accuracy</p>
+                          <p className="text-xs text-textSecondary mt-0.5">Canvas Pre-processing + Smart Regex for Grab, Aeon & 7-11</p>
                         </div>
                         <div className="flex gap-2">
                           <input 
@@ -2239,7 +2537,7 @@ Rules:
                             onClick={handleProcessAllImages}
                             className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
                           >
-                            {ocrProcessing ? `Processing with AI (${ocrProgress}%)...` : `🤖 AI Scan All (${selectedImages.length} Photos)`}
+                            {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
                           </button>
                         </div>
                       )}
@@ -2259,6 +2557,22 @@ Rules:
                         placeholder={billType === 'ride' ? 'e.g., Grab Car to Pavilion' : billType === 'loan' ? 'e.g., ยืมเงินสดกินข้าว, ฝากโอน' : 'e.g., KFC GrabFood, Baby Cami'}
                         required
                       />
+
+                      {billType !== 'ride' && billType !== 'loan' && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
+                          {quickMerchantPresets.map(preset => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setNewBillName(preset)}
+                              className="text-[10px] bg-subtle hover:bg-line border border-line px-2 py-0.5 rounded-lg text-textSecondary hover:text-textPrimary transition"
+                            >
+                              + {preset}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-2">Date</label>
@@ -2412,6 +2726,20 @@ Rules:
                           className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-bolt outline-none"
                           placeholder="e.g., Pavilion KL -> KL Sentral"
                         />
+
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <span className="text-[10px] text-textMuted font-mono mr-1 self-center">{t('quickPresets')}</span>
+                          {quickRoutePresets.map(preset => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setRideRoute(preset)}
+                              className="text-[10px] bg-surface hover:bg-line border border-line px-2 py-0.5 rounded-lg text-textSecondary hover:text-textPrimary transition"
+                            >
+                              📍 {preset}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ) : billType === 'loan' ? null : (
@@ -2504,6 +2832,26 @@ Rules:
                               className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary focus:border-accent outline-none font-mono"
                               placeholder="0.00"
                             />
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-line flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                          <label className="text-xs font-bold text-textSecondary">{t('remainderMode')}</label>
+                          <div className="grid grid-cols-2 bg-surface p-1 rounded-xl border border-line gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setRemainderMode('distribute')}
+                              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${remainderMode === 'distribute' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary'}`}
+                            >
+                              {t('remainderDistribute')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRemainderMode('payer')}
+                              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${remainderMode === 'payer' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary'}`}
+                            >
+                              {t('remainderPayer')}
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -2723,6 +3071,11 @@ Rules:
                                 {bill.billType === 'loan' && (
                                   <span className="text-[10px] bg-coral/20 text-coral font-bold px-1.5 py-0.5 rounded">💸 Loan</span>
                                 )}
+                                {bill.paidBy && bill.paidBy !== 'Me (Dom)' && (
+                                  <span className="text-[10px] bg-accent/20 text-accent font-bold px-1.5 py-0.5 rounded">
+                                    👤 {bill.paidBy} จ่าย
+                                  </span>
+                                )}
                                 {bill.deliveryFee > 0 && (
                                   <span className="text-[10px] bg-grab/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded">Delivery</span>
                                 )}
@@ -2790,8 +3143,7 @@ Rules:
                                 <p className="font-bold text-textMuted text-[11px] uppercase">{t('individualBreakdown')}</p>
                                 {Object.keys(bill.splits || {}).map(fName => {
                                   const isPaid = bill.paidStatus?.[fName];
-                                  const fObj = friends.find(f => f.name.toLowerCase() === fName.toLowerCase());
-                                  const isSelf = fObj?.isSelf;
+                                  const isPayerOfThisBill = (bill.paidBy || 'Me (Dom)').toLowerCase() === fName.toLowerCase();
                                   return (
                                     <div key={fName} className="flex justify-between items-center bg-subtle p-2.5 rounded-xl text-xs">
                                       <div 
@@ -2805,8 +3157,10 @@ Rules:
                                         <p className="text-textSecondary text-[11px] font-mono mt-0.5">{bill.splits[fName]?.toFixed(2)} RM</p>
                                       </div>
                                       <div className="flex items-center gap-2">
-                                        {isSelf ? (
-                                          <span className="text-[11px] text-textMuted font-medium bg-surface px-2 py-1 rounded-md border border-line">{t('payer')}</span>
+                                        {isPayerOfThisBill ? (
+                                          <span className="text-[11px] text-mint font-bold bg-mint-subtle/40 px-2 py-1 rounded-md border border-mint/30">
+                                            👑 {t('payer')}
+                                          </span>
                                         ) : isAdmin ? (
                                           <button
                                             onClick={() => handleTogglePaid(bill, fName)}
@@ -2876,6 +3230,7 @@ Rules:
                     .map(friend => {
                       const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
                       const isRenaming = renamingFriendId === friend.id;
+                      const isDebtor = balance.totalOwed > 0;
                       return (
                         <div key={friend.id} className="py-3.5 first:pt-0 last:pb-0 flex justify-between items-center gap-3">
                           {isRenaming ? (
@@ -2903,12 +3258,24 @@ Rules:
                                 <span className="text-[10px] text-accent underline font-normal">{t('viewLedger')}</span>
                               </span>
                               {!friend.isSelf && (
-                                <p className="text-xs text-textSecondary mt-0.5">Total Balance: <span className="font-bold text-coral font-mono">{balance.totalOwed?.toFixed(2)} RM</span></p>
+                                <p className="text-xs text-textSecondary mt-0.5">
+                                  {isDebtor ? 'ค้างจ่ายเรา: ' : 'เราค้างเพื่อน: '}
+                                  <span className={`font-bold font-mono ${isDebtor ? 'text-coral' : 'text-mint'}`}>
+                                    {Math.abs(balance.totalOwed).toFixed(2)} RM
+                                  </span>
+                                </p>
                               )}
                             </div>
                           )}
                           {!isRenaming && !friend.isSelf && (
                             <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <button
+                                onClick={() => copyStatementTextToClipboard(friend.name)}
+                                className="bg-subtle hover:bg-line text-textSecondary hover:text-textPrimary p-1.5 rounded-lg border border-line transition text-xs"
+                                title={t('copyText')}
+                              >
+                                📋
+                              </button>
                               <button 
                                 onClick={() => setSelectedFriendForHistory(friend.name)} 
                                 className="bg-subtle hover:bg-line text-textPrimary text-xs font-medium px-3 py-1.5 rounded-lg border border-line"
@@ -2985,7 +3352,8 @@ Rules:
                           {isAdmin && (
                             <button
                               onClick={() => handleDeleteAdjustment(adj)}
-                              className="text-textMuted hover:text-coral text-xs underline ml-1"
+                              className="text-coral hover:underline text-xs ml-1"
+                              title="ลบและคืนสถานะบิลกลับเป็น Pending"
                             >
                               {t('delete')}
                             </button>
@@ -2998,7 +3366,7 @@ Rules:
               </div>
             )}
 
-            {/* --- 6. ANALYTICS & BACKUP TAB (CALENDAR VIEW) --- */}
+            {/* --- 6. ANALYTICS & BACKUP TAB --- */}
             {activeTab === 'analytics' && (
               <div className="space-y-6">
                 
@@ -3056,14 +3424,12 @@ Rules:
                     </div>
 
                     <div className="bg-subtle/60 border border-line p-3 sm:p-4 rounded-2xl space-y-2">
-                      {/* Day Header */}
                       <div className="grid grid-cols-7 text-center text-[11px] font-bold text-textMuted pb-1 border-b border-line/60">
                         {t('dayNames').map((d, i) => (
                           <div key={i} className={i === 0 || i === 6 ? 'text-coral/80' : ''}>{d}</div>
                         ))}
                       </div>
 
-                      {/* Calendar Grid */}
                       <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
                         {calendarMatrix.flat().map((cell, idx) => {
                           if (!cell) {
@@ -3101,7 +3467,6 @@ Rules:
                         })}
                       </div>
 
-                      {/* Selected Day Item Detail Drawer */}
                       {selectedCalendarDay && (
                         <div className="mt-3 p-3 bg-surface border border-accent/40 rounded-xl space-y-2">
                           <div className="flex justify-between items-center pb-1.5 border-b border-line">
@@ -3199,59 +3564,6 @@ Rules:
 
           </main>
 
-          {/* --- GEMINI API KEY MODAL (ADMIN ONLY) --- */}
-          {showApiKeyModal && (
-            <div 
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-              onClick={() => setShowApiKeyModal(false)}
-            >
-              <div 
-                className="bg-surface border border-line rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="flex justify-between items-center pb-2 border-b border-line">
-                  <h3 className="font-bold text-md text-textPrimary flex items-center gap-2">
-                    🤖 Gemini AI Vision API Key
-                  </h3>
-                  <button type="button" onClick={() => setShowApiKeyModal(false)} className="text-textSecondary text-lg font-bold">✕</button>
-                </div>
-
-                <div className="space-y-3">
-                  <p className="text-xs text-textSecondary leading-relaxed">
-                    ใส่ Gemini API Key จาก Google AI Studio เพื่อเปิดใช้งานระบบสแกนบิลด้วย AI Vision ความแม่นยำสูง (อ่านสลิป Grab, Aeon, 7-11 ได้แม่นยำ 99%)
-                  </p>
-                  <div>
-                    <label className="block text-xs text-textSecondary mb-1 font-bold">Google AI Studio API Key</label>
-                    <input 
-                      type="password"
-                      placeholder="AIzaSy..."
-                      value={tempApiKey}
-                      onChange={(e) => setTempApiKey(e.target.value)}
-                      className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-xs font-mono focus:border-accent outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button 
-                    type="button" 
-                    onClick={handleSaveApiKey}
-                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2 rounded-xl text-xs transition shadow-md shadow-accent/20"
-                  >
-                    Save API Key
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowApiKeyModal(false)}
-                    className="bg-subtle border border-line text-textPrimary py-2 px-3 rounded-xl text-xs hover:bg-line"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* --- FLOATING CALCULATOR BUTTON --- */}
           <button
             onClick={() => setShowCalc(!showCalc)}
@@ -3280,12 +3592,10 @@ Rules:
                 </div>
               </div>
 
-              {/* Calculator Screen */}
               <div className="bg-bg border border-line rounded-xl p-3 text-right text-lg font-mono text-textPrimary overflow-x-auto">
                 {calcInput}
               </div>
 
-              {/* Keypad */}
               <div className="grid grid-cols-4 gap-1.5 text-xs font-mono font-bold">
                 {['C', 'DEL', '/', '*'].map(btn => (
                   <button key={btn} onClick={() => handleCalcBtn(btn)} className="bg-subtle hover:bg-line text-amber py-2 rounded-lg">{btn}</button>
@@ -3415,7 +3725,7 @@ Rules:
                       </div>
                       <div>
                         <p className="text-[10px] text-coral uppercase font-bold">{t('netBalance')}</p>
-                        <p className="text-base font-black text-coral mt-0.5 tabular font-mono">
+                        <p className={`text-base font-black mt-0.5 tabular font-mono ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0) > 0 ? 'text-coral' : 'text-mint'}`}>
                           {(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}
                         </p>
                       </div>
@@ -3435,34 +3745,58 @@ Rules:
                             const matchedKey = splitsKeys.find(k => k.toLowerCase() === selectedFriendForHistory.toLowerCase()) || selectedFriendForHistory;
                             const isPaid = b.paidStatus?.[matchedKey];
                             const userShare = b.splits[matchedKey] || 0;
+                            const isFriendPayer = (b.paidBy || '').toLowerCase() === selectedFriendForHistory.toLowerCase();
+                            const domShareInThisBill = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
+                            const isDomPaid = b.paidStatus?.['Me (Dom)'] || b.paidStatus?.['ตัวฉันเอง'] || false;
+
                             return (
-                              <div key={b.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center border border-line">
-                                <div>
-                                  <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
-                                    {b.billType === 'ride' ? '🚗 ' : b.billType === 'loan' ? '💸 ' : '🛵 '} {b.name}
-                                  </p>
-                                  <p className="text-[10px] text-textMuted">
-                                    {b.date} • {b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : (b.items?.filter(i => (i.sharedWith || []).some(sn => sn.toLowerCase() === selectedFriendForHistory.toLowerCase())).map(i => i.name).join(', ') || 'General split')}
-                                  </p>
-                                </div>
-                                <div className="text-right flex items-center gap-2">
+                              <div key={b.id} className={`p-3 rounded-xl border flex flex-col gap-2 ${isFriendPayer ? 'bg-mint-subtle/20 border-mint/40' : 'bg-subtle border-line'}`}>
+                                <div className="flex justify-between items-center">
                                   <div>
-                                    <p className="font-bold text-sm text-textPrimary font-mono tabular">{userShare.toFixed(2)} RM</p>
+                                    <p className="font-bold text-textPrimary font-sans flex items-center gap-1.5">
+                                      {b.billType === 'ride' ? '🚗 ' : b.billType === 'loan' ? '💸 ' : '🛵 '} {b.name}
+                                    </p>
+                                    <p className="text-[10px] text-textMuted">
+                                      {b.date} • {isFriendPayer ? `👑 ${selectedFriendForHistory} เป็นคนจ่าย (รวม ${b.total?.toFixed(2)} RM)` : (b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : `ส่วนของเพื่อน: ${userShare.toFixed(2)} RM`)}
+                                    </p>
                                   </div>
-                                  {isAdmin ? (
-                                    <button
-                                      onClick={() => handleTogglePaid(b, selectedFriendForHistory)}
-                                      className={`text-[11px] font-bold px-2 py-1 rounded-lg transition ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
-                                      title="Toggle Paid Status"
-                                    >
-                                      {isPaid ? t('paid') : t('pending')}
-                                    </button>
-                                  ) : (
-                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
-                                      {isPaid ? t('paid') : t('pending')}
-                                    </span>
-                                  )}
+                                  <div className="text-right flex items-center gap-2">
+                                    <div>
+                                      <p className="font-bold text-sm text-textPrimary font-mono tabular">
+                                        {isFriendPayer ? `Total: ${b.total?.toFixed(2)} RM` : `${userShare.toFixed(2)} RM`}
+                                      </p>
+                                    </div>
+                                    {isAdmin ? (
+                                      <button
+                                        onClick={() => handleTogglePaid(b, selectedFriendForHistory)}
+                                        className={`text-[11px] font-bold px-2 py-1 rounded-lg transition ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                        title="Toggle Paid Status"
+                                      >
+                                        {isPaid ? t('paid') : t('pending')}
+                                      </button>
+                                    ) : (
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaid ? 'bg-mint/20 text-mint' : 'bg-coral/20 text-coral'}`}>
+                                        {isPaid ? t('paid') : t('pending')}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
+
+                                {/* ⚡ 1-CLICK FIFO NET-OFF BUTTON */}
+                                {isFriendPayer && domShareInThisBill > 0 && !isDomPaid && isAdmin && (
+                                  <div className="pt-2 border-t border-line/40 flex justify-between items-center bg-surface/50 p-2 rounded-lg">
+                                    <span className="text-[11px] text-mint font-sans">
+                                      ยอดที่เราติดเพื่อนบิลนี้: <b>{domShareInThisBill.toFixed(2)} RM</b>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSmartFifoNetOff(selectedFriendForHistory, domShareInThisBill, b.id, b.name)}
+                                      className="bg-accent hover:bg-accent-hover text-white font-bold px-3 py-1 rounded-lg text-xs transition active:scale-95 shadow-md flex items-center gap-1"
+                                    >
+                                      ⚡ หักล้างหนี้บิลเก่า (FIFO)
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -3487,7 +3821,7 @@ Rules:
                                   </span>
                                 ) : adj.amount !== undefined ? (
                                   <span className={`font-bold font-mono ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
-                                    {adj.amount > 0 ? '+' : ''}{adj.amount.toFixed(2)} RM
+                                    {adj.amount > 0 ? '+' : ''}{adj.amount?.toFixed(2)} RM
                                   </span>
                                 ) : null}
 
@@ -3503,7 +3837,8 @@ Rules:
                                 {isAdmin && (
                                   <button
                                     onClick={() => handleDeleteAdjustment(adj)}
-                                    className="text-textMuted hover:text-coral text-xs underline ml-1"
+                                    className="text-coral hover:underline text-xs ml-1"
+                                    title="ลบและคืนสถานะบิลกลับเป็น Pending"
                                   >
                                     {t('delete')}
                                   </button>
@@ -3518,6 +3853,13 @@ Rules:
                 </div>
 
                 <div className="p-4 border-t border-line bg-surface flex flex-wrap gap-2">
+                  <button
+                    onClick={() => copyStatementTextToClipboard(selectedFriendForHistory)}
+                    className="flex-1 bg-mint/20 hover:bg-mint text-mint hover:text-bg font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 border border-mint/30"
+                  >
+                    {t('copyText')}
+                  </button>
+
                   <button
                     onClick={() => handleExportElement(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
                     className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 shadow-md shadow-accent/20"
@@ -3597,6 +3939,9 @@ Rules:
                       </p>
                       {activeBreakdown.bill.rideRoute && <p className="text-[11px] text-textSecondary font-sans">📍 {activeBreakdown.bill.rideRoute}</p>}
                       <p className="text-textMuted">{activeBreakdown.bill.date}</p>
+                      <p className="text-xs text-mint font-bold mt-1">
+                        💳 Paid By: {activeBreakdown.bill.paidBy || 'Me (Dom)'}
+                      </p>
                       {activeBreakdown.selectedFriend && (
                         <p className="text-emerald-400 font-bold font-sans text-sm mt-1">
                           Participant: {activeBreakdown.selectedFriend}
@@ -3738,9 +4083,12 @@ Rules:
                 {currentSelectedBalance && (
                   <div className="bg-subtle border border-line/80 rounded-2xl p-3.5 space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-textSecondary">Current Balance Owed:</span>
+                      <span className="text-xs text-textSecondary">Current Balance:</span>
                       <span className={`text-lg font-black font-mono tabular ${currentSelectedBalance.totalOwed > 0 ? 'text-coral' : currentSelectedBalance.totalOwed < 0 ? 'text-mint' : 'text-textMuted'}`}>
-                        {currentSelectedBalance.totalOwed.toFixed(2)} RM
+                        {Math.abs(currentSelectedBalance.totalOwed).toFixed(2)} RM
+                        <span className="text-xs ml-1 font-sans">
+                          {currentSelectedBalance.totalOwed > 0 ? '(ค้างเรา)' : currentSelectedBalance.totalOwed < 0 ? '(เราค้าง)' : ''}
+                        </span>
                       </span>
                     </div>
 
@@ -3749,9 +4097,8 @@ Rules:
                       <div className="text-right">{t('adj')}: {currentSelectedBalance.adjustedOwed > 0 ? '+' : ''}{currentSelectedBalance.adjustedOwed.toFixed(2)} RM</div>
                     </div>
 
-                    {/* SMART BATCH SETTLE BUTTON */}
-                    {currentSelectedBalance.totalOwed > 0 && (
-                      <div className="pt-2 border-t border-line/50 flex flex-col gap-2">
+                    <div className="pt-2 border-t border-line/50 flex flex-col gap-2">
+                      {currentSelectedBalance.totalOwed > 0 && (
                         <button
                           type="button"
                           onClick={() => handleSettleFullWithBatch(selectedFriendForAdjust)}
@@ -3759,8 +4106,19 @@ Rules:
                         >
                           <span>{t('settleFullPrompt', { amt: currentSelectedBalance.totalOwed.toFixed(2) })}</span>
                         </button>
-                      </div>
-                    )}
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const amt = prompt(`ระบุยอดเงินที่ ${selectedFriendForAdjust} ออกให้เรา (RM):`, adjustAmount || "");
+                          if (amt) handleSmartFifoNetOff(selectedFriendForAdjust, amt);
+                        }}
+                        className="w-full bg-accent/20 hover:bg-accent text-accent hover:text-white border border-accent/40 font-bold py-2 px-3 rounded-xl text-xs transition text-center flex items-center justify-center gap-1.5"
+                      >
+                        <span>{t('fifoNetOffBtn')}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
