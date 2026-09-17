@@ -402,10 +402,8 @@
       const [adjustments, setAdjustments] = useState([]);
       const [showArchivedFriends, setShowArchivedFriends] = useState(false);
 
-      // Dashboard Debt Filter
       const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
 
-      // Search, Filters & Analytics Month Selection
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
@@ -671,7 +669,7 @@
       };
 
       // --- SMART FIFO AUTO-NETOFF FUNCTION ---
-      const handleSmartFifoNetOff = async (friendName, creditAmount, sourceBillName = '') => {
+      const handleSmartFifoNetOff = async (friendName, creditAmount, sourceBillId = '', sourceBillName = '') => {
         if (!isAdmin) {
           showToast("Permission denied: Admin only", "error");
           return;
@@ -697,27 +695,6 @@
             return dateA !== dateB ? dateA - dateB : (a.createdAt || 0) - (b.createdAt || 0);
           });
 
-        if (unpaidBills.length === 0) {
-          try {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            await basePath.collection('adjustments').add({
-              friendName,
-              amount: -parsedCredit,
-              displayAmount: parsedCredit,
-              isPaymentRecord: true,
-              isSettled: true,
-              note: `🤝 เครดิตล่วงหน้า: ${sourceBillName || 'บิลล่าสุด'} (${parsedCredit.toFixed(2)} RM)`,
-              date: new Date().toISOString().split('T')[0],
-              createdAt: Date.now()
-            });
-            showToast(`บันทึกเครดิต ${parsedCredit.toFixed(2)} RM ให้ ${friendName} แล้ว`);
-            setSelectedFriendForAdjust(null);
-          } catch (e) {
-            showToast("บันทึกข้อมูลไม่สำเร็จ", "error");
-          }
-          return;
-        }
-
         try {
           if (db) {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
@@ -738,7 +715,6 @@
               if (remainingCredit >= billDebt) {
                 const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
                 batch.update(bDoc, { paidStatus: nextStatus });
-                
                 remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
                 autoSettledBillIds.push(bill.id);
                 settledBillsCount++;
@@ -766,6 +742,21 @@
               }
             }
 
+            // ⚠️ ป้องกันการหักซ้ำ 2 เด้ง: เซตสถานะบิลต้นทางที่เพื่อนออกเงินให้ ให้ส่วนของ Dom กลายเป็น Paid ทันที
+            if (sourceBillId) {
+              const srcDoc = basePath.collection('bills').doc(sourceBillId);
+              const srcBill = bills.find(b => b.id === sourceBillId);
+              if (srcBill) {
+                const nextStatus = { ...(srcBill.paidStatus || {}) };
+                Object.keys(srcBill.splits || {}).forEach(k => {
+                  if (/me|dom|ตัวฉันเอง/i.test(k)) nextStatus[k] = true;
+                });
+                batch.update(srcDoc, { paidStatus: nextStatus });
+                autoSettledBillIds.push(sourceBillId);
+              }
+            }
+
+            // บันทึก Log การหักกลบลบหนี้
             const logRef = basePath.collection('adjustments').doc();
             batch.set(logRef, {
               friendName,
@@ -773,7 +764,7 @@
               isPaymentRecord: true,
               isSettled: true,
               relatedBillIds: autoSettledBillIds,
-              note: `⚡ Smart Net-off: เพื่อนออกค่า ${sourceBillName || 'บิล'} ให้ (${parsedCredit.toFixed(2)} RM) -> ล้างบิลเก่า ${settledBillsCount} รายการ`,
+              note: `⚡ Smart Net-off: ตัดล้างหนี้บิลเก่าด้วยบิล ${sourceBillName || 'ล่าสุด'} (${parsedCredit.toFixed(2)} RM)`,
               date: new Date().toISOString().split('T')[0],
               createdAt: Date.now() + 1
             });
@@ -793,7 +784,7 @@
             }
 
             await batch.commit();
-            showToast(`🎉 หักกลบลบหนี้ FIFO สำเร็จ! ล้างบิลเก่าไป ${settledBillsCount} บิล`);
+            showToast(`🎉 หักกลบลบหนี้สำเร็จ! ล้างบิลเก่าไป ${settledBillsCount} รายการ`);
             setSelectedFriendForAdjust(null);
           }
         } catch (err) {
@@ -1519,7 +1510,7 @@
         };
       };
 
-      // --- DUAL-WAY DEBT CALCULATION ---
+      // --- DUAL-WAY DEBT CALCULATION (ป้องกันการหักยอดซ้ำ) ---
       const getFriendBalances = () => {
         const balances = {};
         friends.forEach(f => {
@@ -1546,6 +1537,7 @@
             const myShare = bill.splits?.['Me (Dom)'] || bill.splits?.['ตัวฉันเอง'] || 0;
             const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
 
+            // หักลบเฉพาะเมื่อส่วนของเราในบิลนี้ยังไม่ได้เคลียร์/ยังไม่ได้นำไปตัดหนี้ FIFO
             if (balances[realPayerName] && myShare > 0 && !isMySharePaid) {
               balances[realPayerName].billsOwed -= myShare;
             }
@@ -1561,7 +1553,7 @@
         });
 
         Object.keys(balances).forEach(name => {
-          balances[name].totalOwed = balances[name].billsOwed + balances[name].adjustedOwed;
+          balances[name].totalOwed = Math.round((balances[name].billsOwed + balances[name].adjustedOwed) * 100) / 100;
         });
 
         return balances;
@@ -1767,7 +1759,7 @@
 
               if (unpaidBills.length > 0) {
                 let remainingCredit = myShareInThisBill;
-                let autoSettledBillIds = [];
+                let autoSettledBillIds = [billDocRef.id];
                 let settledCount = 0;
 
                 for (const oldBill of unpaidBills) {
@@ -1807,6 +1799,11 @@
                     break;
                   }
                 }
+
+                // เซตให้ส่วนของ Dom ในบิลนี้เป็น Paid เพื่อป้องกันการหักยอดซ้ำใน getFriendBalances
+                initialPaidStatus['Me (Dom)'] = true;
+                initialPaidStatus['ตัวฉันเอง'] = true;
+                batch.update(billDocRef, { paidStatus: initialPaidStatus });
 
                 const autoLogRef = basePath.collection('adjustments').doc();
                 batch.set(autoLogRef, {
@@ -2060,11 +2057,14 @@
               adj.relatedBillIds.forEach(bId => {
                 const billObj = bills.find(b => b.id === bId);
                 if (billObj) {
-                  const splitsKeys = Object.keys(billObj.splits || {});
-                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
-                  const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                  const nextStatus = { ...(billObj.paidStatus || {}) };
+                  Object.keys(nextStatus).forEach(k => {
+                    if (k.toLowerCase() === adj.friendName.toLowerCase() || /me|dom|ตัวฉันเอง/i.test(k)) {
+                      nextStatus[k] = false;
+                    }
+                  });
                   const billRef = basePath.collection('bills').doc(bId);
-                  batch.update(billRef, { paidStatus: newPaidStatus });
+                  batch.update(billRef, { paidStatus: nextStatus });
                 }
               });
             }
@@ -3352,10 +3352,10 @@
                           {isAdmin && (
                             <button
                               onClick={() => handleDeleteAdjustment(adj)}
-                              className="text-coral hover:underline text-xs"
+                              className="text-coral hover:underline text-xs ml-1"
                               title="ลบและคืนสถานะบิลกลับเป็น Pending"
                             >
-                              ยกเลิก / ลบ
+                              {t('delete')}
                             </button>
                           )}
                         </div>
@@ -3370,6 +3370,7 @@
             {activeTab === 'analytics' && (
               <div className="space-y-6">
                 
+                {/* 1. Monthly Analytics Card */}
                 <div className="bg-surface rounded-2xl p-6 border border-line space-y-5">
                   <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 pb-3 border-b border-line">
                     <div>
@@ -3389,6 +3390,7 @@
                     </div>
                   </div>
 
+                  {/* Summary Metric Cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="bg-subtle p-4 rounded-xl border border-line">
                       <p className="text-[10px] text-textMuted uppercase font-bold">{t('totalGroupSpend')}</p>
@@ -3412,6 +3414,7 @@
                     </div>
                   </div>
 
+                  {/* CALENDAR VIEW FOR DAILY MY EXPENSE */}
                   <div className="space-y-3 pt-4 border-t border-line">
                     <div className="flex justify-between items-center">
                       <h3 className="text-xs font-bold text-mint uppercase font-mono flex items-center gap-1.5">
@@ -3491,6 +3494,7 @@
                     </div>
                   </div>
 
+                  {/* Top Members Breakdown */}
                   <div className="space-y-3 pt-3 border-t border-line">
                     <p className="text-xs font-bold text-textPrimary uppercase font-sans">👥 {t('topSpenders')}:</p>
                     {monthlyStats.sortedSpenders.length === 0 ? (
@@ -3508,6 +3512,7 @@
                   </div>
                 </div>
 
+                {/* 2. Backup & Restore Card */}
                 <div className="bg-surface rounded-2xl p-6 border border-line space-y-4">
                   <div>
                     <h2 className="text-base font-bold text-textPrimary flex items-center gap-2">
@@ -3672,7 +3677,7 @@
             </div>
           )}
 
-          {/* --- STATEMENT & LEDGER MODAL --- */}
+          {/* --- STATEMENT MODAL --- */}
           {selectedFriendForHistory && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
@@ -3742,6 +3747,7 @@
                             const userShare = b.splits[matchedKey] || 0;
                             const isFriendPayer = (b.paidBy || '').toLowerCase() === selectedFriendForHistory.toLowerCase();
                             const domShareInThisBill = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
+                            const isDomPaid = b.paidStatus?.['Me (Dom)'] || b.paidStatus?.['ตัวฉันเอง'] || false;
 
                             return (
                               <div key={b.id} className={`p-3 rounded-xl border flex flex-col gap-2 ${isFriendPayer ? 'bg-mint-subtle/20 border-mint/40' : 'bg-subtle border-line'}`}>
@@ -3776,15 +3782,15 @@
                                   </div>
                                 </div>
 
-                                {/* ⚡ 1-CLICK MANUAL FIFO NET-OFF BUTTON */}
-                                {isFriendPayer && domShareInThisBill > 0 && isAdmin && (
+                                {/* ⚡ 1-CLICK FIFO NET-OFF BUTTON */}
+                                {isFriendPayer && domShareInThisBill > 0 && !isDomPaid && isAdmin && (
                                   <div className="pt-2 border-t border-line/40 flex justify-between items-center bg-surface/50 p-2 rounded-lg">
                                     <span className="text-[11px] text-mint font-sans">
                                       ยอดที่เราติดเพื่อนบิลนี้: <b>{domShareInThisBill.toFixed(2)} RM</b>
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={() => handleSmartFifoNetOff(selectedFriendForHistory, domShareInThisBill, b.name)}
+                                      onClick={() => handleSmartFifoNetOff(selectedFriendForHistory, domShareInThisBill, b.id, b.name)}
                                       className="bg-accent hover:bg-accent-hover text-white font-bold px-3 py-1 rounded-lg text-xs transition active:scale-95 shadow-md flex items-center gap-1"
                                     >
                                       ⚡ หักล้างหนี้บิลเก่า (FIFO)
