@@ -13,6 +13,7 @@
   <link rel="apple-touch-icon" href="cat.jpg">
   <link rel="icon" type="image/jpeg" href="cat.jpg">
 
+  <!-- สลับไป index.html อัตโนมัติหากเปิดผ่านจอคอมพิวเตอร์ -->
   <script>
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -49,7 +50,7 @@
     }
   </script>
 
-  <!-- React, Babel, Tesseract OCR, html2canvas, jsPDF -->
+  <!-- Libraries -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -79,7 +80,7 @@
 
   <div id="root">
     <div class="min-h-screen flex items-center justify-center text-textMuted text-sm font-mono">
-      Loading KraiMaiJay Mobile...
+      กำลังโหลด KraiMaiJay Mobile...
     </div>
   </div>
 
@@ -112,7 +113,6 @@
     };
 
     function App() {
-      const [lang, setLang] = useState('th');
       const [cloudConfig] = useState(DEFAULT_FIREBASE_CONFIG);
       const [appId] = useState(DEFAULT_APP_ID);
 
@@ -140,7 +140,6 @@
       const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
 
       const [searchQuery, setSearchQuery] = useState('');
-      const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
 
@@ -167,9 +166,8 @@
       const [roundingAdj, setRoundingAdj] = useState(0);
       const [billItems, setBillItems] = useState([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
 
-      // สแกนภาพ OCR
+      // OCR
       const [selectedImages, setSelectedImages] = useState([]);
-      const [imageRotation, setImageRotation] = useState(0);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
       const fileInputRef = useRef(null);
@@ -237,7 +235,6 @@
         } catch (e) { console.warn(e); }
       }, []);
 
-      // ระบบเข้าสู่ระบบแอดมิน
       const handleGoogleLogin = async () => {
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
@@ -249,9 +246,9 @@
             setIsAdminByGoogle(hasAdminRole);
             setShowAuthModal(false);
             if (hasAdminRole) {
-              showToast("👑 Signed in as Admin Dom!");
+              showToast("👑 เข้าสู่ระบบแอดมินสำเร็จ!");
             } else {
-              showToast(`Logged in as ${userEmail} (Viewer)`);
+              showToast(`เข้าสู่ระบบเป็น ${userEmail} (โหมดดูอย่างเดียว)`);
             }
           }
         } catch (err) {
@@ -283,10 +280,9 @@
         try {
           await firebase.auth().signOut();
         } catch (e) {}
-        showToast("ออกจากระบบกลับสู่โหมดดูอย่างเดียว");
+        showToast("ออกจากระบบสู่โหมดดูอย่างเดียว");
       };
 
-      // คำนวณยอดหนี้คงค้าง
       const friendBalances = useMemo(() => {
         const balances = {};
         friends.forEach(f => { balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }; });
@@ -382,29 +378,67 @@
         };
       }, [bills, selectedMonth, friends]);
 
+      // แก้ไข Infinite Loop ในการคำนวณปฏิทิน
       const calendarMatrix = useMemo(() => {
         if (!selectedMonth) return [];
         const [year, month] = selectedMonth.split('-').map(Number);
+        if (!year || !month) return [];
+
         const firstDayIndex = new Date(year, month - 1, 1).getDay();
         const daysInMonth = new Date(year, month, 0).getDate();
         const matrix = [];
-        let counter = 1;
+        let dayCounter = 1;
 
-        for (let r = 0; r < 6; r++) {
+        for (let row = 0; row < 6; row++) {
           const week = [];
-          for (let c = 0; c < 7; c++) {
-            if ((r === 0 && c < firstDayIndex) || counter > daysInMonth) week.push(null);
-            else {
-              const dStr = `${selectedMonth}-${String(counter).padStart(2, '0')}`;
-              week.push({ day: counter, dateStr: dStr, total: monthlyStats.dailyMyExpenses[dStr]?.total || 0, items: monthlyStats.dailyMyExpenses[dStr]?.items || [] });
-              counter++;
+          for (let col = 0; col < 7; col++) {
+            if (row === 0 && col < firstDayIndex) {
+              week.push(null);
+            } else if (dayCounter > daysInMonth) {
+              week.push(null);
+            } else {
+              const dStr = `${selectedMonth}-${String(dayCounter).padStart(2, '0')}`;
+              const dayData = monthlyStats.dailyMyExpenses?.[dStr] || null;
+              week.push({
+                day: dayCounter,
+                dateStr: dStr,
+                total: dayData ? dayData.total : 0,
+                items: dayData ? dayData.items : []
+              });
+              dayCounter++;
             }
           }
           matrix.push(week);
-          if (counter > daysInMonth) break;
+          if (dayCounter > daysInMonth) break;
         }
         return matrix;
       }, [selectedMonth, monthlyStats.dailyMyExpenses]);
+
+      const handleExportJSONBackup = () => {
+        const full = { version: "1.0", exportDate: new Date().toISOString(), friends, bills, adjustments };
+        const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast("สำรองข้อมูล JSON สำเร็จ! 📦");
+      };
+
+      const handleExportCSVReport = () => {
+        let csv = "data:text/csv;charset=utf-8,\uFEFFDate,Type,Title,PaidBy,Total(RM)\n";
+        bills.forEach(b => {
+          csv += `${b.date},${b.billType},"${(b.name || '').replace(/"/g, '""')}","${b.paidBy || 'Me (Dom)'}",${(b.total || 0).toFixed(2)}\n`;
+        });
+        const link = document.createElement("a");
+        link.setAttribute("href", encodeURI(csv));
+        link.setAttribute("download", `KraiMaiJay_Bills_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast("ดาวน์โหลด CSV เรียบร้อย! 📊");
+      };
 
       const unsettledFriendList = useMemo(() => {
         return friends.filter(f => {
@@ -587,13 +621,13 @@
               </div>
             )}
 
-            {/* 3. ANALYTICS */}
+            {/* 3. ANALYTICS (สถิติเต็มรูปแบบ) */}
             {activeTab === 'analytics' && (
               <div className="space-y-4">
                 <div className="bg-surface rounded-2xl p-4 border border-line space-y-3">
                   <div className="flex justify-between items-center pb-2 border-b border-line">
                     <span className="text-xs font-bold font-mono">📊 สถิติค่าใช้จ่าย</span>
-                    <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-subtle border border-line px-2 py-1 rounded text-xs font-mono" />
+                    <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-subtle border border-line px-2.5 py-1 rounded-lg text-xs font-mono" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-center font-mono">
