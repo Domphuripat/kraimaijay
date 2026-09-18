@@ -1132,28 +1132,53 @@
       };
 
       const handleAddFriend = async (e) => {
-        e.preventDefault();
-        if (!isAdmin) {
-          showToast("Only Admin can add friends", "error");
-          return;
-        }
-        const name = newFriendName.trim();
-        if (!name) return;
-        if (friends.some(f => f.name.toLowerCase() === name.toLowerCase())) {
-          showToast("Friend name already exists", "error");
-          return;
-        }
-
-        const newF = { name, isSelf: false, isArchived: false, createdAt: Date.now() };
+      e.preventDefault();
+      if (!isAdmin) {
+        showToast("Only Admin can add friends", "error");
+        return;
+      }
+    
+      const name = newFriendName.trim();
+      if (!name) return;
+    
+      // 1. ดักไม่ให้สร้างชื่อที่เป็นตัวแทนของตัวเอง (Me, Dom, ตัวฉันเอง)
+      const isSelfAlias = /^(me|dom|me\s*\(dom\)|ตัวฉันเอง)$/i.test(name);
+      if (isSelfAlias) {
+        showToast("ไม่สามารถเพิ่มชื่อตัวเองเป็นเพื่อนได้", "error");
+        return;
+      }
+    
+      // 2. ดักชื่อซ้ำกับที่มีอยู่แล้ว (รวมทั้งที่ Active และ Archived)
+      const isDuplicate = friends.some(
+        f => (f.name || '').trim().toLowerCase() === name.toLowerCase()
+      );
+    
+      if (isDuplicate) {
+        showToast("มีชื่อนี้อยู่ในระบบแล้ว", "error");
+        return;
+      }
+    
+        const newF = { 
+          name, 
+          isSelf: false, 
+          isArchived: false, 
+          createdAt: Date.now() 
+        };
+      
         if (db) {
           try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(newF);
-            showToast("Friend added");
+            await db.collection('artifacts')
+              .doc(appId)
+              .collection('public')
+              .doc('data')
+              .collection('friends')
+              .add(newF);
+            showToast(`เพิ่มเพื่อน "${name}" สำเร็จ!`);
+            setNewFriendName('');
           } catch (err) {
             showToast("Failed to add friend", "error");
           }
         }
-        setNewFriendName('');
       };
 
       const handleToggleArchiveFriend = async (friend) => {
