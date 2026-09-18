@@ -13,7 +13,6 @@
   <link rel="apple-touch-icon" href="cat.jpg">
   <link rel="icon" type="image/jpeg" href="cat.jpg">
 
-  <!-- สลับไปหน้าจอคอม index.html อัตโนมัติหากไม่ใช่จอมือถือ -->
   <script>
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -58,7 +57,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <!-- Firebase -->
+  <!-- Firebase Compat -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -140,10 +139,12 @@
       const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
 
       const [searchQuery, setSearchQuery] = useState('');
+      const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
+      const restoreInputRef = useRef(null);
 
-      // ฟอร์มสร้าง/แก้ไขบิล
+      // ฟอร์มบิล
       const [editingBillId, setEditingBillId] = useState(null);
       const [newBillName, setNewBillName] = useState('');
       const [billType, setBillType] = useState('delivery');
@@ -166,14 +167,20 @@
       const [roundingAdj, setRoundingAdj] = useState(0);
       const [billItems, setBillItems] = useState([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
 
-      // OCR สแกนบิล
+      // OCR & Scanning
       const [selectedImages, setSelectedImages] = useState([]);
+      const [imageRotation, setImageRotation] = useState(0);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
+      const [showRawTextInput, setShowRawTextInput] = useState(false);
+      const [rawOrderText, setRawOrderText] = useState('');
       const fileInputRef = useRef(null);
 
-      // สมาชิก & ปรับยอด
+      // จัดการเพื่อนและการปรับยอด
       const [newFriendName, setNewFriendName] = useState('');
+      const [showArchivedFriends, setShowArchivedFriends] = useState(false);
+      const [renamingFriendId, setRenamingFriendId] = useState(null);
+      const [renameValue, setRenameValue] = useState('');
       const [selectedFriendForAdjust, setSelectedFriendForAdjust] = useState(null);
       const [adjustAmount, setAdjustAmount] = useState('');
       const [adjustNote, setAdjustNote] = useState('');
@@ -235,50 +242,6 @@
         } catch (e) { console.warn(e); }
       }, []);
 
-      // จัดการแก้ไขบิล
-      const handleStartEditBill = (bill) => {
-        setEditingBillId(bill.id);
-        setNewBillName(bill.name || '');
-        setBillType(bill.billType || 'delivery');
-        setPaidBy(bill.paidBy || 'Me (Dom)');
-        setRemainderMode(bill.remainderMode || 'distribute');
-        setTaxMode(bill.taxMode || 'inclusive');
-        setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
-        setDeliveryFee(bill.deliveryFee || 0);
-        setPackagingCharge(bill.packagingCharge || 0);
-        setDiscountAmount(bill.discountAmount || 0);
-        setServiceChargeRate(bill.serviceChargeRate || 0);
-        setRoundingAdj(bill.roundingAdjustment || 0);
-        setRideFare(bill.rideFare || '');
-        setTollFee(bill.tollFee || '');
-        setRideRoute(bill.rideRoute || '');
-        setLoanAmount(bill.loanAmount || '');
-        setLoanBorrower(bill.loanBorrower || '');
-        setBillFriends(Object.keys(bill.splits || {}));
-        setBillItems(bill.items && bill.items.length > 0 ? bill.items : [{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
-        setActiveTab('new-bill');
-      };
-
-      const handleDeleteBill = async (billId) => {
-        if (!isAdmin || isProcessing) return;
-        if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) return;
-
-        setIsProcessing(true);
-        try {
-          if (db) {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            await basePath.collection('bills').doc(billId).delete();
-            setViewingBillId(null);
-            showToast("ลบบิลเรียบร้อย! 🔄");
-          }
-        } catch (err) {
-          showToast("ลบไม่สำเร็จ: " + err.message, "error");
-        } finally {
-          setIsProcessing(false);
-        }
-      };
-
-      // เข้าสู่ระบบแอดมิน
       const handleGoogleLogin = async () => {
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
@@ -327,7 +290,6 @@
         showToast("ออกจากระบบสู่โหมดดูอย่างเดียว");
       };
 
-      // คำนวณยอดหนี้คงค้าง
       const friendBalances = useMemo(() => {
         const balances = {};
         friends.forEach(f => { balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }; });
@@ -423,7 +385,6 @@
         };
       }, [bills, selectedMonth, friends]);
 
-      // ปฏิทินรายจ่ายที่แก้ไขบั๊กค้างเรียบร้อย
       const calendarMatrix = useMemo(() => {
         if (!selectedMonth) return [];
         const [year, month] = selectedMonth.split('-').map(Number);
@@ -459,6 +420,325 @@
         return matrix;
       }, [selectedMonth, monthlyStats.dailyMyExpenses]);
 
+      // Quick Presets
+      const quickMerchantPresets = useMemo(() => {
+        const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
+        const fromBills = bills.filter(b => b.billType !== 'ride' && b.billType !== 'loan').map(b => b.name).filter(Boolean);
+        return Array.from(new Set([...fromBills, ...defaults])).slice(0, 6);
+      }, [bills]);
+
+      const quickRoutePresets = useMemo(() => {
+        const defaults = ['Pavilion Bukit Jalil', 'One South', 'Sri Petaling', 'KL Sentral', 'Mid Valley', 'KLCC'];
+        const fromBills = bills.filter(b => b.billType === 'ride').map(b => b.rideRoute).filter(Boolean);
+        return Array.from(new Set([...fromBills, ...defaults])).slice(0, 5);
+      }, [bills]);
+
+      // Sanity Check Warning
+      const itemsSum = useMemo(() => {
+        return billItems.reduce((sum, item) => sum + ((parseFloat(item.price) || 0) * (parseInt(item.qty) || 1)), 0);
+      }, [billItems]);
+
+      const calculatedNetTotal = useMemo(() => {
+        if (billType === 'ride') return Math.max(0, (parseFloat(rideFare) || 0) + (parseFloat(tollFee) || 0) - (parseFloat(discountAmount) || 0) + (parseFloat(roundingAdj) || 0));
+        if (billType === 'loan') return parseFloat(loanAmount) || 0;
+        return Math.max(0, itemsSum + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - (parseFloat(discountAmount) || 0) + (parseFloat(roundingAdj) || 0));
+      }, [billType, rideFare, tollFee, discountAmount, roundingAdj, loanAmount, itemsSum, deliveryFee, packagingCharge]);
+
+      const isMismatch = useMemo(() => {
+        if (billType === 'ride' || billType === 'loan') return false;
+        return itemsSum > 0 && Math.abs(calculatedNetTotal - (itemsSum + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - (parseFloat(discountAmount) || 0))) > 0.05;
+      }, [billType, calculatedNetTotal, itemsSum, deliveryFee, packagingCharge, discountAmount]);
+
+      // ฟังก์ชัน OCR
+      const preprocessImageWithRotation = (file, angle) => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          const objectUrl = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (angle === 90 || angle === 270) {
+              canvas.width = img.height; canvas.height = img.width;
+            } else {
+              canvas.width = img.width; canvas.height = img.height;
+            }
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((angle * Math.PI) / 180);
+            ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              const v = gray > 145 ? 255 : 0;
+              d[i] = v; d[i + 1] = v; d[i + 2] = v;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            canvas.toBlob(blob => resolve(blob || file), 'image/png');
+          };
+          img.src = objectUrl;
+        });
+      };
+
+      const parseTextContent = (text) => {
+        const cleanLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        let extractedItems = [], dFee = 0, pCharge = 0, dAmount = 0;
+
+        cleanLines.forEach(line => {
+          if (/delivery\s*fee/i.test(line)) {
+            const m = line.match(/([0-9]+[.,][0-9]{2})/);
+            if (m) dFee = parseFloat(m[1].replace(',', '.'));
+          } else if (/packaging|packing/i.test(line)) {
+            const m = line.match(/([0-9]+[.,][0-9]{2})/);
+            if (m) pCharge = parseFloat(m[1].replace(',', '.'));
+          } else if (/discount|promo/i.test(line)) {
+            const m = line.match(/([0-9]+[.,][0-9]{2})/);
+            if (m) dAmount = parseFloat(m[1].replace(',', '.'));
+          } else {
+            const m = line.match(/^([0-9]+[xX])?\s*(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i);
+            if (m) {
+              extractedItems.push({
+                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
+                name: m[2].trim(),
+                price: parseFloat(m[3].replace(',', '.')).toFixed(2),
+                qty: parseInt(m[1]) || 1,
+                taxRate: 0,
+                sharedWith: [...billFriends]
+              });
+            }
+          }
+        });
+        return { extractedItems, dFee, pCharge, dAmount };
+      };
+
+      const handleScanImages = async () => {
+        if (!selectedImages.length) return;
+        setOcrProcessing(true);
+        setOcrProgress(0);
+        try {
+          let allItems = [];
+          for (let i = 0; i < selectedImages.length; i++) {
+            const processed = await preprocessImageWithRotation(selectedImages[i], imageRotation);
+            const { data: { text } } = await Tesseract.recognize(processed, 'eng+tha', {
+              logger: m => m.status === 'recognizing text' && setOcrProgress(Math.round(((i + (m.progress || 0)) / selectedImages.length) * 100))
+            });
+            const p = parseTextContent(text);
+            allItems = [...allItems, ...p.extractedItems];
+            if (p.dFee) setDeliveryFee(p.dFee);
+            if (p.pCharge) setPackagingCharge(p.pCharge);
+            if (p.dAmount) setDiscountAmount(p.dAmount);
+          }
+          if (allItems.length) { setBillItems(allItems); showToast(`สแกนสำเร็จ ${allItems.length} เมนู!`); }
+          else showToast("OCR อ่านไม่ชัดเจน แนะนำให้ใช้ปุ่มวางข้อความ", "error");
+        } catch (e) { showToast("เกิดข้อผิดพลาดในการสแกน", "error"); }
+        finally { setOcrProcessing(false); setSelectedImages([]); }
+      };
+
+      const handleParseRawText = () => {
+        if (!rawOrderText.trim()) return;
+        const p = parseTextContent(rawOrderText);
+        if (p.extractedItems.length || p.dFee || p.pCharge || p.dAmount) {
+          if (p.extractedItems.length) setBillItems(p.extractedItems);
+          if (p.dFee) setDeliveryFee(p.dFee);
+          if (p.pCharge) setPackagingCharge(p.pCharge);
+          if (p.dAmount) setDiscountAmount(p.dAmount);
+          showToast(`แกะข้อมูลได้ ${p.extractedItems.length} เมนู!`);
+          setShowRawTextInput(false);
+          setRawOrderText('');
+        } else {
+          showToast("ไม่พบรายการราคาในข้อความ", "error");
+        }
+      };
+
+      // ฟังก์ชันจัดการบิล
+      const handleStartEditBill = (bill) => {
+        setEditingBillId(bill.id);
+        setNewBillName(bill.name || '');
+        setBillType(bill.billType || 'delivery');
+        setPaidBy(bill.paidBy || 'Me (Dom)');
+        setRemainderMode(bill.remainderMode || 'distribute');
+        setTaxMode(bill.taxMode || 'inclusive');
+        setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
+        setDeliveryFee(bill.deliveryFee || 0);
+        setPackagingCharge(bill.packagingCharge || 0);
+        setDiscountAmount(bill.discountAmount || 0);
+        setServiceChargeRate(bill.serviceChargeRate || 0);
+        setRoundingAdj(bill.roundingAdjustment || 0);
+        setRideFare(bill.rideFare || '');
+        setTollFee(bill.tollFee || '');
+        setRideRoute(bill.rideRoute || '');
+        setLoanAmount(bill.loanAmount || '');
+        setLoanBorrower(bill.loanBorrower || '');
+        setBillFriends(Object.keys(bill.splits || {}));
+        setBillItems(bill.items && bill.items.length > 0 ? bill.items : [{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
+        setActiveTab('new-bill');
+      };
+
+      const handleDeleteBill = async (billId) => {
+        if (!isAdmin || isProcessing) return;
+        if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) return;
+
+        setIsProcessing(true);
+        try {
+          if (db) {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('bills').doc(billId).delete();
+            setViewingBillId(null);
+            showToast("ลบบิลเรียบร้อย! 🔄");
+          }
+        } catch (err) {
+          showToast("ลบไม่สำเร็จ: " + err.message, "error");
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      const calculateBillSplits = () => {
+        const splits = {};
+        const friendItemDetails = {};
+        const activeFriendsCount = billFriends.length;
+
+        if (billType === 'loan') {
+          const parsed = parseFloat(loanAmount) || 0;
+          if (loanBorrower) {
+            splits[loanBorrower] = parsed;
+            friendItemDetails[loanBorrower] = { baseShare: parsed };
+          }
+          return { subtotal: parsed, total: parsed, splits, friendItemDetails };
+        }
+
+        if (billType === 'ride') {
+          const rFare = parseFloat(rideFare) || 0;
+          const tFee = parseFloat(tollFee) || 0;
+          const disc = parseFloat(discountAmount) || 0;
+          const round = parseFloat(roundingAdj) || 0;
+          const net = Math.max(0, rFare + tFee - disc + round);
+          const totalCents = Math.round(net * 100);
+          const baseCents = activeFriendsCount > 0 ? Math.floor(totalCents / activeFriendsCount) : 0;
+          let remCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
+
+          billFriends.forEach(f => {
+            let share = baseCents;
+            if (remainderMode === 'distribute' && remCents > 0) { share += 1; remCents--; }
+            else if (remainderMode === 'payer' && f.toLowerCase() === paidBy.toLowerCase()) { share += remCents; }
+            splits[f] = share / 100;
+          });
+
+          return { subtotal: rFare, total: Math.round(net * 100) / 100, splits, friendItemDetails };
+        }
+
+        const friendBaseShares = {};
+        billFriends.forEach(f => { friendBaseShares[f] = 0; });
+        let sub = 0, totalTax = 0;
+
+        billItems.forEach(item => {
+          const pr = parseFloat(item.price) || 0;
+          const qt = parseInt(item.qty) || 1;
+          const itemTot = pr * qt;
+          sub += itemTot;
+
+          const sharedList = (item.sharedWith || []).filter(f => billFriends.includes(f));
+          if (sharedList.length > 0) {
+            const baseC = Math.floor(Math.round(itemTot * 100) / sharedList.length);
+            let remC = Math.round(itemTot * 100) % sharedList.length;
+            sharedList.forEach(f => {
+              const addC = baseC + (remC > 0 ? 1 : 0);
+              if (remC > 0) remC--;
+              friendBaseShares[f] = (friendBaseShares[f] || 0) + (addC / 100);
+            });
+          }
+        });
+
+        const scAmt = sub * (serviceChargeRate / 100);
+        const pDelivery = activeFriendsCount > 0 ? ((parseFloat(deliveryFee) || 0) / activeFriendsCount) : 0;
+        const pPackaging = activeFriendsCount > 0 ? ((parseFloat(packagingCharge) || 0) / activeFriendsCount) : 0;
+        const discAmt = parseFloat(discountAmount) || 0;
+        const roundAmt = parseFloat(roundingAdj) || 0;
+
+        billFriends.forEach(f => {
+          const base = friendBaseShares[f] || 0;
+          const sc = base * (serviceChargeRate / 100);
+          const uDisc = sub > 0 ? (base / sub) * discAmt : (discAmt / (activeFriendsCount || 1));
+          splits[f] = Math.round(Math.max(0, base + sc + pDelivery + pPackaging - uDisc) * 100) / 100;
+        });
+
+        const finalTot = Math.round((sub + scAmt + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - discAmt + roundAmt) * 100) / 100;
+        return { subtotal: sub, total: finalTot, splits, friendItemDetails };
+      };
+
+      const handleSaveBill = async (e) => {
+        e.preventDefault();
+        if (!isAdmin || isProcessing) return;
+        if (!newBillName.trim()) { showToast("กรุณาระบุชื่อบิล", "error"); return; }
+
+        const calculated = calculateBillSplits();
+        let initialPaidStatus = {};
+        if (editingBillId) {
+          const oldBill = bills.find(b => b.id === editingBillId);
+          initialPaidStatus = oldBill?.paidStatus || {};
+        }
+
+        const participants = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
+        participants.forEach(f => {
+          if (initialPaidStatus[f] === undefined) {
+            initialPaidStatus[f] = f.toLowerCase() === paidBy.toLowerCase();
+          }
+        });
+
+        const billPayload = {
+          name: newBillName,
+          billType,
+          paidBy,
+          remainderMode,
+          taxMode,
+          date: newBillDate,
+          rideFare: parseFloat(rideFare) || 0,
+          tollFee: parseFloat(tollFee) || 0,
+          rideRoute,
+          loanAmount: parseFloat(loanAmount) || 0,
+          loanBorrower,
+          subtotal: calculated.subtotal,
+          deliveryFee: parseFloat(deliveryFee) || 0,
+          packagingCharge: parseFloat(packagingCharge) || 0,
+          discountAmount: parseFloat(discountAmount) || 0,
+          total: calculated.total,
+          items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            price: parseFloat(item.price) || 0,
+            qty: parseInt(item.qty) || 1,
+            taxRate: parseFloat(item.taxRate || 0),
+            sharedWith: item.sharedWith || []
+          })),
+          splits: calculated.splits,
+          paidStatus: initialPaidStatus,
+          updatedAt: Date.now()
+        };
+
+        setIsProcessing(true);
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            if (editingBillId) {
+              await basePath.collection('bills').doc(editingBillId).update(billPayload);
+            } else {
+              billPayload.createdAt = Date.now();
+              await basePath.collection('bills').add(billPayload);
+            }
+            showToast("บันทึกบิลสำเร็จ! 🎉");
+          } catch (err) {
+            showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
+          } finally {
+            setIsProcessing(false);
+          }
+        }
+        setEditingBillId(null);
+        setViewingBillId(null);
+        setActiveTab('bills');
+      };
+
+      // Backup & Restore
       const handleExportJSONBackup = () => {
         const full = { version: "1.0", exportDate: new Date().toISOString(), friends, bills, adjustments };
         const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
@@ -484,6 +764,57 @@
         document.body.removeChild(link);
         showToast("ดาวน์โหลด CSV เรียบร้อย! 📊");
       };
+
+      const handleRestoreJSON = (e) => {
+        if (!isAdmin) return;
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const data = JSON.parse(event.target.result);
+            if (!data.friends || !data.bills) { showToast("ไฟล์ JSON ไม่ถูกต้อง", "error"); return; }
+            if (!confirm(`ต้องการกู้คืน ${data.bills.length} บิล และ ${data.friends.length} รายชื่อ?`)) return;
+
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+            data.friends.forEach(f => batch.set(basePath.collection('friends').doc(f.id || undefined), f));
+            data.bills.forEach(b => batch.set(basePath.collection('bills').doc(b.id || undefined), b));
+            (data.adjustments || []).forEach(a => batch.set(basePath.collection('adjustments').doc(a.id || undefined), a));
+            await batch.commit();
+            showToast("กู้คืนข้อมูลสำเร็จ! 🎉");
+          } catch (err) {
+            showToast("กู้คืนไฟล์ล้มเหลว", "error");
+          } finally {
+            if (restoreInputRef.current) restoreInputRef.current.value = '';
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      // ฟิลเตอร์แสดงบิล
+      const filteredBills = useMemo(() => {
+        const term = searchQuery.trim().toLowerCase();
+        return bills.filter(bill => {
+          const matchTitle = (bill.name || '').toLowerCase().includes(term);
+          const matchRoute = (bill.rideRoute || '').toLowerCase().includes(term);
+          const matchItem = (bill.items || []).some(item => (item.name || '').toLowerCase().includes(term));
+          if (term && !matchTitle && !matchRoute && !matchItem) return false;
+
+          const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
+            const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
+            return !(fObj?.isSelf) && !bill.paidStatus?.[n];
+          }).length;
+
+          if (statusFilter === 'pending') return unpaidCount > 0;
+          if (statusFilter === 'settled') return unpaidCount === 0;
+          if (statusFilter === 'ride') return bill.billType === 'ride';
+          if (statusFilter === 'loan') return bill.billType === 'loan';
+          if (statusFilter === 'food') return bill.billType !== 'ride' && bill.billType !== 'loan';
+          return true;
+        });
+      }, [bills, searchQuery, statusFilter, friends]);
 
       const unsettledFriendList = useMemo(() => {
         return friends.filter(f => {
@@ -608,19 +939,253 @@
               </div>
             )}
 
-            {/* 2. HISTORY */}
+            {/* 2. CREATE / EDIT BILL */}
+            {activeTab === 'new-bill' && (
+              isAdmin ? (
+                <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-4 border border-line space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-line">
+                    <h2 className="font-bold text-sm text-textPrimary">{editingBillId ? '✏️ แก้ไขบิล' : '➕ สร้างรายการใหม่'}</h2>
+                    <button type="button" onClick={() => setActiveTab('bills')} className="text-xs text-textMuted">✕ ยกเลิก</button>
+                  </div>
+
+                  {/* ประเภทบิล */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {['delivery', 'ride', 'dinein', 'loan'].map(type => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          setBillType(type);
+                          if (type === 'delivery') { setTaxMode('inclusive'); setServiceChargeRate(0); }
+                          if (type === 'dinein') { setTaxMode('addon'); setDeliveryFee(0); setPackagingCharge(0); }
+                        }}
+                        className={`py-2 rounded-xl text-xs font-bold border capitalize transition ${billType === type ? 'bg-accent text-white border-accent' : 'bg-subtle border-line text-textSecondary'}`}
+                      >
+                        {type === 'delivery' ? '🛵 Food' : type === 'ride' ? '🚗 Ride' : type === 'dinein' ? '🍽️ Dine' : '💸 Loan'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* คนจ่ายบิล */}
+                  {billType !== 'loan' && (
+                    <div className="bg-subtle p-2.5 rounded-xl border border-line space-y-1.5">
+                      <label className="block text-[11px] font-bold text-textPrimary">💳 ใครเป็นคนจ่ายบิลนี้:</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {friends.filter(f => !f.isArchived).map(f => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setPaidBy(f.name)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${paidBy.toLowerCase() === f.name.toLowerCase() ? 'bg-mint text-bg' : 'bg-surface text-textSecondary border border-line'}`}
+                          >
+                            {f.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OCR Scanner */}
+                  {billType !== 'loan' && (
+                    <div className="bg-subtle p-3 rounded-xl border border-line space-y-2">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span>📸 สแกนบิล OCR</span>
+                        <div className="flex gap-1.5">
+                          <button type="button" onClick={() => setImageRotation(prev => (prev + 90) % 360)} className="bg-surface border border-line px-2 py-1 rounded text-xs">
+                            🔄 {imageRotation}°
+                          </button>
+                          <input type="file" accept="image/*" multiple ref={fileInputRef} onChange={e => setSelectedImages(Array.from(e.target.files))} className="hidden" />
+                          <button type="button" onClick={() => fileInputRef.current.click()} className="bg-accent text-white px-2.5 py-1 rounded text-xs font-bold">
+                            + เลือกรูป ({selectedImages.length})
+                          </button>
+                          <button type="button" onClick={() => setShowRawTextInput(!showRawTextInput)} className="bg-surface border border-line px-2 py-1 rounded text-xs">
+                            📝 วางข้อความ
+                          </button>
+                        </div>
+                      </div>
+
+                      {showRawTextInput && (
+                        <div className="space-y-1.5 pt-1">
+                          <textarea value={rawOrderText} onChange={e => setRawOrderText(e.target.value)} placeholder="วางข้อความสรุปรายการอาหารจาก Grab / Email ที่นี่..." className="w-full h-20 bg-surface border border-line rounded-lg p-2 text-xs font-mono outline-none" />
+                          <button type="button" onClick={handleParseRawText} className="w-full bg-mint text-bg font-bold py-1.5 rounded-lg text-xs">
+                            แกะรายการจากข้อความ
+                          </button>
+                        </div>
+                      )}
+
+                      {selectedImages.length > 0 && (
+                        <button type="button" onClick={handleScanImages} disabled={ocrProcessing} className="w-full bg-mint text-bg font-bold py-1.5 rounded-lg text-xs">
+                          {ocrProcessing ? `กำลังอ่าน OCR (${ocrProgress}%)...` : 'เริ่มประมวลผล OCR'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ข้อมูลชื่อบิล & วันที่ */}
+                  <div className="space-y-2">
+                    <input 
+                      type="text" 
+                      placeholder="ชื่อรายการ / ร้านอาหาร / จุดหมาย" 
+                      value={newBillName} 
+                      onChange={e => setNewBillName(e.target.value)} 
+                      className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent"
+                      required 
+                    />
+                    
+                    {/* Presets ร้านประจำ */}
+                    {billType !== 'ride' && billType !== 'loan' && (
+                      <div className="flex flex-wrap gap-1">
+                        {quickMerchantPresets.map(preset => (
+                          <button key={preset} type="button" onClick={() => setNewBillName(preset)} className="text-[10px] bg-subtle border border-line px-2 py-0.5 rounded-lg text-textSecondary">
+                            + {preset}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <input 
+                      type="date" 
+                      value={newBillDate} 
+                      onChange={e => setNewBillDate(e.target.value)} 
+                      className="w-full bg-subtle border border-line rounded-xl px-3 py-1.5 text-xs text-textPrimary"
+                    />
+                  </div>
+
+                  {/* ส่วนกรอกตามประเภทบิล */}
+                  {billType === 'loan' ? (
+                    <div className="bg-subtle p-3 rounded-xl border border-coral/30 space-y-2">
+                      <select value={loanBorrower} onChange={e => setLoanBorrower(e.target.value)} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none" required>
+                        <option value="">-- เลือกผู้ยืม --</option>
+                        {friends.filter(f => !f.isSelf && !f.isArchived).map(f => (
+                          <option key={f.id} value={f.name}>{f.name}</option>
+                        ))}
+                      </select>
+                      <input type="text" inputMode="decimal" placeholder="ยอดเงินที่ยืม (RM)" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} onBlur={e => setLoanAmount(evaluateMathExpression(e.target.value))} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm font-mono font-bold" required />
+                    </div>
+                  ) : billType === 'ride' ? (
+                    <div className="bg-subtle p-3 rounded-xl border border-bolt/30 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="text" inputMode="decimal" placeholder="ค่าโดยสาร (RM)" value={rideFare} onChange={e => setRideFare(e.target.value)} onBlur={e => setRideFare(evaluateMathExpression(e.target.value))} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm font-mono" required />
+                        <input type="text" inputMode="decimal" placeholder="ทางด่วน (RM)" value={tollFee} onChange={e => setTollFee(e.target.value)} onBlur={e => setTollFee(evaluateMathExpression(e.target.value))} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm font-mono" />
+                      </div>
+                      <input type="text" placeholder="เส้นทาง (เช่น Pavilion -> KLCC)" value={rideRoute} onChange={e => setRideRoute(e.target.value)} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs" />
+                      <div className="flex flex-wrap gap-1">
+                        {quickRoutePresets.map(preset => (
+                          <button key={preset} type="button" onClick={() => setRideRoute(preset)} className="text-[10px] bg-surface border border-line px-2 py-0.5 rounded-lg text-textSecondary">
+                            📍 {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* ภาษี & ค่าส่ง */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <input type="text" inputMode="decimal" placeholder="ค่าส่ง" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)} className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs font-mono" />
+                        <input type="text" inputMode="decimal" placeholder="กล่อง/ห่อ" value={packagingCharge} onChange={e => setPackagingCharge(e.target.value)} className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs font-mono" />
+                        <input type="text" inputMode="decimal" placeholder="ส่วนลด (-)" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs font-mono" />
+                      </div>
+
+                      {/* รายการอาหาร */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-bold text-textSecondary">รายการอาหาร ({billItems.length})</label>
+                          <button type="button" onClick={() => setBillItems([...billItems, { id: Date.now().toString(), name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }])} className="text-xs text-accent font-bold">
+                            + เพิ่มเมนู
+                          </button>
+                        </div>
+                        {billItems.map(item => (
+                          <div key={item.id} className="bg-subtle p-2.5 rounded-xl border border-line space-y-1.5">
+                            <div className="flex gap-2">
+                              <input type="text" placeholder="ชื่อเมนู" value={item.name} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, name: e.target.value } : b))} className="flex-1 bg-surface border border-line rounded-lg px-2.5 py-1.5 text-xs" required />
+                              <input type="text" inputMode="decimal" placeholder="ราคา" value={item.price} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, price: e.target.value } : b))} className="w-20 bg-surface border border-line rounded-lg px-2.5 py-1.5 text-xs font-mono" required />
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {billFriends.map(fName => {
+                                const isShared = (item.sharedWith || []).includes(fName);
+                                return (
+                                  <button key={fName} type="button" onClick={() => setBillItems(billItems.map(b => b.id === item.id ? { ...b, sharedWith: isShared ? b.sharedWith.filter(n => n !== fName) : [...b.sharedWith, fName] } : b))} className={`px-2 py-0.5 rounded text-[10px] ${isShared ? 'bg-mint text-bg font-bold' : 'bg-surface text-textSecondary'}`}>
+                                    {fName}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* คนร่วมหาร */}
+                  {billType !== 'loan' && (
+                    <div>
+                      <label className="block text-xs font-bold text-textSecondary mb-1.5">คนร่วมหาร ({billFriends.length} คน):</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {friends.filter(f => !f.isArchived).map(f => {
+                          const isSel = billFriends.includes(f.name);
+                          return (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => setBillFriends(isSel ? billFriends.filter(n => n !== f.name) : [...billFriends, f.name])}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${isSel ? 'bg-accent text-white' : 'bg-subtle text-textSecondary border border-line'}`}
+                            >
+                              {isSel ? '✓ ' : '+ '} {f.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ปุ่มบันทึก */}
+                  <button type="submit" disabled={isProcessing} className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-3 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-accent/25 disabled:opacity-50">
+                    {isProcessing ? 'กำลังบันทึกข้อมูล...' : '💾 บันทึกรายการบิล'}
+                  </button>
+                </form>
+              ) : (
+                <div className="bg-surface rounded-2xl p-6 border border-line text-center space-y-3">
+                  <p className="text-coral text-sm font-bold">🔒 โหมดดูอย่างเดียว (Viewer)</p>
+                  <button onClick={() => setShowAuthModal(true)} className="bg-accent text-white font-bold px-4 py-2 rounded-xl text-xs">
+                    เข้าสู่ระบบแอดมินเพื่อสร้างบิล
+                  </button>
+                </div>
+              )
+            )}
+
+            {/* 3. HISTORY */}
             {activeTab === 'bills' && (
               <div className="space-y-3">
                 <input 
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="ค้นหาชื่อบิล, สถานที่..."
+                  placeholder="ค้นหาชื่อบิล, สถานที่, เมนู..."
                   className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs outline-none"
                 />
 
+                {/* แท็กฟิลเตอร์ประวัติบิลครบชุด */}
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'all', label: 'ทั้งหมด' },
+                    { id: 'pending', label: 'ค้างชำระ' },
+                    { id: 'settled', label: 'เคลียร์แล้ว' },
+                    { id: 'ride', label: '🚗 ค่ารถ' },
+                    { id: 'food', label: '🛵 ค่าอาหาร' },
+                    { id: 'loan', label: '💸 ยืมเงิน' },
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setStatusFilter(f.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${statusFilter === f.id ? 'bg-accent text-white shadow-sm' : 'bg-subtle text-textSecondary border border-line'}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="space-y-2.5">
-                  {bills.filter(b => (b.name || '').toLowerCase().includes(searchQuery.toLowerCase())).map(bill => {
+                  {filteredBills.map(bill => {
                     const isCollapsed = viewingBillId === bill.id;
                     const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
                       const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
@@ -658,7 +1223,6 @@
                               </div>
                             ))}
 
-                            {/* ปุ่มแก้ไข และ ลบบิล */}
                             {isAdmin && (
                               <div className="flex justify-between items-center pt-2 border-t border-line text-xs font-bold">
                                 <button onClick={() => handleStartEditBill(bill)} className="text-accent active:scale-95 transition">
@@ -678,7 +1242,7 @@
               </div>
             )}
 
-            {/* 3. ANALYTICS (สถิติเต็มรูปแบบ) */}
+            {/* 4. ANALYTICS */}
             {activeTab === 'analytics' && (
               <div className="space-y-4">
                 <div className="bg-surface rounded-2xl p-4 border border-line space-y-3">
@@ -707,7 +1271,7 @@
                     </div>
                   </div>
 
-                  {/* ปฏิทินรายจ่ายของฉัน */}
+                  {/* ปฏิทินรายจ่าย */}
                   <div className="pt-2 border-t border-line space-y-2">
                     <p className="text-xs font-bold text-mint font-mono">📅 ปฏิทินรายจ่ายของฉัน (แตะดูยอด)</p>
                     <div className="grid grid-cols-7 gap-1 text-center font-mono">
@@ -748,7 +1312,7 @@
                     )}
                   </div>
 
-                  {/* ประวัติการปรับยอดและการชำระเงินรวม */}
+                  {/* ประวัติการชำระเงินรวม */}
                   <div className="pt-2 border-t border-line space-y-2">
                     <p className="text-xs font-bold text-textPrimary">📑 ประวัติการชำระเงิน & ปรับยอด ({adjustments.length})</p>
                     <div className="space-y-1.5 max-h-44 overflow-y-auto">
@@ -771,7 +1335,7 @@
                     </div>
                   </div>
 
-                  {/* สรุปยอดส่วนแบ่งรายบุคคล */}
+                  {/* สรุปส่วนแบ่งรายบุคคล */}
                   <div className="pt-2 border-t border-line space-y-1.5">
                     <p className="text-xs font-bold text-textPrimary">👥 ส่วนแบ่งรายบุคคลในเดือนนี้:</p>
                     {monthlyStats.sortedSpenders.map(([pName, pAmt]) => (
@@ -782,19 +1346,27 @@
                     ))}
                   </div>
 
-                  {/* Backup */}
+                  {/* Backup & Restore */}
                   <div className="pt-2 border-t border-line space-y-2">
-                    <p className="text-xs font-bold text-textPrimary">💾 สำรองข้อมูล</p>
+                    <p className="text-xs font-bold text-textPrimary">💾 สำรองและกู้คืนข้อมูล</p>
                     <div className="grid grid-cols-2 gap-2">
                       <button onClick={handleExportJSONBackup} className="bg-subtle border border-line py-2.5 rounded-xl text-xs font-bold active:scale-95 transition">📦 JSON</button>
                       <button onClick={handleExportCSVReport} className="bg-subtle border border-line py-2.5 rounded-xl text-xs font-bold active:scale-95 transition">📊 CSV</button>
                     </div>
+                    {isAdmin && (
+                      <div className="pt-1">
+                        <input type="file" accept=".json" ref={restoreInputRef} onChange={handleRestoreJSON} className="hidden" />
+                        <button onClick={() => restoreInputRef.current && restoreInputRef.current.click()} className="w-full bg-amber/15 text-amber border border-amber/40 py-2 rounded-xl text-xs font-bold">
+                          📥 กู้คืนข้อมูลจากไฟล์ JSON
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 4. FRIENDS */}
+            {/* 5. FRIENDS */}
             {activeTab === 'friends' && (
               <div className="space-y-4">
                 {isAdmin && (
@@ -812,15 +1384,48 @@
                   </form>
                 )}
 
+                <div className="flex justify-between items-center px-1 text-xs">
+                  <span className="text-textMuted font-mono">รายชื่อเพื่อนทั้งหมด</span>
+                  <button onClick={() => setShowArchivedFriends(!showArchivedFriends)} className="text-accent underline">
+                    {showArchivedFriends ? 'ซ่อนที่เก็บ' : 'แสดงที่ซ่อน'}
+                  </button>
+                </div>
+
                 <div className="bg-surface rounded-2xl p-4 border border-line divide-y divide-line">
-                  {friends.map(friend => (
+                  {friends.filter(f => showArchivedFriends ? true : !f.isArchived).map(friend => (
                     <div key={friend.id} className="py-2.5 flex justify-between items-center text-xs">
-                      <div>
-                        <span className="font-bold">{friend.name}</span>
-                        {friend.isSelf && <span className="ml-1 text-[9px] bg-accent/20 text-accent px-1.5 py-0.2 rounded">Me</span>}
-                      </div>
-                      {!friend.isSelf && (
-                        <button onClick={() => setSelectedFriendForHistory(friend.name)} className="bg-subtle px-2.5 py-1 rounded">Statement</button>
+                      {renamingFriendId === friend.id ? (
+                        <div className="flex gap-1.5 flex-1 mr-2">
+                          <input type="text" value={renameValue} onChange={e => setRenameValue(e.target.value)} className="bg-subtle border border-accent rounded px-2 py-1 text-xs flex-1 outline-none" autoFocus />
+                          <button onClick={async () => {
+                            const val = renameValue.trim();
+                            if (!val || val === friend.name) { setRenamingFriendId(null); return; }
+                            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({ name: val });
+                            setRenamingFriendId(null);
+                            showToast(`เปลี่ยนชื่อเป็น ${val}`);
+                          }} className="text-mint font-bold">✓</button>
+                          <button onClick={() => setRenamingFriendId(null)} className="text-textMuted">✕</button>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="font-bold">{friend.name}</span>
+                          {friend.isSelf && <span className="ml-1 text-[9px] bg-accent/20 text-accent px-1.5 py-0.2 rounded">Me</span>}
+                          {friend.isArchived && <span className="ml-1 text-[9px] bg-subtle text-textMuted px-1 rounded">Archived</span>}
+                        </div>
+                      )}
+
+                      {!friend.isSelf && renamingFriendId !== friend.id && (
+                        <div className="flex gap-1.5">
+                          <button onClick={() => setSelectedFriendForHistory(friend.name)} className="bg-subtle px-2 py-1 rounded">Statement</button>
+                          {isAdmin && (
+                            <>
+                              <button onClick={() => { setRenamingFriendId(friend.id); setRenameValue(friend.name); }} className="bg-subtle px-1.5 py-1 rounded text-textSecondary">แก้ชื่อ</button>
+                              <button onClick={async () => {
+                                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({ isArchived: !friend.isArchived });
+                              }} className="text-coral px-1">{friend.isArchived ? "คืน" : "ซ่อน"}</button>
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -859,27 +1464,69 @@
           {/* FLOATING CAPSULE NAVIGATION (iOS / Instagram Style) */}
           <div className="fixed bottom-5 left-0 right-0 z-40 flex justify-center pointer-events-none px-4 pb-safe">
             <nav className="pointer-events-auto bg-surface/85 backdrop-blur-2xl border border-line/80 shadow-[0_12px_40px_rgba(0,0,0,0.6)] rounded-full p-1.5 flex items-center gap-1">
-              {[
-                { id: 'dashboard', icon: '📊' },
-                { id: 'bills', icon: '🧾' },
-                ...(isAdmin ? [{ id: 'new-bill', icon: '+', isFab: true }] : []),
-                { id: 'friends', icon: '👥' },
-                { id: 'analytics', icon: '📈' }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
-                    tab.isFab 
-                      ? 'bg-accent text-white font-black text-xl shadow-lg shadow-accent/40 scale-105' 
-                      : activeTab === tab.id 
-                        ? 'bg-textPrimary text-bg font-bold shadow-md scale-105' 
-                        : 'text-textSecondary hover:text-textPrimary active:scale-95'
-                  }`}
-                >
-                  <span className={tab.isFab ? 'leading-none' : 'text-lg leading-none'}>{tab.icon}</span>
-                </button>
-              ))}
+              
+              {/* Dashboard */}
+              <button 
+                onClick={() => setActiveTab('dashboard')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'dashboard' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
+              >
+                <span className="text-lg leading-none">📊</span>
+              </button>
+
+              {/* Bills History */}
+              <button 
+                onClick={() => setActiveTab('bills')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'bills' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
+              >
+                <span className="text-lg leading-none">🧾</span>
+              </button>
+
+              {/* ปุ่ม + สร้างบิลตรงกลาง */}
+              <button 
+                onClick={() => {
+                  if (!isAdmin) {
+                    setShowAuthModal(true);
+                    showToast("กรุณาเข้าสู่ระบบแอดมินเพื่อสร้างบิล", "error");
+                    return;
+                  }
+                  setEditingBillId(null);
+                  setNewBillName('');
+                  setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
+                  setActiveTab('new-bill');
+                }}
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center active:scale-90 ${
+                  activeTab === 'new-bill'
+                    ? 'bg-accent text-white shadow-lg shadow-accent/40 scale-105'
+                    : 'bg-accent/20 hover:bg-accent text-accent hover:text-white'
+                }`}
+              >
+                <span className="text-xl leading-none font-black">+</span>
+              </button>
+
+              {/* Friends */}
+              <button 
+                onClick={() => setActiveTab('friends')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'friends' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
+              >
+                <span className="text-lg leading-none">👥</span>
+              </button>
+
+              {/* Analytics */}
+              <button 
+                onClick={() => setActiveTab('analytics')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'analytics' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
+              >
+                <span className="text-lg leading-none">📈</span>
+              </button>
+              
             </nav>
           </div>
 
@@ -932,6 +1579,13 @@
                   </button>
                 </form>
               </div>
+            </div>
+          )}
+
+          {/* Sanity Check Warning */}
+          {isMismatch && (
+            <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto bg-amber-950/90 border border-amber-500 text-amber-200 p-2.5 rounded-xl text-[11px] font-bold shadow-2xl flex items-center justify-between z-50 backdrop-blur-md">
+              <span>⚠️ ยอดสินค้า ({itemsSum.toFixed(2)}) ไม่ตรงกับยอดสุทธิ ({calculatedNetTotal.toFixed(2)})</span>
             </div>
           )}
 
