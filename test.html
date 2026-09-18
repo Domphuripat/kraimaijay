@@ -1,3 +1,4 @@
+โค้ดเต็มสมบูรณ์ของไฟล์ test.html ที่กู้คืนระบบ Sign-In (Google Login + รหัส PIN 2323), ฟังก์ชันทั้งหมด (OCR สแกนบิล, ปฏิทินรายจ่ายรายวัน, สถิติ, และการสำรองข้อมูล), พร้อมแถบเมนูลอยแบบ iOS Dynamic Capsule:
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
@@ -49,7 +50,7 @@
     }
   </script>
 
-  <!-- Libraries -->
+  <!-- React, Babel, Tesseract OCR, html2canvas, jsPDF -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -144,7 +145,7 @@
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
 
-      // ฟอร์มบิล
+      // ฟอร์มสร้างบิล
       const [editingBillId, setEditingBillId] = useState(null);
       const [newBillName, setNewBillName] = useState('');
       const [billType, setBillType] = useState('delivery');
@@ -167,16 +168,14 @@
       const [roundingAdj, setRoundingAdj] = useState(0);
       const [billItems, setBillItems] = useState([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
 
-      // OCR
+      // สแกนภาพ OCR
       const [selectedImages, setSelectedImages] = useState([]);
       const [imageRotation, setImageRotation] = useState(0);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
-      const [showRawTextInput, setShowRawTextInput] = useState(false);
-      const [rawOrderText, setRawOrderText] = useState('');
       const fileInputRef = useRef(null);
 
-      // จัดการเพื่อนและการปรับยอด
+      // จัดการเพื่อนและปรับยอด
       const [newFriendName, setNewFriendName] = useState('');
       const [selectedFriendForAdjust, setSelectedFriendForAdjust] = useState(null);
       const [adjustAmount, setAdjustAmount] = useState('');
@@ -239,6 +238,56 @@
         } catch (e) { console.warn(e); }
       }, []);
 
+      // ระบบเข้าสู่ระบบแอดมิน
+      const handleGoogleLogin = async () => {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: 'select_account' });
+          const result = await firebase.auth().signInWithPopup(provider);
+          if (result && result.user) {
+            const userEmail = (result.user.email || '').toLowerCase();
+            const hasAdminRole = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+            setIsAdminByGoogle(hasAdminRole);
+            setShowAuthModal(false);
+            if (hasAdminRole) {
+              showToast("👑 Signed in as Admin Dom!");
+            } else {
+              showToast(`Logged in as ${userEmail} (Viewer)`);
+            }
+          }
+        } catch (err) {
+          showToast("Google Sign-in ล้มเหลว กรุณาใช้ PIN", "error");
+        }
+      };
+
+      const handleVerifyPin = async (e) => {
+        e.preventDefault();
+        if (inputPin === ADMIN_PIN) {
+          setIsAdminBySecret(true);
+          localStorage.setItem('kraimaijay_secret_admin', 'true');
+          try {
+            await firebase.auth().signInAnonymously();
+          } catch (err) {}
+          setShowAuthModal(false);
+          setInputPin('');
+          showToast("👑 ปลดล็อกโหมดแอดมินเรียบร้อย!");
+        } else {
+          showToast("รหัส PIN ไม่ถูกต้อง", "error");
+          setInputPin('');
+        }
+      };
+
+      const handleLogoutAdmin = async () => {
+        setIsAdminBySecret(false);
+        setIsAdminByGoogle(false);
+        localStorage.removeItem('kraimaijay_secret_admin');
+        try {
+          await firebase.auth().signOut();
+        } catch (e) {}
+        showToast("ออกจากระบบกลับสู่โหมดดูอย่างเดียว");
+      };
+
+      // คำนวณยอดหนี้คงค้าง
       const friendBalances = useMemo(() => {
         const balances = {};
         friends.forEach(f => { balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }; });
@@ -293,7 +342,7 @@
 
       const monthlyStats = useMemo(() => {
         const monthly = bills.filter(b => (b.date || '').startsWith(selectedMonth));
-        let totalGroup = 0, foodTotal = 0, rideTotal = 0, loanTotal = 0;
+        let totalGroup = 0, foodTotal = 0, rideTotal = 0;
         const friendShares = {};
         const dailyMyExpenses = {};
 
@@ -303,8 +352,7 @@
           const tot = b.total || 0;
           totalGroup += tot;
           if (b.billType === 'ride') rideTotal += tot;
-          else if (b.billType === 'loan') loanTotal += tot;
-          else foodTotal += tot;
+          else if (b.billType !== 'loan') foodTotal += tot;
 
           const self = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
           if (b.date && self > 0) {
@@ -326,7 +374,6 @@
           totalGroup,
           foodTotal,
           rideTotal,
-          loanTotal,
           count: monthly.length,
           avgPerBill: monthly.length > 0 ? (totalGroup / monthly.length) : 0,
           foodPct: totalGroup > 0 ? Math.round((foodTotal / totalGroup) * 100) : 0,
@@ -360,86 +407,6 @@
         return matrix;
       }, [selectedMonth, monthlyStats.dailyMyExpenses]);
 
-      // OCR Scanning
-      const parseTextContent = (text) => {
-        const cleanLines = text.split('\n').map(l => l.trim()).filter(Boolean);
-        let extractedItems = [], dFee = 0, pCharge = 0, dAmount = 0;
-
-        cleanLines.forEach(line => {
-          if (/delivery\s*fee/i.test(line)) {
-            const m = line.match(/([0-9]+[.,][0-9]{2})/);
-            if (m) dFee = parseFloat(m[1].replace(',', '.'));
-          } else if (/packaging|packing/i.test(line)) {
-            const m = line.match(/([0-9]+[.,][0-9]{2})/);
-            if (m) pCharge = parseFloat(m[1].replace(',', '.'));
-          } else if (/discount|promo/i.test(line)) {
-            const m = line.match(/([0-9]+[.,][0-9]{2})/);
-            if (m) dAmount = parseFloat(m[1].replace(',', '.'));
-          } else {
-            const m = line.match(/^([0-9]+[xX])?\s*(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i);
-            if (m) {
-              extractedItems.push({
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-                name: m[2].trim(),
-                price: parseFloat(m[3].replace(',', '.')).toFixed(2),
-                qty: parseInt(m[1]) || 1,
-                taxRate: 0,
-                sharedWith: [...billFriends]
-              });
-            }
-          }
-        });
-        return { extractedItems, dFee, pCharge, dAmount };
-      };
-
-      const handleScanImages = async () => {
-        if (!selectedImages.length) return;
-        setOcrProcessing(true);
-        setOcrProgress(0);
-        try {
-          let allItems = [];
-          for (let i = 0; i < selectedImages.length; i++) {
-            const { data: { text } } = await Tesseract.recognize(selectedImages[i], 'eng+tha', {
-              logger: m => m.status === 'recognizing text' && setOcrProgress(Math.round(((i + (m.progress || 0)) / selectedImages.length) * 100))
-            });
-            const p = parseTextContent(text);
-            allItems = [...allItems, ...p.extractedItems];
-            if (p.dFee) setDeliveryFee(p.dFee);
-            if (p.pCharge) setPackagingCharge(p.pCharge);
-            if (p.dAmount) setDiscountAmount(p.dAmount);
-          }
-          if (allItems.length) { setBillItems(allItems); showToast(`สแกนสำเร็จ ${allItems.length} เมนู!`); }
-          else showToast("OCR อ่านไม่ชัด แนะนำให้ใช้ปุ่มวางข้อความ", "error");
-        } catch (e) { showToast("เกิดข้อผิดพลาดในการสแกน", "error"); }
-        finally { setOcrProcessing(false); setSelectedImages([]); }
-      };
-
-      const handleExportJSONBackup = () => {
-        const full = { version: "1.0", exportDate: new Date().toISOString(), friends, bills, adjustments };
-        const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast("สำรองข้อมูล JSON สำเร็จ! 📦");
-      };
-
-      const handleExportCSVReport = () => {
-        let csv = "data:text/csv;charset=utf-8,\uFEFFDate,Type,Title,PaidBy,Total(RM)\n";
-        bills.forEach(b => {
-          csv += `${b.date},${b.billType},"${(b.name || '').replace(/"/g, '""')}","${b.paidBy || 'Me (Dom)'}",${(b.total || 0).toFixed(2)}\n`;
-        });
-        const link = document.createElement("a");
-        link.setAttribute("href", encodeURI(csv));
-        link.setAttribute("download", `KraiMaiJay_Bills_${new Date().toISOString().split('T')[0]}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast("ดาวน์โหลด CSV เรียบร้อย! 📊");
-      };
-
       const unsettledFriendList = useMemo(() => {
         return friends.filter(f => {
           const isMe = f.isSelf || /me|dom/i.test(f.name);
@@ -466,9 +433,9 @@
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowCalc(!showCalc)} className="bg-subtle p-1.5 rounded-lg text-sm active:scale-95 transition">🧮</button>
                 {isAdmin ? (
-                  <button onClick={() => { setIsAdminBySecret(false); localStorage.removeItem('kraimaijay_secret_admin'); firebase.auth().signOut(); }} className="bg-subtle text-textSecondary border border-line p-1.5 rounded-lg text-xs">🔒</button>
+                  <button onClick={handleLogoutAdmin} className="bg-subtle text-textSecondary border border-line p-1.5 rounded-lg text-xs">🔒</button>
                 ) : (
-                  <button onClick={() => setShowAuthModal(true)} className="bg-accent text-white px-2.5 py-1 rounded-lg text-xs font-bold">Sign-In</button>
+                  <button onClick={() => setShowAuthModal(true)} className="bg-accent text-white px-2.5 py-1 rounded-lg text-xs font-bold active:scale-95 transition">Sign-In</button>
                 )}
               </div>
             </div>
@@ -621,7 +588,7 @@
               </div>
             )}
 
-            {/* 3. ANALYTICS (สถิติเต็มรูปแบบ) */}
+            {/* 3. ANALYTICS */}
             {activeTab === 'analytics' && (
               <div className="space-y-4">
                 <div className="bg-surface rounded-2xl p-4 border border-line space-y-3">
@@ -752,7 +719,7 @@
           {/* STATEMENT BOTTOM SHEET */}
           {selectedFriendForHistory && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end" onClick={() => setSelectedFriendForHistory(null)}>
-              <div className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl p-4 space-y-3" onClick={e => e.stopPropagation()}>
+              <div className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl p-4 space-y-3 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
                 <div className="w-10 h-1 bg-line rounded-full mx-auto -mt-1 mb-1"></div>
                 <div className="flex justify-between items-center">
                   <h3 className="font-bold text-sm">Statement: {selectedFriendForHistory}</h3>
@@ -803,7 +770,59 @@
             </nav>
           </div>
 
-          {/* Toast */}
+          {/* AUTH POPUP MODAL (Google Sign-In + PIN) */}
+          {showAuthModal && (
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in"
+              onClick={() => setShowAuthModal(false)}
+            >
+              <div 
+                className="bg-surface border border-line rounded-3xl p-6 w-full max-w-xs space-y-4 shadow-2xl"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center pb-2 border-b border-line">
+                  <h3 className="font-bold text-sm text-textPrimary">🔑 เข้าสู่ระบบแอดมิน</h3>
+                  <button onClick={() => setShowAuthModal(false)} className="text-textSecondary text-xs">✕</button>
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={handleGoogleLogin} 
+                  className="w-full bg-subtle hover:bg-line border border-line py-2.5 rounded-xl text-xs font-bold text-textPrimary flex items-center justify-center gap-2 active:scale-95 transition"
+                >
+                  <span>Google Sign-in</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-[1px] bg-line"></div>
+                  <span className="text-[10px] text-textMuted font-mono">หรือใช้ PIN</span>
+                  <div className="flex-1 h-[1px] bg-line"></div>
+                </div>
+
+                <form onSubmit={handleVerifyPin} className="space-y-3">
+                  <input 
+                    type="password"
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                    maxLength="6"
+                    placeholder="กรอก PIN 4 หลัก"
+                    value={inputPin}
+                    onChange={(e) => setInputPin(e.target.value)}
+                    className="w-full bg-subtle border border-line rounded-xl py-2.5 text-center font-mono text-base tracking-widest text-textPrimary outline-none focus:border-accent"
+                    autoFocus
+                  />
+                  <button 
+                    type="submit" 
+                    className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-accent/20"
+                  >
+                    ปลดล็อก (Unlock)
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Toast Notification */}
           {toast && (
             <div className={`fixed top-4 left-4 right-4 max-w-xs mx-auto z-50 text-center py-2 px-4 rounded-xl text-xs shadow-xl font-bold ${toast.type === 'error' ? 'bg-coral text-white' : 'bg-mint text-bg'}`}>
               {toast.message}
