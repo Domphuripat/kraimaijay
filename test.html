@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="cat.jpg">
   <link rel="icon" type="image/jpeg" href="cat.jpg">
 
-  <!-- ตรวจจับอุปกรณ์: หากเปิดบนหน้าจอคอมพิวเตอร์ ให้สลับกลับไปยัง index.html -->
+  <!-- สลับกลับไปยัง index.html อัตโนมัติหากเปิดด้วยหน้าจอคอมพิวเตอร์ -->
   <script>
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -111,7 +111,7 @@
     }
   </style>
 </head>
-<body class="bg-bg text-textPrimary min-h-screen selection:bg-accent selection:text-white relative pb-28">
+<body class="bg-bg text-textPrimary min-h-screen selection:bg-accent selection:text-white relative pb-32">
 
   <div id="root">
     <div class="min-h-screen flex items-center justify-center text-textMuted text-sm font-mono">
@@ -147,10 +147,6 @@
         createTx: "+ New Transaction",
         lock: "Lock 🔒",
         adminSignIn: "🔑 Sign-In",
-        navDashboard: "Home",
-        navHistory: "History",
-        navFriends: "Friends",
-        navAnalytics: "Insights",
         totalOutstanding: "Total Outstanding",
         pendingFriends: "Pending from {n} person(s)",
         myExpenseToday: "My Expense Today",
@@ -160,82 +156,19 @@
         bills: "Bills",
         adj: "Adj",
         adjust: "Adjust",
-        viewHistory: "History ↗",
         searchPlaceholder: "Search merchant, route, food...",
-        filterAll: "All",
-        filterPending: "Pending",
-        filterSettled: "Settled",
-        filterRide: "🚗 Ride",
-        filterFood: "🛵 Food",
-        filterLoan: "💸 Loan",
         noTransactions: "No transactions found",
-        fare: "Fare",
-        subtotal: "Subtotal",
-        netTotal: "Net Total",
-        settledBadge: "✓ Settled",
-        pendingBadge: "{n} Pending",
-        receiptAndSplits: "Receipt Breakdown",
-        exportHint: "Export statement as Image or PDF",
-        viewExport: "Breakdown ↗",
-        individualBreakdown: "Participant Shares:",
-        paid: "✓ Paid",
-        pending: "⌛ Unpaid",
-        payer: "Paid",
+        paidByLabel: "💳 Paid By:",
         editTx: "Edit",
         delete: "Delete",
-        manageFriends: "Manage Group Members",
         friendNamePlaceholder: "Member's name",
         add: "Add",
-        showArchived: "Show Archived",
-        hideArchived: "Hide Archived",
-        archivedBadge: "Archived",
-        adjustmentLogs: "Payment History",
-        noAdjustments: "No payment history yet",
-        note: "Note",
-        calculator: "Calc",
-        copy: "Copy",
-        pinPrompt: "Enter 4-digit Admin PIN",
-        unlock: "Unlock",
         cancel: "Cancel",
         save: "Save",
-        settleFullPrompt: "⚡ Clear All ({amt} RM)",
-        fifoNetOffBtn: "⚡ FIFO Auto Net-off",
         settleConfirmModal: "Mark all {n} unpaid bills for {name} as cleared?",
-        statementTitle: "Cumulative Debt Statement",
-        fromBills: "From Bills",
-        adjusted: "Adjusted",
-        netBalance: "Net Balance",
-        savePng: "📸 PNG",
-        downloadPdf: "📄 PDF",
-        copyText: "📋 Copy",
-        whatsapp: "💬 WA",
-        instagram: "📸 IG",
-        taxModeTitle: "Tax Mode",
-        taxModeInclusive: "✓ Inclusive",
-        taxModeAddon: "+ Add-on",
-        taxModeHint: "Delivery apps normally include taxes in menu prices",
         analyticsTitle: "Monthly Insights",
-        backupTitle: "Data Backup",
         exportJsonBtn: "📦 JSON Backup",
         exportCsvBtn: "📊 CSV Summary",
-        restoreJsonBtn: "📥 Restore JSON",
-        monthSelect: "Month:",
-        totalGroupSpend: "Total Group Spend",
-        totalFoodSpend: "Food & Meals",
-        totalRideSpend: "Rides (Grab/Bolt)",
-        avgBillCost: "Avg / Bill",
-        spendingRatio: "Expense Distribution",
-        topSpenders: "Monthly Member Shares",
-        calendarTitle: "📅 Daily Expense (My Share)",
-        dayNames: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
-        paidByLabel: "💳 Paid By:",
-        remainderMode: "Penny Rounding:",
-        remainderDistribute: "Distribute",
-        remainderPayer: "Payer Absorbs",
-        quickPresets: "Presets:",
-        allDebts: "All ({n})",
-        receivableDebts: "Owe Me ({n})",
-        payableDebts: "I Owe ({n})",
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
@@ -244,10 +177,6 @@
         createTx: "+ สร้างรายการใหม่",
         lock: "ล็อค 🔒",
         adminSignIn: "🔑 เข้าสู่ระบบ",
-        navDashboard: "ภาพรวม",
-        navHistory: "ประวัติบิล",
-        navFriends: "เพื่อน",
-        navAnalytics: "สถิติ",
         totalOutstanding: "ยอดรวมที่ต้องเก็บเพื่อน",
         pendingFriends: "ค้างชำระทั้งหมด {n} คน",
         myExpenseToday: "ยอดของฉันวันนี้",
@@ -257,82 +186,19 @@
         bills: "บิล",
         adj: "ปรับยอด",
         adjust: "ปรับยอด",
-        viewHistory: "ประวัติ ↗",
         searchPlaceholder: "ค้นหาชื่อบิล, สถานที่, เมนู...",
-        filterAll: "ทั้งหมด",
-        filterPending: "ค้างชำระ",
-        filterSettled: "เคลียร์แล้ว",
-        filterRide: "🚗 ค่ารถ",
-        filterFood: "🛵 ค่าอาหาร",
-        filterLoan: "💸 ยืมเงิน",
         noTransactions: "ไม่พบรายการที่ค้นหา",
-        fare: "ค่าโดยสาร",
-        subtotal: "ยอดก่อนลด",
-        netTotal: "ยอดสุทธิ",
-        settledBadge: "✓ ครบแล้ว",
-        pendingBadge: "รอ {n} คน",
-        receiptAndSplits: "แจกแจงบิล",
-        exportHint: "ส่งออกสลิปสรุปยอดเป็นรูปภาพหรือ PDF",
-        viewExport: "ดูสลิป ↗",
-        individualBreakdown: "ยอดแยกรายคน:",
-        paid: "✓ จ่ายแล้ว",
-        pending: "⌛ ยังไม่จ่าย",
-        payer: "คนจ่าย",
+        paidByLabel: "💳 คนจ่ายบิลนี้:",
         editTx: "แก้ไข",
         delete: "ลบ",
-        manageFriends: "จัดการสมาชิกในกลุ่ม",
         friendNamePlaceholder: "ชื่อสมาชิก",
         add: "เพิ่ม",
-        showArchived: "แสดงที่ซ่อน",
-        hideArchived: "ซ่อนที่เก็บ",
-        archivedBadge: "เก็บถาวร",
-        adjustmentLogs: "ประวัติการชำระเงิน",
-        noAdjustments: "ยังไม่มีประวัติการชำระ",
-        note: "หมายเหตุ",
-        calculator: "คิดเลข",
-        copy: "คัดลอก",
-        pinPrompt: "กรอกรหัส PIN แอดมิน",
-        unlock: "ปลดล็อก",
         cancel: "ยกเลิก",
         save: "บันทึก",
-        settleFullPrompt: "⚡ เคลียร์หนี้ทั้งหมด ({amt} RM)",
-        fifoNetOffBtn: "⚡ หักล้างบิลเก่าอัตโนมัติ (FIFO)",
         settleConfirmModal: "ต้องการตั้งสถานะทุกบิลที่ค้าง ({n} บิล) ของ {name} เป็นชำระแล้ว?",
-        statementTitle: "ใบแจ้งยอดหนี้คงค้างสะสม",
-        fromBills: "จากบิล",
-        adjusted: "ยอดปรับ",
-        netBalance: "ยอดสุทธิ",
-        savePng: "📸 PNG",
-        downloadPdf: "📄 PDF",
-        copyText: "📋 คัดลอก",
-        whatsapp: "💬 WA",
-        instagram: "📸 IG",
-        taxModeTitle: "โหมดภาษี",
-        taxModeInclusive: "✓ รวมภาษี",
-        taxModeAddon: "+ เพิ่มภาษี",
-        taxModeHint: "เดลิเวอรีส่วนใหญ่รวมภาษีไว้ในราคาอาหารแล้ว",
         analyticsTitle: "สรุปสถิติค่าใช้จ่าย",
-        backupTitle: "สำรองและกู้คืน",
         exportJsonBtn: "📦 สำรอง JSON",
         exportCsvBtn: "📊 สรุปบิล CSV",
-        restoreJsonBtn: "📥 กู้คืน JSON",
-        monthSelect: "เดือน:",
-        totalGroupSpend: "ยอดใช้จ่ายรวมทั้งกลุ่ม",
-        totalFoodSpend: "ค่าอาหาร",
-        totalRideSpend: "ค่าเดินทาง (Grab/Bolt)",
-        avgBillCost: "เฉลี่ยต่อบิล",
-        spendingRatio: "สัดส่วนค่าใช้จ่าย",
-        topSpenders: "ยอดจ่ายแยกรายคนในเดือนนี้",
-        calendarTitle: "📅 ปฏิทินรายจ่ายของฉัน",
-        dayNames: ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'],
-        paidByLabel: "💳 คนจ่ายบิลนี้:",
-        remainderMode: "การจัดการเศษสตางค์:",
-        remainderDistribute: "กระจายเศษ",
-        remainderPayer: "คนจ่ายรับเศษ",
-        quickPresets: "แท็กด่วน:",
-        allDebts: "ทั้งหมด ({n})",
-        receivableDebts: "เพื่อนค้างเรา ({n})",
-        payableDebts: "เราค้างเพื่อน ({n})",
       }
     };
 
@@ -399,8 +265,6 @@
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
-      const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
-      const restoreInputRef = useRef(null);
 
       // Bill Form States
       const [editingBillId, setEditingBillId] = useState(null);
@@ -435,8 +299,6 @@
       const [adjustType, setAdjustType] = useState('minus');
       const [viewingBillId, setViewingBillId] = useState(null);
 
-      const [activeBreakdown, setActiveBreakdown] = useState(null);
-      const receiptCardRef = useRef(null);
       const [selectedFriendForHistory, setSelectedFriendForHistory] = useState(null);
       const friendSlipRef = useRef(null);
 
@@ -716,133 +578,6 @@
         }
       };
 
-      const handleSmartFifoNetOff = async (friendName, creditAmount, sourceBillId = '', sourceBillName = '') => {
-        if (!isAdmin || isProcessing) return;
-
-        const parsedCredit = parseFloat(creditAmount);
-        if (isNaN(parsedCredit) || parsedCredit <= 0) {
-          showToast("กรุณาระบุจำนวนเงินที่ถูกต้อง", "error");
-          return;
-        }
-
-        const unpaidBills = bills
-          .filter(b => {
-            const isDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
-            const splitsKeys = Object.keys(b.splits || {});
-            const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
-            const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
-            return isDomPayer && isUnpaid;
-          })
-          .sort((a, b) => {
-            const dateA = new Date(a.date || 0).getTime();
-            const dateB = new Date(b.date || 0).getTime();
-            return dateA !== dateB ? dateA - dateB : (a.createdAt || 0) - (b.createdAt || 0);
-          });
-
-        if (unpaidBills.length === 0) {
-          showToast(`${friendName} ไม่มีบิลเก่าที่ค้างชำระอยู่`, "info");
-          return;
-        }
-
-        setIsProcessing(true);
-        try {
-          if (db) {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            const batch = db.batch();
-            
-            let remainingCredit = parsedCredit;
-            let settledBillsCount = 0;
-            const autoSettledBillIds = [];
-
-            for (const bill of unpaidBills) {
-              if (remainingCredit <= 0.009) break;
-
-              const splitsKeys = Object.keys(bill.splits || {});
-              const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
-              const billDebt = bill.splits[matchedKey] || 0;
-              const bDoc = basePath.collection('bills').doc(bill.id);
-
-              if (remainingCredit >= billDebt) {
-                const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
-                batch.update(bDoc, { paidStatus: nextStatus });
-                remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
-                autoSettledBillIds.push(bill.id);
-                settledBillsCount++;
-              } else {
-                const remainingDebtOnThisBill = Math.round((billDebt - remainingCredit) * 100) / 100;
-                const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
-                batch.update(bDoc, { paidStatus: nextStatus });
-
-                const partialAdjRef = basePath.collection('adjustments').doc();
-                batch.set(partialAdjRef, {
-                  friendName,
-                  amount: remainingDebtOnThisBill,
-                  displayAmount: remainingDebtOnThisBill,
-                  isPaymentRecord: false,
-                  isSettled: false,
-                  note: `⚙️ ยอดค้างส่วนต่างบิล: ${bill.name} (ตัดด้วยบิล ${sourceBillName || 'ล่าสุด'} ไป ${remainingCredit.toFixed(2)} RM)`,
-                  date: new Date().toISOString().split('T')[0],
-                  createdAt: Date.now()
-                });
-
-                autoSettledBillIds.push(bill.id);
-                remainingCredit = 0;
-                settledBillsCount++;
-                break;
-              }
-            }
-
-            if (sourceBillId) {
-              const srcBill = bills.find(b => b.id === sourceBillId);
-              if (srcBill) {
-                const nextStatus = { ...(srcBill.paidStatus || {}) };
-                Object.keys(srcBill.splits || {}).forEach(k => {
-                  if (/me|dom|ตัวฉันเอง/i.test(k)) nextStatus[k] = true;
-                });
-                batch.update(basePath.collection('bills').doc(sourceBillId), { paidStatus: nextStatus });
-                autoSettledBillIds.push(sourceBillId);
-              }
-            }
-
-            const logRef = basePath.collection('adjustments').doc();
-            batch.set(logRef, {
-              friendName,
-              amount: 0,
-              displayAmount: parsedCredit,
-              sourceBillId: sourceBillId || null,
-              isPaymentRecord: true,
-              isSettled: true,
-              relatedBillIds: autoSettledBillIds,
-              note: `⚡ Smart Net-off: ตัดล้างหนี้บิลเก่าด้วยบิล ${sourceBillName || 'ล่าสุด'} (${parsedCredit.toFixed(2)} RM)`,
-              date: new Date().toISOString().split('T')[0],
-              createdAt: Date.now() + 1
-            });
-
-            if (remainingCredit > 0.009) {
-              const excessRef = basePath.collection('adjustments').doc();
-              batch.set(excessRef, {
-                friendName,
-                amount: -remainingCredit,
-                displayAmount: remainingCredit,
-                isPaymentRecord: true,
-                isSettled: true,
-                note: `🤝 เครดิตคงเหลือหลังล้างหนี้ครบทุกบิล: ${remainingCredit.toFixed(2)} RM`,
-                date: new Date().toISOString().split('T')[0],
-                createdAt: Date.now() + 2
-              });
-            }
-
-            await batch.commit();
-            showToast(`🎉 หักกลบลบหนี้สำเร็จ! ล้างบิลเก่าไป ${settledBillsCount} รายการ`);
-            setSelectedFriendForAdjust(null);
-          }
-        } catch (err) {
-          showToast("เกิดข้อผิดพลาดในการตัดหนี้: " + err.message, "error");
-        } finally {
-          setIsProcessing(false);
-        }
-      };
-
       const handleDeleteBill = async (billId) => {
         if (!isAdmin || isProcessing) return;
         if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) return;
@@ -929,23 +664,6 @@
         setNewFriendName('');
       };
 
-      const handleToggleArchiveFriend = async (friend) => {
-        if (!isAdmin) return;
-        const actionText = friend.isArchived ? "Restore" : "Archive";
-        if (!confirm(`${actionText} friend "${friend.name}"?`)) return;
-
-        if (db) {
-          try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({
-              isArchived: !friend.isArchived
-            });
-            showToast(`Friend ${actionText.toLowerCase()}d successfully`);
-          } catch (err) {
-            showToast("Action failed", "error");
-          }
-        }
-      };
-
       const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
         const splits = {};
         const friendItemDetails = {};
@@ -998,23 +716,14 @@
         }
 
         const friendBaseShares = {};
-        const friendTaxShares = {};
-        selectedFriends.forEach(f => { friendBaseShares[f] = 0; friendTaxShares[f] = 0; });
+        selectedFriends.forEach(f => { friendBaseShares[f] = 0; });
 
         let subtotal = 0;
-        let taxBreakdown = { 0: 0, 6: 0, 7: 0, 8: 0 };
-        let totalTax = 0;
-
         items.forEach(item => {
           const price = parseFloat(item.price) || 0;
           const qty = parseInt(item.qty) || 1;
           const itemTotal = price * qty;
-          const taxRate = parseFloat(item.taxRate) || 0;
-
           subtotal += itemTotal;
-          let itemTaxAmount = currentTaxMode === 'addon' ? itemTotal * (taxRate / 100) : itemTotal - (itemTotal / (1 + (taxRate / 100)));
-          taxBreakdown[taxRate] = (taxBreakdown[taxRate] || 0) + itemTaxAmount;
-          totalTax += itemTaxAmount;
 
           const sharedList = (item.sharedWith || []).filter(f => selectedFriends.includes(f));
           if (sharedList.length > 0) {
@@ -1060,8 +769,7 @@
           };
         });
 
-        const addedTaxToTotal = currentTaxMode === 'addon' ? totalTax : 0;
-        const finalTotal = Math.round((subtotal + totalSc + addedTaxToTotal + parsedDFee + parsedPackCharge - parsedDiscount + parsedRoundAdj) * 100) / 100;
+        const finalTotal = Math.round((subtotal + totalSc + parsedDFee + parsedPackCharge - parsedDiscount + parsedRoundAdj) * 100) / 100;
         const targetTotalCents = Math.round(finalTotal * 100);
 
         if (activeFriendsCount > 0 && totalDistributedCents !== targetTotalCents) {
@@ -1167,7 +875,7 @@
             }
             showToast("บันทึกบิลเรียบร้อย! 🎉");
           } catch (err) {
-            showToast("Save failed: Permission denied", "error");
+            showToast("Save failed", "error");
           } finally {
             setIsProcessing(false);
           }
@@ -1758,11 +1466,6 @@
                       {!friend.isSelf && (
                         <div className="flex gap-1.5">
                           <button onClick={() => setSelectedFriendForHistory(friend.name)} className="bg-subtle px-2 py-1 rounded">Statement</button>
-                          {isAdmin && (
-                            <button onClick={() => handleToggleArchiveFriend(friend)} className="text-coral px-1">
-                              {friend.isArchived ? "คืนค่า" : "ซ่อน"}
-                            </button>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1785,22 +1488,11 @@
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div className="bg-subtle p-2.5 rounded-xl">
-                      <p className="text-[10px] text-textMuted">ยอดรวมกลุ่ม</p>
-                      <p className="text-base font-black font-mono mt-0.5">{monthlyStats.totalGroup.toFixed(2)} RM</p>
-                    </div>
-                    <div className="bg-subtle p-2.5 rounded-xl">
-                      <p className="text-[10px] text-emerald-400">ค่าอาหาร</p>
-                      <p className="text-base font-black font-mono text-emerald-400 mt-0.5">{monthlyStats.foodTotal.toFixed(2)} RM</p>
-                    </div>
-                  </div>
-
                   <div className="pt-2 border-t border-line space-y-2">
                     <p className="text-xs font-bold">สำรองข้อมูล</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <button onClick={handleExportJSONBackup} className="bg-subtle border border-line py-2 rounded-xl text-xs font-bold">JSON Backup</button>
-                      <button onClick={handleExportCSVReport} className="bg-subtle border border-line py-2 rounded-xl text-xs font-bold">CSV Report</button>
+                      <button onClick={handleExportJSONBackup} className="bg-subtle border border-line py-2 rounded-xl text-xs font-bold">JSON</button>
+                      <button onClick={handleExportCSVReport} className="bg-subtle border border-line py-2 rounded-xl text-xs font-bold">CSV</button>
                     </div>
                   </div>
                 </div>
@@ -1816,7 +1508,7 @@
               onClick={() => setSelectedFriendForHistory(null)}
             >
               <div 
-                className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+                className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom"
                 onClick={e => e.stopPropagation()}
               >
                 <div className="w-10 h-1 bg-line rounded-full mx-auto mt-3 mb-1"></div>
@@ -1846,8 +1538,7 @@
                   </div>
                 </div>
 
-                <div className="p-3 border-t border-line bg-surface grid grid-cols-3 gap-2">
-                  <button onClick={() => copyStatementTextToClipboard(selectedFriendForHistory)} className="bg-mint text-bg font-bold py-2 rounded-xl text-xs">คัดลอก</button>
+                <div className="p-3 border-t border-line bg-surface grid grid-cols-2 gap-2">
                   <button onClick={() => handleExportElement(friendSlipRef, `Statement_${selectedFriendForHistory}`)} className="bg-accent text-white font-bold py-2 rounded-xl text-xs">รูป PNG</button>
                   <button onClick={() => handleExportPDF(friendSlipRef, `Statement_${selectedFriendForHistory}`)} className="bg-coral text-white font-bold py-2 rounded-xl text-xs">PDF</button>
                 </div>
@@ -1903,7 +1594,7 @@
 
                 <input 
                   type="text"
-                  placeholder="หมายเหตุ (เช่น โอนเงินคืนแล้ว)"
+                  placeholder="หมายเหตุ"
                   value={adjustNote}
                   onChange={(e) => setAdjustNote(e.target.value)}
                   className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-xs outline-none"
@@ -1928,54 +1619,79 @@
             </div>
           )}
 
-          {/* MOBILE BOTTOM NAVIGATION BAR */}
-          <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface/95 backdrop-blur-xl border-t border-line px-4 py-2 pb-safe flex justify-around items-center max-w-md mx-auto">
-            <button 
-              onClick={() => setActiveTab('dashboard')} 
-              className={`flex flex-col items-center gap-0.5 ${activeTab === 'dashboard' ? 'text-accent font-bold' : 'text-textMuted'}`}
-            >
-              <span className="text-base">📊</span>
-              <span className="text-[10px]">{t('navDashboard')}</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('bills')} 
-              className={`flex flex-col items-center gap-0.5 ${activeTab === 'bills' ? 'text-accent font-bold' : 'text-textMuted'}`}
-            >
-              <span className="text-base">🧾</span>
-              <span className="text-[10px]">{t('navHistory')}</span>
-            </button>
-
-            {isAdmin && (
+          {/* FLOATING CAPSULE NAVIGATION BAR (iOS / Instagram Style) */}
+          <div className="fixed bottom-5 left-0 right-0 z-40 flex justify-center pointer-events-none px-4 pb-safe">
+            <nav className="pointer-events-auto bg-surface/85 backdrop-blur-2xl border border-line/80 shadow-[0_12px_40px_rgba(0,0,0,0.6)] rounded-full p-1.5 flex items-center gap-1">
+              
+              {/* Dashboard */}
               <button 
-                onClick={() => {
-                  setEditingBillId(null);
-                  setNewBillName('');
-                  setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
-                  setActiveTab('new-bill');
-                }}
-                className="bg-accent hover:bg-accent-hover active:scale-95 text-white w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow-lg shadow-accent/40 -mt-6 border-4 border-bg transition"
+                onClick={() => setActiveTab('dashboard')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'dashboard' 
+                    ? 'bg-textPrimary text-bg shadow-md scale-105' 
+                    : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
               >
-                +
+                <span className="text-lg leading-none">📊</span>
               </button>
-            )}
 
-            <button 
-              onClick={() => setActiveTab('friends')} 
-              className={`flex flex-col items-center gap-0.5 ${activeTab === 'friends' ? 'text-accent font-bold' : 'text-textMuted'}`}
-            >
-              <span className="text-base">👥</span>
-              <span className="text-[10px]">{t('navFriends')}</span>
-            </button>
+              {/* Bills History */}
+              <button 
+                onClick={() => setActiveTab('bills')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'bills' 
+                    ? 'bg-textPrimary text-bg shadow-md scale-105' 
+                    : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
+              >
+                <span className="text-lg leading-none">🧾</span>
+              </button>
 
-            <button 
-              onClick={() => setActiveTab('analytics')} 
-              className={`flex flex-col items-center gap-0.5 ${activeTab === 'analytics' ? 'text-accent font-bold' : 'text-textMuted'}`}
-            >
-              <span className="text-base">📈</span>
-              <span className="text-[10px]">{t('navAnalytics')}</span>
-            </button>
-          </nav>
+              {/* Central Primary Action Button */}
+              {isAdmin && (
+                <button 
+                  onClick={() => {
+                    setEditingBillId(null);
+                    setNewBillName('');
+                    setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
+                    setActiveTab('new-bill');
+                  }}
+                  className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center active:scale-90 ${
+                    activeTab === 'new-bill'
+                      ? 'bg-accent text-white shadow-lg shadow-accent/40 scale-105'
+                      : 'bg-accent/20 hover:bg-accent text-accent hover:text-white'
+                  }`}
+                >
+                  <span className="text-xl leading-none font-black">+</span>
+                </button>
+              )}
+
+              {/* Friends */}
+              <button 
+                onClick={() => setActiveTab('friends')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'friends' 
+                    ? 'bg-textPrimary text-bg shadow-md scale-105' 
+                    : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
+              >
+                <span className="text-lg leading-none">👥</span>
+              </button>
+
+              {/* Analytics */}
+              <button 
+                onClick={() => setActiveTab('analytics')} 
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                  activeTab === 'analytics' 
+                    ? 'bg-textPrimary text-bg shadow-md scale-105' 
+                    : 'text-textSecondary hover:text-textPrimary active:scale-95'
+                }`}
+              >
+                <span className="text-lg leading-none">📈</span>
+              </button>
+              
+            </nav>
+          </div>
 
           {/* PIN AUTH MODAL */}
           {showAuthModal && (
@@ -2013,7 +1729,6 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
 
-    // Service Worker Registration for PWA Standalone Support
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').catch(() => {});
