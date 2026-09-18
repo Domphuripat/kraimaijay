@@ -471,6 +471,30 @@
         setTimeout(() => setToast(null), 3500);
       };
 
+      // Edit Transaction Helper
+      const handleStartEditBill = (bill) => {
+        setEditingBillId(bill.id);
+        setNewBillName(bill.name || '');
+        setBillType(bill.billType || 'delivery');
+        setPaidBy(bill.paidBy || 'Me (Dom)');
+        setRemainderMode(bill.remainderMode || 'distribute');
+        setTaxMode(bill.taxMode || 'inclusive');
+        setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
+        setDeliveryFee(bill.deliveryFee || 0);
+        setPackagingCharge(bill.packagingCharge || 0);
+        setDiscountAmount(bill.discountAmount || 0);
+        setServiceChargeRate(bill.serviceChargeRate || 0);
+        setRoundingAdj(bill.roundingAdjustment || 0);
+        setRideFare(bill.rideFare || '');
+        setTollFee(bill.tollFee || '');
+        setRideRoute(bill.rideRoute || '');
+        setLoanAmount(bill.loanAmount || '');
+        setLoanBorrower(bill.loanBorrower || '');
+        setBillFriends(Object.keys(bill.splits || {}));
+        setBillItems(bill.items && bill.items.length > 0 ? bill.items : [{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
+        setActiveTab('new-bill');
+      };
+
       // ตรวจหาบิลที่ถูกตัดด้วย FIFO เพื่อทำ Traceability Tag
       const fifoSettlementMap = useMemo(() => {
         const map = {};
@@ -2146,6 +2170,17 @@
       const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
         const fObj = friends.find(f => f.name === name);
         return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
+      }).length;
+
+      // ตัวแปรคำนวณจำนวนลูกหนี้/เจ้าหนี้สำหรับปุ่มฟิลเตอร์
+      const receivableCount = Object.keys(friendBalances).filter(name => {
+        const fObj = friends.find(f => f.name === name);
+        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
+      }).length;
+
+      const payableCount = Object.keys(friendBalances).filter(name => {
+        const fObj = friends.find(f => f.name === name);
+        return !fObj?.isSelf && friendBalances[name].totalOwed < 0;
       }).length;
 
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
