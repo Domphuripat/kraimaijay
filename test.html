@@ -138,6 +138,8 @@
       const [adjustments, setAdjustments] = useState([]);
       const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
 
+      // ประวัติบิล & ประวัติการปรับยอด
+      const [historyViewMode, setHistoryViewMode] = useState('bills'); // 'bills' | 'adjustments'
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
@@ -167,7 +169,7 @@
       const [roundingAdj, setRoundingAdj] = useState(0);
       const [billItems, setBillItems] = useState([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
 
-      // OCR สแกนบิล
+      // OCR
       const [selectedImages, setSelectedImages] = useState([]);
       const [imageRotation, setImageRotation] = useState(0);
       const [ocrProcessing, setOcrProcessing] = useState(false);
@@ -176,7 +178,7 @@
       const [rawOrderText, setRawOrderText] = useState('');
       const fileInputRef = useRef(null);
 
-      // สมาชิก & ปรับยอด
+      // จัดการเพื่อน & ปรับยอด
       const [newFriendName, setNewFriendName] = useState('');
       const [showArchivedFriends, setShowArchivedFriends] = useState(false);
       const [renamingFriendId, setRenamingFriendId] = useState(null);
@@ -421,6 +423,16 @@
         return matrix;
       }, [selectedMonth, monthlyStats.dailyMyExpenses]);
 
+      // ดึงประวัติเฉพาะคน (ทั้งบิลและปรับยอด)
+      const getFriendHistory = (friendName) => {
+        const fBills = bills.filter(b => {
+          const keys = Object.keys(b.splits || {});
+          return keys.some(k => k.toLowerCase() === friendName.toLowerCase()) || (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
+        });
+        const fAdjs = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
+        return { bills: fBills, adjustments: fAdjs };
+      };
+
       // ฟังก์ชันบันทึกปรับยอดหนี้ (Adjust)
       const handleSaveAdjustment = async (e) => {
         e.preventDefault();
@@ -516,6 +528,232 @@
         } finally {
           setIsProcessing(false);
         }
+      };
+
+      const handleStartEditBill = (bill) => {
+        setEditingBillId(bill.id);
+        setNewBillName(bill.name || '');
+        setBillType(bill.billType || 'delivery');
+        setPaidBy(bill.paidBy || 'Me (Dom)');
+        setRemainderMode(bill.remainderMode || 'distribute');
+        setTaxMode(bill.taxMode || 'inclusive');
+        setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
+        setDeliveryFee(bill.deliveryFee || 0);
+        setPackagingCharge(bill.packagingCharge || 0);
+        setDiscountAmount(bill.discountAmount || 0);
+        setServiceChargeRate(bill.serviceChargeRate || 0);
+        setRoundingAdj(bill.roundingAdjustment || 0);
+        setRideFare(bill.rideFare || '');
+        setTollFee(bill.tollFee || '');
+        setRideRoute(bill.rideRoute || '');
+        setLoanAmount(bill.loanAmount || '');
+        setLoanBorrower(bill.loanBorrower || '');
+        setBillFriends(Object.keys(bill.splits || {}));
+        setBillItems(bill.items && bill.items.length > 0 ? bill.items : [{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
+        setActiveTab('new-bill');
+      };
+
+      const handleDeleteBill = async (billId) => {
+        if (!isAdmin || isProcessing) return;
+        if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) return;
+
+        setIsProcessing(true);
+        try {
+          if (db) {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('bills').doc(billId).delete();
+            setViewingBillId(null);
+            showToast("ลบบิลเรียบร้อย! 🔄");
+          }
+        } catch (err) {
+          showToast("ลบไม่สำเร็จ: " + err.message, "error");
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      const handleDeleteAdjustment = async (adj) => {
+        if (!isAdmin || isProcessing) return;
+        if (!confirm(`ต้องการลบรายการ "${adj.note}" ใช่หรือไม่?`)) return;
+
+        setIsProcessing(true);
+        try {
+          if (db) {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id).delete();
+            showToast("ลบรายการปรับยอดเรียบร้อย! 🔄");
+          }
+        } catch (err) {
+          showToast("ลบไม่สำเร็จ", "error");
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      const calculateBillSplits = () => {
+        const splits = {};
+        const activeFriendsCount = billFriends.length;
+
+        if (billType === 'loan') {
+          const parsed = parseFloat(loanAmount) || 0;
+          if (loanBorrower) splits[loanBorrower] = parsed;
+          return { subtotal: parsed, total: parsed, splits };
+        }
+
+        if (billType === 'ride') {
+          const rFare = parseFloat(rideFare) || 0;
+          const tFee = parseFloat(tollFee) || 0;
+          const disc = parseFloat(discountAmount) || 0;
+          const round = parseFloat(roundingAdj) || 0;
+          const net = Math.max(0, rFare + tFee - disc + round);
+          const totalCents = Math.round(net * 100);
+          const baseCents = activeFriendsCount > 0 ? Math.floor(totalCents / activeFriendsCount) : 0;
+          let remCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
+
+          billFriends.forEach(f => {
+            let share = baseCents;
+            if (remCents > 0) { share += 1; remCents--; }
+            splits[f] = share / 100;
+          });
+
+          return { subtotal: rFare, total: Math.round(net * 100) / 100, splits };
+        }
+
+        const friendBaseShares = {};
+        billFriends.forEach(f => { friendBaseShares[f] = 0; });
+        let sub = 0;
+
+        billItems.forEach(item => {
+          const pr = parseFloat(item.price) || 0;
+          const qt = parseInt(item.qty) || 1;
+          const itemTot = pr * qt;
+          sub += itemTot;
+
+          const sharedList = (item.sharedWith || []).filter(f => billFriends.includes(f));
+          if (sharedList.length > 0) {
+            const baseC = Math.floor(Math.round(itemTot * 100) / sharedList.length);
+            let remC = Math.round(itemTot * 100) % sharedList.length;
+            sharedList.forEach(f => {
+              const addC = baseC + (remC > 0 ? 1 : 0);
+              if (remC > 0) remC--;
+              friendBaseShares[f] = (friendBaseShares[f] || 0) + (addC / 100);
+            });
+          }
+        });
+
+        const scAmt = sub * (serviceChargeRate / 100);
+        const pDelivery = activeFriendsCount > 0 ? ((parseFloat(deliveryFee) || 0) / activeFriendsCount) : 0;
+        const pPackaging = activeFriendsCount > 0 ? ((parseFloat(packagingCharge) || 0) / activeFriendsCount) : 0;
+        const discAmt = parseFloat(discountAmount) || 0;
+        const roundAmt = parseFloat(roundingAdj) || 0;
+
+        billFriends.forEach(f => {
+          const base = friendBaseShares[f] || 0;
+          const sc = base * (serviceChargeRate / 100);
+          const uDisc = sub > 0 ? (base / sub) * discAmt : (discAmt / (activeFriendsCount || 1));
+          splits[f] = Math.round(Math.max(0, base + sc + pDelivery + pPackaging - uDisc) * 100) / 100;
+        });
+
+        const finalTot = Math.round((sub + scAmt + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - discAmt + roundAmt) * 100) / 100;
+        return { subtotal: sub, total: finalTot, splits };
+      };
+
+      const handleSaveBill = async (e) => {
+        e.preventDefault();
+        if (!isAdmin || isProcessing) return;
+        if (!newBillName.trim()) { showToast("กรุณาระบุชื่อบิล", "error"); return; }
+
+        const calculated = calculateBillSplits();
+        let initialPaidStatus = {};
+        if (editingBillId) {
+          const oldBill = bills.find(b => b.id === editingBillId);
+          initialPaidStatus = oldBill?.paidStatus || {};
+        }
+
+        const participants = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
+        participants.forEach(f => {
+          if (initialPaidStatus[f] === undefined) {
+            initialPaidStatus[f] = f.toLowerCase() === paidBy.toLowerCase();
+          }
+        });
+
+        const billPayload = {
+          name: newBillName,
+          billType,
+          paidBy,
+          remainderMode,
+          taxMode,
+          date: newBillDate,
+          rideFare: parseFloat(rideFare) || 0,
+          tollFee: parseFloat(tollFee) || 0,
+          rideRoute,
+          loanAmount: parseFloat(loanAmount) || 0,
+          loanBorrower,
+          subtotal: calculated.subtotal,
+          deliveryFee: parseFloat(deliveryFee) || 0,
+          packagingCharge: parseFloat(packagingCharge) || 0,
+          discountAmount: parseFloat(discountAmount) || 0,
+          total: calculated.total,
+          items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            price: parseFloat(item.price) || 0,
+            qty: parseInt(item.qty) || 1,
+            taxRate: parseFloat(item.taxRate || 0),
+            sharedWith: item.sharedWith || []
+          })),
+          splits: calculated.splits,
+          paidStatus: initialPaidStatus,
+          updatedAt: Date.now()
+        };
+
+        setIsProcessing(true);
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            if (editingBillId) {
+              await basePath.collection('bills').doc(editingBillId).update(billPayload);
+            } else {
+              billPayload.createdAt = Date.now();
+              await basePath.collection('bills').add(billPayload);
+            }
+            showToast("บันทึกบิลสำเร็จ! 🎉");
+          } catch (err) {
+            showToast("บันทึกไม่สำเร็จ", "error");
+          } finally {
+            setIsProcessing(false);
+          }
+        }
+        setEditingBillId(null);
+        setViewingBillId(null);
+        setActiveTab('bills');
+      };
+
+      const copyStatementTextToClipboard = (friendName) => {
+        const hist = getFriendHistory(friendName);
+        const bal = friendBalances[friendName] || { totalOwed: 0, billsOwed: 0, adjustedOwed: 0 };
+        const unpaidBills = hist.bills.filter(b => {
+          const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+          return !b.paidStatus?.[matchedKey];
+        });
+
+        let text = `🧾 *สรุปยอดหนี้คงค้าง: ${friendName}*\n`;
+        text += `📅 ข้อมูล ณ วันที่: ${new Date().toLocaleDateString('th-TH')}\n`;
+        text += `---------------------------------\n`;
+        if (unpaidBills.length > 0) {
+          text += `*รายการบิลที่ค้าง (${unpaidBills.length} บิล):*\n`;
+          unpaidBills.forEach(b => {
+            const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+            text += `• ${b.name} (${b.date}): ${(b.splits[matchedKey] || 0).toFixed(2)} RM\n`;
+          });
+          text += `---------------------------------\n`;
+        }
+        if (bal.adjustedOwed !== 0) {
+          text += `⚙️ ยอดปรับลด/จ่ายบางส่วน: ${bal.adjustedOwed.toFixed(2)} RM\n`;
+        }
+        text += `💸 *ยอดสุทธิที่ต้องเคลียร์: ${bal.totalOwed.toFixed(2)} RM*\nขอบคุณครับ 🙏`;
+
+        navigator.clipboard.writeText(text).then(() => showToast("📋 คัดลอกข้อความสรุปแล้ว!"))
+          .catch(() => showToast("ไม่สามารถคัดลอกข้อความได้", "error"));
       };
 
       const unsettledFriendList = useMemo(() => {
@@ -623,7 +861,7 @@
                                 {Math.abs(balance.totalOwed).toFixed(2)} RM
                               </span>
                               
-                              {/* ปุ่ม ปรับ ยอดหนี้ */}
+                              {/* ปุ่มปรับยอด */}
                               <button
                                 onClick={() => {
                                   if (!isAdmin) {
@@ -649,88 +887,356 @@
               </div>
             )}
 
-            {/* 2. HISTORY */}
+            {/* 2. CREATE / EDIT BILL */}
+            {activeTab === 'new-bill' && (
+              isAdmin ? (
+                <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-4 border border-line space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-line">
+                    <h2 className="font-bold text-sm text-textPrimary">{editingBillId ? '✏️ แก้ไขบิล' : '➕ สร้างรายการใหม่'}</h2>
+                    <button type="button" onClick={() => setActiveTab('bills')} className="text-xs text-textMuted">✕ ยกเลิก</button>
+                  </div>
+
+                  {/* ประเภทบิล */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {['delivery', 'ride', 'dinein', 'loan'].map(type => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          setBillType(type);
+                          if (type === 'delivery') { setTaxMode('inclusive'); setServiceChargeRate(0); }
+                          if (type === 'dinein') { setTaxMode('addon'); setDeliveryFee(0); setPackagingCharge(0); }
+                        }}
+                        className={`py-2 rounded-xl text-xs font-bold border capitalize transition ${billType === type ? 'bg-accent text-white border-accent' : 'bg-subtle border-line text-textSecondary'}`}
+                      >
+                        {type === 'delivery' ? '🛵 Food' : type === 'ride' ? '🚗 Ride' : type === 'dinein' ? '🍽️ Dine' : '💸 Loan'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* คนจ่ายบิล */}
+                  {billType !== 'loan' && (
+                    <div className="bg-subtle p-2.5 rounded-xl border border-line space-y-1.5">
+                      <label className="block text-[11px] font-bold text-textPrimary">💳 ใครเป็นคนจ่ายบิลนี้:</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {friends.filter(f => !f.isArchived).map(f => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setPaidBy(f.name)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${paidBy.toLowerCase() === f.name.toLowerCase() ? 'bg-mint text-bg' : 'bg-surface text-textSecondary border border-line'}`}
+                          >
+                            {f.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OCR Scanner */}
+                  {billType !== 'loan' && (
+                    <div className="bg-subtle p-3 rounded-xl border border-line space-y-2">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span>📸 สแกนบิล OCR</span>
+                        <div className="flex gap-1.5">
+                          <button type="button" onClick={() => setImageRotation(prev => (prev + 90) % 360)} className="bg-surface border border-line px-2 py-1 rounded text-xs">
+                            🔄 {imageRotation}°
+                          </button>
+                          <input type="file" accept="image/*" multiple ref={fileInputRef} onChange={e => setSelectedImages(Array.from(e.target.files))} className="hidden" />
+                          <button type="button" onClick={() => fileInputRef.current.click()} className="bg-accent text-white px-2.5 py-1 rounded text-xs font-bold">
+                            + เลือกรูป ({selectedImages.length})
+                          </button>
+                          <button type="button" onClick={() => setShowRawTextInput(!showRawTextInput)} className="bg-surface border border-line px-2 py-1 rounded text-xs">
+                            📝 วางข้อความ
+                          </button>
+                        </div>
+                      </div>
+
+                      {showRawTextInput && (
+                        <div className="space-y-1.5 pt-1">
+                          <textarea value={rawOrderText} onChange={e => setRawOrderText(e.target.value)} placeholder="วางข้อความสรุปรายการอาหารจาก Grab / Email ที่นี่..." className="w-full h-20 bg-surface border border-line rounded-lg p-2 text-xs font-mono outline-none" />
+                          <button type="button" onClick={() => {
+                            const p = parseTextContent(rawOrderText);
+                            if (p.extractedItems.length) setBillItems(p.extractedItems);
+                            if (p.dFee) setDeliveryFee(p.dFee);
+                            if (p.dAmount) setDiscountAmount(p.dAmount);
+                            showToast(`แกะได้ ${p.extractedItems.length} เมนู!`);
+                            setShowRawTextInput(false);
+                          }} className="w-full bg-mint text-bg font-bold py-1.5 rounded-lg text-xs">
+                            แกะรายการจากข้อความ
+                          </button>
+                        </div>
+                      )}
+
+                      {selectedImages.length > 0 && (
+                        <button type="button" onClick={async () => {
+                          setOcrProcessing(true);
+                          setOcrProgress(0);
+                          try {
+                            let all = [];
+                            for (let i = 0; i < selectedImages.length; i++) {
+                              const { data: { text } } = await Tesseract.recognize(selectedImages[i], 'eng+tha');
+                              const p = parseTextContent(text);
+                              all = [...all, ...p.extractedItems];
+                              if (p.dFee) setDeliveryFee(p.dFee);
+                              if (p.dAmount) setDiscountAmount(p.dAmount);
+                            }
+                            if (all.length) { setBillItems(all); showToast(`สแกนสำเร็จ ${all.length} เมนู!`); }
+                          } catch (err) { showToast("สแกนไม่สำเร็จ", "error"); }
+                          finally { setOcrProcessing(false); setSelectedImages([]); }
+                        }} disabled={ocrProcessing} className="w-full bg-mint text-bg font-bold py-1.5 rounded-lg text-xs">
+                          {ocrProcessing ? `กำลังอ่าน OCR...` : 'เริ่มประมวลผล OCR'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ข้อมูลชื่อบิล & วันที่ */}
+                  <div className="space-y-2">
+                    <input 
+                      type="text" 
+                      placeholder="ชื่อรายการ / ร้านอาหาร / จุดหมาย" 
+                      value={newBillName} 
+                      onChange={e => setNewBillName(e.target.value)} 
+                      className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent"
+                      required 
+                    />
+                    <input 
+                      type="date" 
+                      value={newBillDate} 
+                      onChange={e => setNewBillDate(e.target.value)} 
+                      className="w-full bg-subtle border border-line rounded-xl px-3 py-1.5 text-xs text-textPrimary"
+                    />
+                  </div>
+
+                  {/* รายละเอียดตามประเภทบิล */}
+                  {billType === 'loan' ? (
+                    <div className="bg-subtle p-3 rounded-xl border border-coral/30 space-y-2">
+                      <select value={loanBorrower} onChange={e => setLoanBorrower(e.target.value)} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none" required>
+                        <option value="">-- เลือกผู้ยืม --</option>
+                        {friends.filter(f => !f.isSelf && !f.isArchived).map(f => (
+                          <option key={f.id} value={f.name}>{f.name}</option>
+                        ))}
+                      </select>
+                      <input type="text" inputMode="decimal" placeholder="ยอดเงินที่ยืม (RM)" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} onBlur={e => setLoanAmount(evaluateMathExpression(e.target.value))} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm font-mono font-bold" required />
+                    </div>
+                  ) : billType === 'ride' ? (
+                    <div className="bg-subtle p-3 rounded-xl border border-bolt/30 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="text" inputMode="decimal" placeholder="ค่าโดยสาร (RM)" value={rideFare} onChange={e => setRideFare(e.target.value)} onBlur={e => setRideFare(evaluateMathExpression(e.target.value))} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm font-mono" required />
+                        <input type="text" inputMode="decimal" placeholder="ทางด่วน (RM)" value={tollFee} onChange={e => setTollFee(e.target.value)} onBlur={e => setTollFee(evaluateMathExpression(e.target.value))} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm font-mono" />
+                      </div>
+                      <input type="text" placeholder="เส้นทาง (เช่น Pavilion -> KLCC)" value={rideRoute} onChange={e => setRideRoute(e.target.value)} className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs" />
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <input type="text" inputMode="decimal" placeholder="ค่าส่ง" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)} className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs font-mono" />
+                        <input type="text" inputMode="decimal" placeholder="กล่อง/ห่อ" value={packagingCharge} onChange={e => setPackagingCharge(e.target.value)} className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs font-mono" />
+                        <input type="text" inputMode="decimal" placeholder="ส่วนลด (-)" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs font-mono" />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-bold text-textSecondary">รายการอาหาร ({billItems.length})</label>
+                          <button type="button" onClick={() => setBillItems([...billItems, { id: Date.now().toString(), name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }])} className="text-xs text-accent font-bold">
+                            + เพิ่มเมนู
+                          </button>
+                        </div>
+                        {billItems.map(item => (
+                          <div key={item.id} className="bg-subtle p-2.5 rounded-xl border border-line space-y-1.5">
+                            <div className="flex gap-2">
+                              <input type="text" placeholder="ชื่อเมนู" value={item.name} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, name: e.target.value } : b))} className="flex-1 bg-surface border border-line rounded-lg px-2.5 py-1.5 text-xs" required />
+                              <input type="text" inputMode="decimal" placeholder="ราคา" value={item.price} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, price: e.target.value } : b))} className="w-20 bg-surface border border-line rounded-lg px-2.5 py-1.5 text-xs font-mono" required />
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {billFriends.map(fName => {
+                                const isShared = (item.sharedWith || []).includes(fName);
+                                return (
+                                  <button key={fName} type="button" onClick={() => setBillItems(billItems.map(b => b.id === item.id ? { ...b, sharedWith: isShared ? b.sharedWith.filter(n => n !== fName) : [...b.sharedWith, fName] } : b))} className={`px-2 py-0.5 rounded text-[10px] ${isShared ? 'bg-mint text-bg font-bold' : 'bg-surface text-textSecondary'}`}>
+                                    {fName}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* คนร่วมหาร */}
+                  {billType !== 'loan' && (
+                    <div>
+                      <label className="block text-xs font-bold text-textSecondary mb-1.5">คนร่วมหาร ({billFriends.length} คน):</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {friends.filter(f => !f.isArchived).map(f => {
+                          const isSel = billFriends.includes(f.name);
+                          return (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => setBillFriends(isSel ? billFriends.filter(n => n !== f.name) : [...billFriends, f.name])}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${isSel ? 'bg-accent text-white' : 'bg-subtle text-textSecondary border border-line'}`}
+                            >
+                              {isSel ? '✓ ' : '+ '} {f.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={isProcessing} className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-3 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-accent/25 disabled:opacity-50">
+                    {isProcessing ? 'กำลังบันทึกข้อมูล...' : '💾 บันทึกรายการบิล'}
+                  </button>
+                </form>
+              ) : (
+                <div className="bg-surface rounded-2xl p-6 border border-line text-center space-y-3">
+                  <p className="text-coral text-sm font-bold">🔒 โหมดดูอย่างเดียว (Viewer)</p>
+                  <button onClick={() => setShowAuthModal(true)} className="bg-accent text-white font-bold px-4 py-2 rounded-xl text-xs">
+                    เข้าสู่ระบบแอดมินเพื่อสร้างบิล
+                  </button>
+                </div>
+              )
+            )}
+
+            {/* 3. HISTORY (สลับดูบิล & ประวัติปรับยอดรวมได้) */}
             {activeTab === 'bills' && (
               <div className="space-y-3">
-                <input 
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="ค้นหาชื่อบิล, สถานที่..."
-                  className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs outline-none"
-                />
+                {/* แถบสลับดู ประวัติบิล หรือ ประวัติปรับยอด */}
+                <div className="grid grid-cols-2 gap-1 bg-surface p-1 rounded-xl border border-line text-xs font-bold text-center">
+                  <button
+                    onClick={() => setHistoryViewMode('bills')}
+                    className={`py-2 rounded-lg transition ${historyViewMode === 'bills' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary'}`}
+                  >
+                    🧾 ประวัติบิล ({bills.length})
+                  </button>
+                  <button
+                    onClick={() => setHistoryViewMode('adjustments')}
+                    className={`py-2 rounded-lg transition ${historyViewMode === 'adjustments' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary'}`}
+                  >
+                    📑 ประวัติปรับยอด ({adjustments.length})
+                  </button>
+                </div>
 
-                <div className="space-y-2.5">
-                  {bills.filter(b => (b.name || '').toLowerCase().includes(searchQuery.toLowerCase())).map(bill => {
-                    const isCollapsed = viewingBillId === bill.id;
-                    const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
-                      const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
-                      return !fObj?.isSelf && !bill.paidStatus?.[n];
-                    }).length;
+                {historyViewMode === 'bills' ? (
+                  <>
+                    <input 
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="ค้นหาชื่อบิล, สถานที่..."
+                      className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs outline-none"
+                    />
 
-                    return (
-                      <div key={bill.id} onClick={() => setViewingBillId(isCollapsed ? null : bill.id)} className="bg-surface border border-line p-3.5 rounded-xl space-y-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-[10px] text-textMuted font-mono">{bill.date}</span>
-                            <h3 className="font-bold text-sm text-textPrimary">{bill.name}</h3>
-                          </div>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${unpaidCount === 0 ? 'bg-mint/15 text-mint' : 'bg-coral/15 text-coral'}`}>
-                            {unpaidCount === 0 ? '✓ ครบแล้ว' : `รอ ${unpaidCount} คน`}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs font-mono">
-                          <span className="text-textMuted">ยอดสุทธิ:</span>
-                          <span className="font-bold text-mint">{bill.total?.toFixed(2)} RM</span>
-                        </div>
-                        {isCollapsed && (
-                          <div className="pt-2 border-t border-line space-y-2 text-xs" onClick={e => e.stopPropagation()}>
-                            {Object.keys(bill.splits || {}).map(fName => (
-                              <div key={fName} className="flex justify-between items-center">
-                                <span>{fName} ({bill.splits[fName]?.toFixed(2)} RM)</span>
-                                {isAdmin && (
-                                  <button onClick={async () => {
-                                    const nextStatus = { ...(bill.paidStatus || {}), [fName]: !bill.paidStatus?.[fName] };
-                                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).update({ paidStatus: nextStatus });
-                                  }} className={`px-2 py-0.5 rounded text-[10px] font-bold ${bill.paidStatus?.[fName] ? 'bg-mint text-bg' : 'bg-coral text-white'}`}>
-                                    {bill.paidStatus?.[fName] ? 'จ่ายแล้ว' : 'ค้าง'}
-                                  </button>
-                                )}
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: 'all', label: 'ทั้งหมด' },
+                        { id: 'pending', label: 'ค้างชำระ' },
+                        { id: 'settled', label: 'เคลียร์แล้ว' },
+                        { id: 'ride', label: '🚗 ค่ารถ' },
+                        { id: 'food', label: '🛵 อาหาร' },
+                        { id: 'loan', label: '💸 ยืมเงิน' },
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setStatusFilter(f.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${statusFilter === f.id ? 'bg-accent text-white shadow-sm' : 'bg-subtle text-textSecondary border border-line'}`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {bills.filter(b => (b.name || '').toLowerCase().includes(searchQuery.toLowerCase())).map(bill => {
+                        const isCollapsed = viewingBillId === bill.id;
+                        const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
+                          const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
+                          return !fObj?.isSelf && !bill.paidStatus?.[n];
+                        }).length;
+
+                        return (
+                          <div key={bill.id} onClick={() => setViewingBillId(isCollapsed ? null : bill.id)} className="bg-surface border border-line p-3.5 rounded-xl space-y-2">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[10px] text-textMuted font-mono">{bill.date}</span>
+                                <h3 className="font-bold text-sm text-textPrimary">{bill.name}</h3>
                               </div>
-                            ))}
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${unpaidCount === 0 ? 'bg-mint/15 text-mint' : 'bg-coral/15 text-coral'}`}>
+                                {unpaidCount === 0 ? '✓ ครบแล้ว' : `รอ ${unpaidCount} คน`}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-xs font-mono">
+                              <span className="text-textMuted">ยอดสุทธิ:</span>
+                              <span className="font-bold text-mint">{bill.total?.toFixed(2)} RM</span>
+                            </div>
+                            {isCollapsed && (
+                              <div className="pt-2 border-t border-line space-y-2 text-xs" onClick={e => e.stopPropagation()}>
+                                {Object.keys(bill.splits || {}).map(fName => (
+                                  <div key={fName} className="flex justify-between items-center">
+                                    <span>{fName} ({bill.splits[fName]?.toFixed(2)} RM)</span>
+                                    {isAdmin && (
+                                      <button onClick={async () => {
+                                        const nextStatus = { ...(bill.paidStatus || {}), [fName]: !bill.paidStatus?.[fName] };
+                                        await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).update({ paidStatus: nextStatus });
+                                      }} className={`px-2 py-0.5 rounded text-[10px] font-bold ${bill.paidStatus?.[fName] ? 'bg-mint text-bg' : 'bg-coral text-white'}`}>
+                                        {bill.paidStatus?.[fName] ? 'จ่ายแล้ว' : 'ค้าง'}
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
 
-                            {isAdmin && (
-                              <div className="flex justify-between items-center pt-2 border-t border-line text-xs font-bold">
-                                <button onClick={() => {
-                                  setEditingBillId(bill.id);
-                                  setNewBillName(bill.name || '');
-                                  setBillType(bill.billType || 'delivery');
-                                  setPaidBy(bill.paidBy || 'Me (Dom)');
-                                  setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
-                                  setBillFriends(Object.keys(bill.splits || {}));
-                                  setActiveTab('new-bill');
-                                }} className="text-accent active:scale-95 transition">
-                                  ✏️ แก้ไขบิล
-                                </button>
-                                <button onClick={async () => {
-                                  if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) return;
-                                  await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).delete();
-                                  showToast("ลบบิลเรียบร้อย! 🔄");
-                                }} className="text-coral active:scale-95 transition">
-                                  🗑️ ลบบิล
-                                </button>
+                                {isAdmin && (
+                                  <div className="flex justify-between items-center pt-2 border-t border-line text-xs font-bold">
+                                    <button onClick={() => handleStartEditBill(bill)} className="text-accent active:scale-95 transition">
+                                      ✏️ แก้ไขบิล
+                                    </button>
+                                    <button onClick={() => handleDeleteBill(bill.id)} className="text-coral active:scale-95 transition">
+                                      🗑️ ลบบิล
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  /* ประวัติการปรับยอดและชำระเงินรวมทั้งหมด */
+                  <div className="bg-surface rounded-2xl p-4 border border-line space-y-2.5">
+                    {adjustments.length === 0 ? (
+                      <p className="text-center py-8 text-textMuted text-xs">ยังไม่มีประวัติการชำระเงินหรือปรับยอด</p>
+                    ) : (
+                      adjustments.map(adj => (
+                        <div key={adj.id} className="bg-subtle p-3 rounded-xl flex justify-between items-center text-xs font-mono">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-sans font-bold text-textPrimary text-sm">{adj.friendName}</span>
+                              <span className="text-[10px] text-textMuted">({adj.date})</span>
+                            </div>
+                            <p className="text-[11px] text-textSecondary font-sans mt-0.5">{adj.note}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`font-bold font-mono text-sm ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                              {adj.amount > 0 ? '+' : ''}{(adj.displayAmount || adj.amount || 0).toFixed(2)} RM
+                            </span>
+                            {isAdmin && (
+                              <button onClick={() => handleDeleteAdjustment(adj)} className="text-coral text-xs pl-1">✕</button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* 3. ANALYTICS */}
+            {/* 4. ANALYTICS */}
             {activeTab === 'analytics' && (
               <div className="space-y-4">
                 <div className="bg-surface rounded-2xl p-4 border border-line space-y-3">
@@ -794,7 +1300,7 @@
               </div>
             )}
 
-            {/* 4. FRIENDS */}
+            {/* 5. FRIENDS */}
             {activeTab === 'friends' && (
               <div className="space-y-4">
                 <div className="bg-surface rounded-2xl p-4 border border-line divide-y divide-line">
@@ -814,19 +1320,89 @@
             )}
           </main>
 
-          {/* ADJUST BOTTOM SHEET (หน้าต่างปรับยอดหนี้ที่กู้คืนสมบูรณ์) */}
-          {selectedFriendForAdjust && (
-            <div 
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end"
-              onClick={() => setSelectedFriendForAdjust(null)}
-            >
-              <form 
-                onSubmit={handleSaveAdjustment}
-                className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl p-5 space-y-4 animate-in slide-in-from-bottom"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="w-10 h-1 bg-line rounded-full mx-auto -mt-2 mb-1"></div>
+          {/* STATEMENT BOTTOM SHEET (แสดงประวัติบิล และประวัติปรับยอดของเพื่อนครบถ้วน) */}
+          {selectedFriendForHistory && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end" onClick={() => setSelectedFriendForHistory(null)}>
+              <div className="bg-surface border-t border-line rounded-t-3xl max-h-[88vh] flex flex-col shadow-2xl p-4 space-y-3 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+                <div className="w-10 h-1 bg-line rounded-full mx-auto -mt-1 mb-1"></div>
+                <div className="flex justify-between items-center pb-1 border-b border-line">
+                  <h3 className="font-bold text-sm">Statement: <span className="text-accent">{selectedFriendForHistory}</span></h3>
+                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-xs text-textMuted">ปิด ✕</button>
+                </div>
 
+                <div className="overflow-y-auto space-y-3 flex-1">
+                  <div ref={friendSlipRef} className="bg-[#0B0F17] p-4 rounded-xl border border-line/60 font-mono text-xs space-y-3">
+                    <div className="text-center pb-2 border-b border-dashed border-line space-y-0.5">
+                      <p className="font-bold text-sm font-sans">{selectedFriendForHistory}</p>
+                      <p className="text-[10px] text-textMuted">ใบแจ้งยอดหนี้คงค้างสะสม</p>
+                    </div>
+
+                    {/* ตารางสรุป 3 ช่อง */}
+                    <div className="grid grid-cols-3 gap-1 bg-subtle p-2 rounded-lg text-center font-mono text-[11px]">
+                      <div>
+                        <span className="text-[9px] text-textMuted block">จากบิล</span>
+                        <b>{(friendBalances[selectedFriendForHistory]?.billsOwed || 0).toFixed(2)}</b>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-textMuted block">ยอดปรับ</span>
+                        <b className={(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0) > 0 ? 'text-amber' : 'text-mint'}>
+                          {(friendBalances[selectedFriendForHistory]?.adjustedOwed || 0).toFixed(2)}
+                        </b>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-coral block font-bold">ยอดสุทธิ</span>
+                        <b className="text-coral text-sm">
+                          {(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}
+                        </b>
+                      </div>
+                    </div>
+
+                    {/* ประวัติบิล */}
+                    <div className="space-y-1">
+                      <p className="font-bold text-[11px] text-textSecondary font-sans">📋 รายการบิล ({getFriendHistory(selectedFriendForHistory).bills.length}):</p>
+                      {getFriendHistory(selectedFriendForHistory).bills.map(b => (
+                        <div key={b.id} className="flex justify-between text-[11px] bg-subtle/50 p-1.5 rounded">
+                          <span className="truncate pr-2">{b.name} ({b.date})</span>
+                          <span className="font-bold tabular">{(b.splits[selectedFriendForHistory] || 0).toFixed(2)} RM</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ประวัติการปรับยอดและการชำระเงินของเพื่อนคนนี้ */}
+                    {getFriendHistory(selectedFriendForHistory).adjustments.length > 0 && (
+                      <div className="space-y-1 pt-2 border-t border-dashed border-line">
+                        <p className="font-bold text-[11px] text-textSecondary font-sans">⚙️ ประวัติการชำระเงิน & ปรับยอด:</p>
+                        {getFriendHistory(selectedFriendForHistory).adjustments.map(adj => (
+                          <div key={adj.id} className="flex justify-between text-[10px] bg-subtle/40 p-1.5 rounded">
+                            <span className="truncate pr-2">{adj.note} ({adj.date})</span>
+                            <span className={`font-bold ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                              {adj.amount > 0 ? '+' : ''}{(adj.displayAmount || adj.amount || 0).toFixed(2)} RM
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <button onClick={() => copyStatementTextToClipboard(selectedFriendForHistory)} className="bg-subtle border border-line py-2 rounded-xl text-xs font-bold active:scale-95 transition">คัดลอกแชท</button>
+                  <button onClick={() => {
+                    html2canvas(friendSlipRef.current, { scale: 2, backgroundColor: '#0B0F17' }).then(cv => {
+                      const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `Statement_${selectedFriendForHistory}.png`; a.click();
+                    });
+                  }} className="bg-accent text-white font-bold py-2 rounded-xl text-xs active:scale-95 transition">บันทึกรูป PNG</button>
+                  <button onClick={() => setSelectedFriendForHistory(null)} className="bg-subtle border border-line py-2 rounded-xl text-xs">ปิด</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ADJUST BOTTOM SHEET (หน้าต่างปรับยอดหนี้) */}
+          {selectedFriendForAdjust && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end" onClick={() => setSelectedFriendForAdjust(null)}>
+              <form onSubmit={handleSaveAdjustment} className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl p-5 space-y-4 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+                <div className="w-10 h-1 bg-line rounded-full mx-auto -mt-2 mb-1"></div>
                 <div className="flex justify-between items-center pb-2 border-b border-line">
                   <h3 className="font-bold text-sm">ปรับยอดหนี้: <span className="text-accent">{selectedFriendForAdjust}</span></h3>
                   <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-textSecondary text-xs">ปิด ✕</button>
@@ -840,58 +1416,23 @@
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 bg-subtle p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setAdjustType('minus')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-bg shadow-sm' : 'text-textSecondary'}`}
-                  >
+                  <button type="button" onClick={() => setAdjustType('minus')} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-bg shadow-sm' : 'text-textSecondary'}`}>
                     หักลบยอด / ชำระ (-)
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustType('plus')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'plus' ? 'bg-coral text-white shadow-sm' : 'text-textSecondary'}`}
-                  >
+                  <button type="button" onClick={() => setAdjustType('plus')} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'plus' ? 'bg-coral text-white shadow-sm' : 'text-textSecondary'}`}>
                     เพิ่มหนี้ (+)
                   </button>
                 </div>
 
-                <input 
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="ระบุจำนวนเงิน (RM)"
-                  value={adjustAmount}
-                  onChange={(e) => setAdjustAmount(e.target.value)}
-                  onBlur={(e) => setAdjustAmount(evaluateMathExpression(e.target.value))}
-                  className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-accent"
-                  required
-                />
-
-                <input 
-                  type="text"
-                  placeholder="หมายเหตุ (เช่น โอนเงินคืนแล้ว, หารเพิ่ม)"
-                  value={adjustNote}
-                  onChange={(e) => setAdjustNote(e.target.value)}
-                  className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-xs outline-none focus:border-accent"
-                />
+                <input type="text" inputMode="decimal" placeholder="ระบุจำนวนเงิน (RM)" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} onBlur={e => setAdjustAmount(evaluateMathExpression(e.target.value))} className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-accent" required />
+                <input type="text" placeholder="หมายเหตุ (เช่น โอนเงินคืนแล้ว)" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-xs outline-none focus:border-accent" />
 
                 <div className="space-y-2 pt-2">
-                  <button 
-                    type="submit" 
-                    disabled={isProcessing} 
-                    className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-3 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-accent/25 disabled:opacity-50"
-                  >
+                  <button type="submit" disabled={isProcessing} className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-3 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-accent/25 disabled:opacity-50">
                     {isProcessing ? 'กำลังบันทึก...' : '💾 บันทึกการปรับยอด'}
                   </button>
-                  
-                  {/* ปุ่มเคลียร์หนี้เต็มจำนวน */}
                   {friendBalances[selectedFriendForAdjust]?.totalOwed > 0 && (
-                    <button
-                      type="button"
-                      disabled={isProcessing}
-                      onClick={() => handleSettleFullWithBatch(selectedFriendForAdjust)}
-                      className="w-full bg-mint/15 text-mint border border-mint/40 font-bold py-2.5 rounded-xl text-xs active:scale-95 transition"
-                    >
+                    <button type="button" disabled={isProcessing} onClick={() => handleSettleFullWithBatch(selectedFriendForAdjust)} className="w-full bg-mint/15 text-mint border border-mint/40 font-bold py-2.5 rounded-xl text-xs active:scale-95 transition">
                       ⚡ เคลียร์บิลทั้งหมด ({friendBalances[selectedFriendForAdjust]?.totalOwed.toFixed(2)} RM)
                     </button>
                   )}
@@ -900,56 +1441,18 @@
             </div>
           )}
 
-          {/* STATEMENT BOTTOM SHEET */}
-          {selectedFriendForHistory && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end" onClick={() => setSelectedFriendForHistory(null)}>
-              <div className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl p-4 space-y-3 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
-                <div className="w-10 h-1 bg-line rounded-full mx-auto -mt-1 mb-1"></div>
-                <div className="flex justify-between items-center">
-                  <h3 className="font-bold text-sm">Statement: {selectedFriendForHistory}</h3>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-xs">✕</button>
-                </div>
-                <div ref={friendSlipRef} className="bg-[#0B0F17] p-4 rounded-xl border border-line/60 font-mono text-xs space-y-2">
-                  <p className="font-bold text-center text-sm">{selectedFriendForHistory}</p>
-                  <p className={`text-base text-center font-black ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0) > 0 ? 'text-coral' : 'text-mint'}`}>
-                    {(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)} RM
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <button onClick={() => {
-                    html2canvas(friendSlipRef.current, { scale: 2, backgroundColor: '#0B0F17' }).then(cv => {
-                      const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `Statement_${selectedFriendForHistory}.png`; a.click();
-                    });
-                  }} className="bg-accent text-white font-bold py-2 rounded-xl text-xs">บันทึกรูป PNG</button>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="bg-subtle border border-line py-2 rounded-xl text-xs">ปิด</button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* FLOATING CAPSULE NAVIGATION (iOS Style) */}
           <div className="fixed bottom-5 left-0 right-0 z-40 flex justify-center pointer-events-none px-4 pb-safe">
             <nav className="pointer-events-auto bg-surface/85 backdrop-blur-2xl border border-line/80 shadow-[0_12px_40px_rgba(0,0,0,0.6)] rounded-full p-1.5 flex items-center gap-1">
-              
-              <button 
-                onClick={() => setActiveTab('dashboard')} 
-                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
-                  activeTab === 'dashboard' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
-                }`}
-              >
+              <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${activeTab === 'dashboard' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'}`}>
                 <span className="text-lg leading-none">📊</span>
               </button>
 
-              <button 
-                onClick={() => setActiveTab('bills')} 
-                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
-                  activeTab === 'bills' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
-                }`}
-              >
+              <button onClick={() => setActiveTab('bills')} className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${activeTab === 'bills' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'}`}>
                 <span className="text-lg leading-none">🧾</span>
               </button>
 
-              {/* ปุ่ม + สร้างบิลตรงกลาง */}
+              {/* ปุ่มสร้างบิลตรงกลาง */}
               <button 
                 onClick={() => {
                   if (!isAdmin) {
@@ -962,83 +1465,40 @@
                   setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
                   setActiveTab('new-bill');
                 }}
-                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center active:scale-90 ${
-                  activeTab === 'new-bill'
-                    ? 'bg-accent text-white shadow-lg shadow-accent/40 scale-105'
-                    : 'bg-accent/20 hover:bg-accent text-accent hover:text-white'
-                }`}
+                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center active:scale-90 ${activeTab === 'new-bill' ? 'bg-accent text-white shadow-lg shadow-accent/40 scale-105' : 'bg-accent/20 hover:bg-accent text-accent hover:text-white'}`}
               >
                 <span className="text-xl leading-none font-black">+</span>
               </button>
 
-              <button 
-                onClick={() => setActiveTab('friends')} 
-                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
-                  activeTab === 'friends' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
-                }`}
-              >
+              <button onClick={() => setActiveTab('friends')} className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${activeTab === 'friends' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'}`}>
                 <span className="text-lg leading-none">👥</span>
               </button>
 
-              <button 
-                onClick={() => setActiveTab('analytics')} 
-                className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${
-                  activeTab === 'analytics' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'
-                }`}
-              >
+              <button onClick={() => setActiveTab('analytics')} className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center justify-center ${activeTab === 'analytics' ? 'bg-textPrimary text-bg shadow-md scale-105' : 'text-textSecondary hover:text-textPrimary active:scale-95'}`}>
                 <span className="text-lg leading-none">📈</span>
               </button>
-              
             </nav>
           </div>
 
-          {/* AUTH POPUP MODAL (Google Sign-In + PIN) */}
+          {/* AUTH POPUP MODAL */}
           {showAuthModal && (
-            <div 
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in"
-              onClick={() => setShowAuthModal(false)}
-            >
-              <div 
-                className="bg-surface border border-line rounded-3xl p-6 w-full max-w-xs space-y-4 shadow-2xl"
-                onClick={e => e.stopPropagation()}
-              >
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowAuthModal(false)}>
+              <div className="bg-surface border border-line rounded-3xl p-6 w-full max-w-xs space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center pb-2 border-b border-line">
                   <h3 className="font-bold text-sm text-textPrimary">🔑 เข้าสู่ระบบแอดมิน</h3>
                   <button onClick={() => setShowAuthModal(false)} className="text-textSecondary text-xs">✕</button>
                 </div>
-
-                <button 
-                  type="button"
-                  onClick={handleGoogleLogin} 
-                  className="w-full bg-subtle hover:bg-line border border-line py-2.5 rounded-xl text-xs font-bold text-textPrimary flex items-center justify-center gap-2 active:scale-95 transition"
-                >
+                <button type="button" onClick={handleGoogleLogin} className="w-full bg-subtle hover:bg-line border border-line py-2.5 rounded-xl text-xs font-bold text-textPrimary flex items-center justify-center gap-2 active:scale-95 transition">
                   <span>Google Sign-in</span>
                 </button>
-
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-[1px] bg-line"></div>
                   <span className="text-[10px] text-textMuted font-mono">หรือใช้ PIN</span>
                   <div className="flex-1 h-[1px] bg-line"></div>
                 </div>
-
                 <form onSubmit={handleVerifyPin} className="space-y-3">
-                  <input 
-                    type="password"
-                    pattern="[0-9]*"
-                    inputMode="numeric"
-                    maxLength="6"
-                    placeholder="กรอก PIN 4 หลัก"
-                    value={inputPin}
-                    onChange={(e) => setInputPin(e.target.value)}
-                    className="w-full bg-subtle border border-line rounded-xl py-2.5 text-center font-mono text-base tracking-widest text-textPrimary outline-none focus:border-accent"
-                    autoFocus
-                  />
-                  <button 
-                    type="submit" 
-                    className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-accent/20"
-                  >
-                    ปลดล็อก (Unlock)
-                  </button>
+                  <input type="password" pattern="[0-9]*" inputMode="numeric" maxLength="6" placeholder="กรอก PIN 4 หลัก" value={inputPin} onChange={e => setInputPin(e.target.value)} className="w-full bg-subtle border border-line rounded-xl py-2.5 text-center font-mono text-base tracking-widest text-textPrimary outline-none focus:border-accent" autoFocus />
+                  <button type="submit" className="w-full bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-accent/20">ปลดล็อก (Unlock)</button>
                 </form>
               </div>
             </div>
