@@ -385,6 +385,7 @@
       });
 
       const isAdmin = isAdminByGoogle || isAdminBySecret;
+      const [isProcessing, setIsProcessing] = useState(false);
 
       const [showAuthModal, setShowAuthModal] = useState(false);
       const [inputPin, setInputPin] = useState('');
@@ -418,7 +419,6 @@
       const [newBillDate, setNewBillDate] = useState(new Date().toISOString().split('T')[0]);
       const [billFriends, setBillFriends] = useState([]);
       const [paidBy, setPaidBy] = useState('Me (Dom)');
-      
       const [remainderMode, setRemainderMode] = useState('distribute');
       
       // Ride specific
@@ -441,8 +441,9 @@
         { id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }
       ]);
 
-      // OCR & Paste Text
+      // OCR States
       const [selectedImages, setSelectedImages] = useState([]);
+      const [imageRotation, setImageRotation] = useState(0);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
       const [showRawTextInput, setShowRawTextInput] = useState(false);
@@ -469,6 +470,39 @@
         setToast({ message, type });
         setTimeout(() => setToast(null), 3500);
       };
+
+      // ตรวจหาบิลที่ถูกตัดด้วย FIFO เพื่อทำ Traceability Tag
+      const fifoSettlementMap = useMemo(() => {
+        const map = {};
+        adjustments.forEach(adj => {
+          if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
+            adj.relatedBillIds.forEach(bId => {
+              map[bId] = adj.note || 'Smart FIFO Net-off';
+            });
+          }
+        });
+        return map;
+      }, [adjustments]);
+
+      // Sanity Check สำหรับฟอร์มสร้างบิล
+      const itemsSum = useMemo(() => {
+        return billItems.reduce((sum, item) => sum + ((parseFloat(item.price) || 0) * (parseInt(item.qty) || 1)), 0);
+      }, [billItems]);
+
+      const calculatedNetTotal = useMemo(() => {
+        if (billType === 'ride') {
+          return Math.max(0, (parseFloat(rideFare) || 0) + (parseFloat(tollFee) || 0) - (parseFloat(discountAmount) || 0) + (parseFloat(roundingAdj) || 0));
+        }
+        if (billType === 'loan') {
+          return parseFloat(loanAmount) || 0;
+        }
+        return Math.max(0, itemsSum + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - (parseFloat(discountAmount) || 0) + (parseFloat(roundingAdj) || 0));
+      }, [billType, rideFare, tollFee, discountAmount, roundingAdj, loanAmount, itemsSum, deliveryFee, packagingCharge]);
+
+      const isMismatch = useMemo(() => {
+        if (billType === 'ride' || billType === 'loan') return false;
+        return itemsSum > 0 && Math.abs(calculatedNetTotal - (itemsSum + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - (parseFloat(discountAmount) || 0))) > 0.05;
+      }, [billType, calculatedNetTotal, itemsSum, deliveryFee, packagingCharge, discountAmount]);
 
       const quickMerchantPresets = useMemo(() => {
         const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
@@ -741,10 +775,7 @@
 
       // --- FULL SETTLE (ไม่สร้างยอดติดลบทับซ้อน) ---
       const handleSettleFullWithBatch = async (friendName) => {
-        if (!isAdmin) {
-          showToast("Only Admin can change payment status", "error");
-          return;
-        }
+        if (!isAdmin || isProcessing) return;
 
         const unpaidBills = bills.filter(b => {
           const splitsKeys = Object.keys(b.splits || {});
@@ -760,6 +791,7 @@
           return;
         }
 
+        setIsProcessing(true);
         try {
           if (db) {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
@@ -808,15 +840,14 @@
         } catch (err) {
           console.error("Batch settle error:", err);
           showToast("Failed to settle: " + (err.message || "Permission Denied"), "error");
+        } finally {
+          setIsProcessing(false);
         }
       };
 
       // --- SMART FIFO AUTO-NETOFF FUNCTION ---
       const handleSmartFifoNetOff = async (friendName, creditAmount, sourceBillId = '', sourceBillName = '') => {
-        if (!isAdmin) {
-          showToast("Permission denied: Admin only", "error");
-          return;
-        }
+        if (!isAdmin || isProcessing) return;
 
         const parsedCredit = parseFloat(creditAmount);
         if (isNaN(parsedCredit) || parsedCredit <= 0) {
@@ -843,6 +874,7 @@
           return;
         }
 
+        setIsProcessing(true);
         try {
           if (db) {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
@@ -908,6 +940,7 @@
               friendName,
               amount: 0,
               displayAmount: parsedCredit,
+              sourceBillId: sourceBillId || null,
               isPaymentRecord: true,
               isSettled: true,
               relatedBillIds: autoSettledBillIds,
@@ -937,19 +970,19 @@
         } catch (err) {
           console.error("FIFO Error:", err);
           showToast("เกิดข้อผิดพลาดในการตัดหนี้: " + err.message, "error");
+        } finally {
+          setIsProcessing(false);
         }
       };
 
       // --- TWO-WAY UNSETTLE SYNC ON DELETE ADJUSTMENT ---
       const handleDeleteAdjustment = async (adj) => {
-        if (!isAdmin) {
-          showToast("Only Admin can delete adjustments", "error");
-          return;
-        }
+        if (!isAdmin || isProcessing) return;
         if (!confirm(`ต้องการลบประวัติ "${adj.note}" ใช่หรือไม่? (สถานะบิลจะถูกคืนค่ากลับเป็น Pending)`)) return;
 
-        if (db) {
-          try {
+        setIsProcessing(true);
+        try {
+          if (db) {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
             const batch = db.batch();
 
@@ -985,9 +1018,55 @@
 
             await batch.commit();
             showToast("ลบประวัติและดึงสถานะบิลกลับมาค้างชำระเรียบร้อย! 🔄");
-          } catch (err) {
-            showToast("Delete failed: Permission denied", "error");
           }
+        } catch (err) {
+          showToast("Delete failed: Permission denied", "error");
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      // --- ROLLBACK FIFO ON BILL DELETE ---
+      const handleDeleteBill = async (billId) => {
+        if (!isAdmin || isProcessing) return;
+        if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่? (หากบิลนี้เคยถูกนำไปตัดหนี้ FIFO ระบบจะปลดสถานะบิลเก่ากลับมาค้างชำระให้อัตโนมัติ)")) return;
+
+        setIsProcessing(true);
+        try {
+          if (db) {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            batch.delete(basePath.collection('bills').doc(billId));
+
+            // ตรวจหา Adjustments ที่ผูกกับบิลต้นทางนี้เพื่อ Rollback
+            const relatedAdjs = adjustments.filter(a => a.sourceBillId === billId || (a.relatedBillIds && a.relatedBillIds.includes(billId)));
+            relatedAdjs.forEach(adj => {
+              batch.delete(basePath.collection('adjustments').doc(adj.id));
+              if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
+                adj.relatedBillIds.forEach(oldBId => {
+                  if (oldBId !== billId) {
+                    const oldBill = bills.find(b => b.id === oldBId);
+                    if (oldBill) {
+                      const nextStatus = { ...(oldBill.paidStatus || {}) };
+                      Object.keys(nextStatus).forEach(k => {
+                        if (k.toLowerCase() === adj.friendName.toLowerCase()) nextStatus[k] = false;
+                      });
+                      batch.update(basePath.collection('bills').doc(oldBId), { paidStatus: nextStatus });
+                    }
+                  }
+                });
+              }
+            });
+
+            await batch.commit();
+            setViewingBillId(null);
+            showToast("ลบบิลและคืนสถานะหนี้เรียบร้อย! 🔄");
+          }
+        } catch (err) {
+          showToast("Delete failed: " + err.message, "error");
+        } finally {
+          setIsProcessing(false);
         }
       };
 
@@ -1028,33 +1107,764 @@
         setAdjustNote('');
       };
 
-      const filteredDashboardFriends = useMemo(() => {
-        return friends.filter(friend => {
-          if (friend.isSelf) return false;
-          const balance = friendBalances[friend.name] || { totalOwed: 0 };
-          if (balance.totalOwed === 0) return false;
-          
-          if (dashboardDebtFilter === 'receivable') return balance.totalOwed > 0;
-          if (dashboardDebtFilter === 'payable') return balance.totalOwed < 0;
-          return true;
+      const handleAddFriend = async (e) => {
+        e.preventDefault();
+        if (!isAdmin) {
+          showToast("Only Admin can add friends", "error");
+          return;
+        }
+        const name = newFriendName.trim();
+        if (!name) return;
+        if (friends.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+          showToast("Friend name already exists", "error");
+          return;
+        }
+
+        const newF = { name, isSelf: false, isArchived: false, createdAt: Date.now() };
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(newF);
+            showToast("Friend added");
+          } catch (err) {
+            showToast("Failed to add friend", "error");
+          }
+        }
+        setNewFriendName('');
+      };
+
+      const handleToggleArchiveFriend = async (friend) => {
+        if (!isAdmin) {
+          showToast("Only Admin can archive friends", "error");
+          return;
+        }
+        const actionText = friend.isArchived ? "Restore" : "Archive";
+        if (!confirm(`${actionText} friend "${friend.name}"? (Past records remain safe)`)) return;
+
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({
+              isArchived: !friend.isArchived
+            });
+            showToast(`Friend ${actionText.toLowerCase()}d successfully`);
+          } catch (err) {
+            showToast("Action failed: Permission denied", "error");
+          }
+        }
+      };
+
+      const handleStartRenameFriend = (friend) => {
+        if (!isAdmin) return;
+        setRenamingFriendId(friend.id);
+        setRenameValue(friend.name);
+      };
+
+      const handleCancelRenameFriend = () => {
+        setRenamingFriendId(null);
+        setRenameValue('');
+      };
+
+      const handleConfirmRenameFriend = async (friend) => {
+        if (!isAdmin) return;
+        const newName = renameValue.trim();
+        if (!newName || newName === friend.name) {
+          handleCancelRenameFriend();
+          return;
+        }
+        if (friends.some(f => f.id !== friend.id && f.name.toLowerCase() === newName.toLowerCase())) {
+          showToast("This name already exists", "error");
+          return;
+        }
+
+        const oldName = friend.name;
+        const renameInBill = (bill) => {
+          const newItems = (bill.items || []).map(item => ({
+            ...item,
+            sharedWith: (item.sharedWith || []).map(n => n === oldName ? newName : n)
+          }));
+          const newSplits = {};
+          Object.entries(bill.splits || {}).forEach(([k, v]) => {
+            newSplits[k === oldName ? newName : k] = v;
+          });
+          const newPaidStatus = {};
+          Object.entries(bill.paidStatus || {}).forEach(([k, v]) => {
+            newPaidStatus[k === oldName ? newName : k] = v;
+          });
+          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus, paidBy: bill.paidBy === oldName ? newName : bill.paidBy };
+        };
+
+        try {
+          if (db) {
+            const batch = db.batch();
+            const friendRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id);
+            batch.update(friendRef, { name: newName });
+
+            bills.forEach(bill => {
+              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName)) || bill.paidBy === oldName;
+              if (touches) {
+                const updated = renameInBill(bill);
+                const billRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id);
+                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus, paidBy: updated.paidBy });
+              }
+            });
+
+            adjustments.forEach(adj => {
+              if (adj.friendName === oldName) {
+                const adjRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id);
+                batch.update(adjRef, { friendName: newName });
+              }
+            });
+
+            await batch.commit();
+            showToast(`Renamed to "${newName}"`);
+          }
+        } catch (err) {
+          showToast("Rename failed: Permission denied", "error");
+        }
+        handleCancelRenameFriend();
+      };
+
+      // OCR Canvas Rotation & Pre-processing
+      const preprocessImageWithRotation = (file, angle) => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          const objectUrl = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            if (angle === 90 || angle === 270) {
+              canvas.width = img.height;
+              canvas.height = img.width;
+            } else {
+              canvas.width = img.width;
+              canvas.height = img.height;
+            }
+
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((angle * Math.PI) / 180);
+            ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+            // Binarization thresholding
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              const v = gray > 145 ? 255 : 0;
+              d[i] = v;
+              d[i + 1] = v;
+              d[i + 2] = v;
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            canvas.toBlob((blob) => resolve(blob || file), 'image/png');
+          };
+          img.src = objectUrl;
         });
-      }, [friends, friendBalances, dashboardDebtFilter]);
+      };
 
-      const receivableCount = Object.values(friendBalances).filter(b => b.totalOwed > 0).length;
-      const payableCount = Object.values(friendBalances).filter(b => b.totalOwed < 0).length;
+      const parseTextContent = (fullText) => {
+        const cleanLines = fullText
+          .replace(/[—–]/g, '-')
+          .replace(/[oO](?=[0-9])/g, '0')
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean);
 
-      const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
-        const fObj = friends.find(f => f.name === name);
-        if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
-        return acc;
-      }, 0);
+        let extractedItems = [];
+        let rFare = 0, tFee = 0, dFee = 0, pCharge = 0, dAmount = 0;
 
-      const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
-        const fObj = friends.find(f => f.name === name);
-        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
-      }).length;
+        for (let i = 0; i < cleanLines.length; i++) {
+          const line = cleanLines[i];
 
-      const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
+          if (/delivery\s*fee|rider\s*fee|driver\s*fee|shipping/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              dFee = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
+            }
+            continue;
+          }
+
+          if (/packaging|packing|takeaway\s*box|container|bag/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              pCharge = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
+            }
+            continue;
+          }
+
+          if (/discount|promo|voucher|off\b|cashback|rebate/i.test(line)) {
+            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
+            if (matches && matches.length > 0) {
+              const rawVal = matches[matches.length - 1].replace(/[-−\sRM]/gi, '').replace(',', '.');
+              dAmount = Math.abs(parseFloat(rawVal) || 0);
+            }
+            continue;
+          }
+
+          if (/toll|expressway|highway/i.test(line)) {
+            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
+            if (matches) tFee = parseFloat(matches[1].replace(',', '.'));
+            continue;
+          }
+
+          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|sst\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery|invoice|receipt|cashier|terminal|change\b|rounding/i.test(line);
+          if (isNoise) continue;
+
+          const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
+          const match = line.match(itemRegex);
+
+          if (match) {
+            let qty = parseInt(match[1]) || 1;
+            let itemName = match[2].replace(/^[0-9]+x?\s*/i, '').trim();
+            let itemPrice = parseFloat(match[3].replace(',', '.'));
+
+            if (i + 1 < cleanLines.length && /^[0-9]+\s*[xX]$/i.test(cleanLines[i + 1])) {
+              qty = parseInt(cleanLines[i + 1]) || qty;
+            }
+
+            if (itemPrice > 0 && itemName.length >= 2 && !/total|amount|cash|balance/i.test(itemName)) {
+              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
+              if (!exists) {
+                extractedItems.push({
+                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                  name: itemName,
+                  price: itemPrice.toFixed(2),
+                  qty: qty,
+                  taxRate: 0,
+                  sharedWith: [...billFriends]
+                });
+              }
+            }
+          }
+        }
+
+        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
+      };
+
+      const handleAddImages = (e) => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        setSelectedImages(prev => [...prev, ...files]);
+      };
+
+      const handleRemoveImage = (index) => {
+        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
+      };
+
+      const handleProcessAllImages = async () => {
+        if (!selectedImages.length) return;
+        setOcrProcessing(true);
+        setOcrProgress(0);
+
+        let combinedExtractedItems = [];
+        let extractedRideFare = 0, detectedToll = 0, detectedDiscount = 0, detectedDelivery = 0, detectedPackaging = 0;
+
+        try {
+          showToast("⚡ กำลังประมวลผล OCR & สแกนบิล...");
+          for (let i = 0; i < selectedImages.length; i++) {
+            const rawFile = selectedImages[i];
+            const processedBlob = await preprocessImageWithRotation(rawFile, imageRotation);
+
+            const { data: { text } } = await Tesseract.recognize(
+              processedBlob,
+              'eng+tha',
+              {
+                logger: m => {
+                  if (m.status === 'recognizing text') {
+                    const singleProgress = m.progress || 0;
+                    setOcrProgress(Math.round(((i + singleProgress) / selectedImages.length) * 100));
+                  }
+                }
+              }
+            );
+
+            const parsed = parseTextContent(text);
+            parsed.extractedItems.forEach(item => {
+              if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
+                combinedExtractedItems.push(item);
+              }
+            });
+
+            if (parsed.dFee) detectedDelivery = parsed.dFee;
+            if (parsed.pCharge) detectedPackaging = parsed.pCharge;
+            if (parsed.dAmount) detectedDiscount = parsed.dAmount;
+            if (parsed.tFee) detectedToll = parsed.tFee;
+
+            if (billType === 'ride') {
+              const prices = text.split('\n').map(l => {
+                const m = l.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
+                return m ? parseFloat(m[1].replace(',', '.')) : 0;
+              }).filter(p => p > 0);
+              if (prices.length > 0) extractedRideFare = Math.max(extractedRideFare, ...prices);
+            }
+          }
+
+          if (billType === 'ride' && extractedRideFare > 0) {
+            setRideFare(extractedRideFare);
+            if (detectedToll) setTollFee(detectedToll);
+            if (detectedDiscount) setDiscountAmount(detectedDiscount);
+            showToast("สแกนค่าโดยสารสำเร็จ!");
+          } else if (combinedExtractedItems.length > 0 || detectedDelivery > 0 || detectedPackaging > 0 || detectedDiscount > 0) {
+            if (combinedExtractedItems.length > 0) setBillItems(combinedExtractedItems);
+            if (detectedPackaging) setPackagingCharge(detectedPackaging);
+            if (detectedDelivery) setDeliveryFee(detectedDelivery);
+            if (detectedDiscount) setDiscountAmount(detectedDiscount);
+            showToast(`🎉 สแกนสำเร็จ ${combinedExtractedItems.length} รายการ!`);
+          } else {
+            showToast("OCR อ่านรายการไม่ชัดเจน แนะนำให้ลองหมุนภาพหรือใช้ '📝 วางข้อความ'", "error");
+          }
+        } catch (err) {
+          console.error("Scanning Error:", err);
+          showToast(`เกิดข้อผิดพลาดในการสแกน: ${err.message}`, "error");
+        } finally {
+          setOcrProcessing(false);
+          setSelectedImages([]);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+
+      const handleParseRawText = () => {
+        if (!rawOrderText.trim()) return;
+        const parsed = parseTextContent(rawOrderText);
+        if (parsed.extractedItems.length > 0 || parsed.dFee || parsed.pCharge || parsed.dAmount) {
+          if (parsed.extractedItems.length > 0) setBillItems(parsed.extractedItems);
+          if (parsed.dFee) setDeliveryFee(parsed.dFee);
+          if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
+          if (parsed.dAmount) setDiscountAmount(parsed.dAmount);
+          showToast(`แกะข้อมูลได้ ${parsed.extractedItems.length} รายการ! 🎉`);
+          setShowRawTextInput(false);
+          setRawOrderText('');
+        } else {
+          showToast("ไม่พบรายการสินค้าที่ระบุราคาชัดเจน", "error");
+        }
+      };
+
+      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
+        const splits = {};
+        const friendItemDetails = {};
+        const activeFriendsCount = selectedFriends.length;
+
+        if (currentBillType === 'loan') {
+          const parsedLoanAmt = parseFloat(lAmt) || 0;
+          if (lBorrower) {
+            splits[lBorrower] = parsedLoanAmt;
+            friendItemDetails[lBorrower] = { baseShare: parsedLoanAmt };
+          }
+          return {
+            subtotal: parsedLoanAmt,
+            total: parsedLoanAmt,
+            splits,
+            friendItemDetails
+          };
+        }
+
+        if (currentBillType === 'ride') {
+          const parsedRideFare = parseFloat(rFare) || 0;
+          const parsedToll = parseFloat(tFee) || 0;
+          const parsedDiscount = parseFloat(discount) || 0;
+          const parsedRoundAdj = parseFloat(roundAdj) || 0;
+          
+          const netTotal = Math.max(0, parsedRideFare + parsedToll - parsedDiscount + parsedRoundAdj);
+          const totalCents = Math.round(netTotal * 100);
+          const baseCents = activeFriendsCount > 0 ? Math.floor(totalCents / activeFriendsCount) : 0;
+          let remainderCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
+
+          selectedFriends.forEach(f => {
+            let shareCents = baseCents;
+            if (curRemainderMode === 'distribute') {
+              if (remainderCents > 0) {
+                shareCents += 1;
+                remainderCents--;
+              }
+            } else if (curRemainderMode === 'payer' && f.toLowerCase() === curPaidBy.toLowerCase()) {
+              shareCents += remainderCents;
+            }
+
+            splits[f] = shareCents / 100;
+
+            friendItemDetails[f] = {
+              baseShare: Math.round((parsedRideFare / (activeFriendsCount || 1)) * 100) / 100,
+              tollShare: Math.round((parsedToll / (activeFriendsCount || 1)) * 100) / 100,
+              discountShare: Math.round((parsedDiscount / (activeFriendsCount || 1)) * 100) / 100,
+            };
+          });
+
+          return {
+            subtotal: parsedRideFare,
+            tollFee: parsedToll,
+            discountAmount: parsedDiscount,
+            total: Math.round(netTotal * 100) / 100,
+            splits,
+            friendItemDetails
+          };
+        }
+
+        const friendBaseShares = {};
+        const friendTaxShares = {};
+        
+        selectedFriends.forEach(f => {
+          friendBaseShares[f] = 0;
+          friendTaxShares[f] = 0;
+        });
+
+        let subtotal = 0;
+        let taxBreakdown = { 0: 0, 6: 0, 7: 0, 8: 0 };
+        let totalTax = 0;
+
+        items.forEach(item => {
+          const price = parseFloat(item.price) || 0;
+          const qty = parseInt(item.qty) || 1;
+          const itemTotal = price * qty;
+          const taxRate = parseFloat(item.taxRate) || 0;
+
+          subtotal += itemTotal;
+
+          let itemTaxAmount = 0;
+          if (currentTaxMode === 'addon') {
+            itemTaxAmount = itemTotal * (taxRate / 100);
+          } else {
+            itemTaxAmount = itemTotal - (itemTotal / (1 + (taxRate / 100)));
+          }
+
+          taxBreakdown[taxRate] = (taxBreakdown[taxRate] || 0) + itemTaxAmount;
+          totalTax += itemTaxAmount;
+
+          const sharedList = (item.sharedWith || []).filter(f => selectedFriends.includes(f));
+          if (sharedList.length > 0) {
+            const itemTotalCents = Math.round(itemTotal * 100);
+            const baseShareCents = Math.floor(itemTotalCents / sharedList.length);
+            let remShareCents = itemTotalCents % sharedList.length;
+
+            const itemTaxCents = Math.round(itemTaxAmount * 100);
+            const baseTaxCents = Math.floor(itemTaxCents / sharedList.length);
+            let remTaxCents = itemTaxCents % sharedList.length;
+
+            sharedList.forEach(f => {
+              const allocatedCents = baseShareCents + (remShareCents > 0 ? 1 : 0);
+              if (remShareCents > 0) remShareCents--;
+              friendBaseShares[f] = (friendBaseShares[f] || 0) + (allocatedCents / 100);
+
+              const allocatedTaxCents = baseTaxCents + (remTaxCents > 0 ? 1 : 0);
+              if (remTaxCents > 0) remTaxCents--;
+              friendTaxShares[f] = (friendTaxShares[f] || 0) + (allocatedTaxCents / 100);
+            });
+          }
+        });
+
+        const totalSc = subtotal * (scRate / 100);
+        const parsedDFee = parseFloat(dFee) || 0;
+        const parsedPackCharge = parseFloat(packCharge) || 0;
+        const parsedDiscount = parseFloat(discount) || 0;
+        const parsedRoundAdj = parseFloat(roundAdj) || 0;
+
+        const perPersonDelivery = activeFriendsCount > 0 ? (parsedDFee / activeFriendsCount) : 0;
+        const perPersonPackaging = activeFriendsCount > 0 ? (parsedPackCharge / activeFriendsCount) : 0;
+
+        let totalDistributedCents = 0;
+
+        selectedFriends.forEach(f => {
+          const base = friendBaseShares[f] || 0;
+          const friendSc = base * (scRate / 100);
+          const friendTax = currentTaxMode === 'addon' ? (friendTaxShares[f] || 0) : 0;
+          const userDiscountShare = subtotal > 0 ? (base / subtotal) * parsedDiscount : (parsedDiscount / (activeFriendsCount || 1));
+          
+          const finalPersonAmount = Math.max(0, base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare);
+          const personCents = Math.round(finalPersonAmount * 100);
+          splits[f] = personCents / 100;
+          totalDistributedCents += personCents;
+
+          friendItemDetails[f] = {
+            baseShare: Math.round(base * 100) / 100,
+            scShare: Math.round(friendSc * 100) / 100,
+            taxShare: Math.round((friendTaxShares[f] || 0) * 100) / 100,
+            deliveryShare: Math.round(perPersonDelivery * 100) / 100,
+            packagingShare: Math.round(perPersonPackaging * 100) / 100,
+            discountShare: Math.round(userDiscountShare * 100) / 100,
+          };
+        });
+
+        const addedTaxToTotal = currentTaxMode === 'addon' ? totalTax : 0;
+        const finalTotal = Math.round((subtotal + totalSc + addedTaxToTotal + parsedDFee + parsedPackCharge - parsedDiscount + parsedRoundAdj) * 100) / 100;
+        const targetTotalCents = Math.round(finalTotal * 100);
+
+        if (activeFriendsCount > 0 && totalDistributedCents !== targetTotalCents) {
+          const diffCents = targetTotalCents - totalDistributedCents;
+          const targetPerson = (curRemainderMode === 'payer' && selectedFriends.includes(curPaidBy)) 
+            ? curPaidBy 
+            : selectedFriends[selectedFriends.length - 1];
+          splits[targetPerson] = Math.max(0, Math.round((splits[targetPerson] + (diffCents / 100)) * 100) / 100);
+        }
+
+        return {
+          subtotal: Math.round(subtotal * 100) / 100,
+          serviceChargeAmount: Math.round(totalSc * 100) / 100,
+          deliveryFee: parsedDFee,
+          packagingCharge: parsedPackCharge,
+          discountAmount: parsedDiscount,
+          taxMode: currentTaxMode,
+          taxBreakdown,
+          totalTax: Math.round(totalTax * 100) / 100,
+          roundingAdjustment: parsedRoundAdj,
+          total: finalTotal,
+          splits,
+          friendItemDetails
+        };
+      };
+
+      // --- SAVE BILL + FIFO AUTO NET-OFF ---
+      const handleSaveBill = async (e) => {
+        e.preventDefault();
+        if (!isAdmin || isProcessing) return;
+        if (!newBillName.trim()) {
+          showToast("Please enter a transaction title", "error");
+          return;
+        }
+
+        const calculated = calculateBillSplits(
+          billItems,
+          serviceChargeRate,
+          deliveryFee,
+          packagingCharge,
+          discountAmount,
+          roundingAdj,
+          billFriends,
+          taxMode,
+          billType,
+          rideFare,
+          tollFee,
+          loanAmount,
+          loanBorrower,
+          remainderMode,
+          paidBy
+        );
+
+        let initialPaidStatus = {};
+        if (editingBillId) {
+          const oldBill = bills.find(b => b.id === editingBillId);
+          initialPaidStatus = oldBill?.paidStatus || {};
+        }
+
+        const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
+
+        participantsToProcess.forEach(f => {
+          if (initialPaidStatus[f] === undefined) {
+            const isCurrentPayer = f.toLowerCase() === paidBy.toLowerCase();
+            initialPaidStatus[f] = isCurrentPayer ? true : false;
+          }
+        });
+
+        const billPayload = {
+          name: newBillName,
+          billType,
+          paidBy,
+          remainderMode,
+          taxMode,
+          date: newBillDate,
+          rideFare: parseFloat(rideFare) || 0,
+          tollFee: parseFloat(tollFee) || 0,
+          rideRoute,
+          loanAmount: parseFloat(loanAmount) || 0,
+          loanBorrower,
+          subtotal: calculated.subtotal,
+          serviceChargeRate,
+          serviceChargeAmount: calculated.serviceChargeAmount || 0,
+          deliveryFee: calculated.deliveryFee || 0,
+          packagingCharge: calculated.packagingCharge || 0,
+          discountAmount: calculated.discountAmount || 0,
+          taxBreakdown: calculated.taxBreakdown || {},
+          totalTax: calculated.totalTax || 0,
+          roundingAdjustment: calculated.roundingAdjustment || 0,
+          total: calculated.total,
+          items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            price: parseFloat(item.price) || 0,
+            qty: parseInt(item.qty) || 1,
+            taxRate: parseFloat(item.taxRate || 0),
+            sharedWith: item.sharedWith || []
+          })),
+          splits: calculated.splits,
+          friendItemDetails: calculated.friendItemDetails,
+          paidStatus: initialPaidStatus,
+          updatedAt: Date.now()
+        };
+
+        setIsProcessing(true);
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            let billDocRef;
+            if (editingBillId) {
+              billDocRef = basePath.collection('bills').doc(editingBillId);
+              batch.update(billDocRef, billPayload);
+            } else {
+              billPayload.createdAt = Date.now();
+              billDocRef = basePath.collection('bills').doc();
+              batch.set(billDocRef, billPayload);
+            }
+
+            // ⚡ SMART FIFO AUTO-NETOFF: ถ้าเพื่อนจ่าย และ Dom มีส่วนต้องออก ให้วิ่งไปตัดบิลเก่าที่เพื่อนค้างเราทันที
+            const isDomPayer = /me|dom/i.test(paidBy);
+            const myShareInThisBill = calculated.splits?.['Me (Dom)'] || calculated.splits?.['ตัวฉันเอง'] || 0;
+
+            if (!isDomPayer && myShareInThisBill > 0) {
+              const friendPayerName = paidBy;
+              const unpaidBills = bills
+                .filter(b => {
+                  const bDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
+                  const splitsKeys = Object.keys(b.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase());
+                  const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
+                  return bDomPayer && isUnpaid;
+                })
+                .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+              if (unpaidBills.length > 0) {
+                let remainingCredit = myShareInThisBill;
+                let autoSettledBillIds = [billDocRef.id];
+                let settledCount = 0;
+
+                for (const oldBill of unpaidBills) {
+                  if (remainingCredit <= 0.009) break;
+
+                  const splitsKeys = Object.keys(oldBill.splits || {});
+                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase()) || friendPayerName;
+                  const billDebt = oldBill.splits[matchedKey] || 0;
+                  const oldBDoc = basePath.collection('bills').doc(oldBill.id);
+
+                  if (remainingCredit >= billDebt) {
+                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
+                    batch.update(oldBDoc, { paidStatus: nextStatus });
+                    remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
+                    autoSettledBillIds.push(oldBill.id);
+                    settledCount++;
+                  } else {
+                    const remainingDebt = Math.round((billDebt - remainingCredit) * 100) / 100;
+                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
+                    batch.update(oldBDoc, { paidStatus: nextStatus });
+
+                    const partAdjRef = basePath.collection('adjustments').doc();
+                    batch.set(partAdjRef, {
+                      friendName: friendPayerName,
+                      amount: remainingDebt,
+                      displayAmount: remainingDebt,
+                      isPaymentRecord: false,
+                      isSettled: false,
+                      note: `⚙️ ยอดคงเหลือบิล: ${oldBill.name} (หักล้างอัตโนมัติด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM)`,
+                      date: newBillDate,
+                      createdAt: Date.now()
+                    });
+
+                    autoSettledBillIds.push(oldBill.id);
+                    remainingCredit = 0;
+                    settledCount++;
+                    break;
+                  }
+                }
+
+                // เซตให้ส่วนของ Dom ในบิลนี้เป็น Paid เพื่อป้องกันการหักยอดซ้ำใน getFriendBalances
+                initialPaidStatus['Me (Dom)'] = true;
+                initialPaidStatus['ตัวฉันเอง'] = true;
+                batch.update(billDocRef, { paidStatus: initialPaidStatus });
+
+                const autoLogRef = basePath.collection('adjustments').doc();
+                batch.set(autoLogRef, {
+                  friendName: friendPayerName,
+                  amount: 0,
+                  displayAmount: myShareInThisBill,
+                  sourceBillId: billDocRef.id,
+                  isPaymentRecord: true,
+                  isSettled: true,
+                  relatedBillIds: autoSettledBillIds,
+                  note: `⚡ Auto Net-off: ${friendPayerName} ออกค่า ${newBillName} ให้ (${myShareInThisBill.toFixed(2)} RM) -> ล้างบิลเก่าอัตโนมัติ ${settledCount} บิล`,
+                  date: newBillDate,
+                  createdAt: Date.now() + 1
+                });
+              }
+            }
+
+            await batch.commit();
+            showToast("บันทึกบิลและคำนวณยอดเรียบร้อย! 🎉");
+          } catch (err) {
+            showToast("Save failed: Permission denied", "error");
+          } finally {
+            setIsProcessing(false);
+          }
+        }
+
+        setEditingBillId(null);
+        setViewingBillId(null);
+        setActiveTab('bills');
+      };
+
+      const handleTogglePaid = async (bill, friendName) => {
+        if (!isAdmin || isProcessing) return;
+        const splitsKeys = Object.keys(bill.splits || {});
+        const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+        const currentPaid = !!bill.paidStatus?.[matchedKey];
+        const newPaidStatus = !currentPaid;
+        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: newPaidStatus };
+        const userShare = bill.splits?.[matchedKey] || 0;
+        
+        setIsProcessing(true);
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+
+            const billRef = basePath.collection('bills').doc(bill.id);
+            batch.update(billRef, { paidStatus: updatedStatus });
+
+            if (newPaidStatus && userShare > 0) {
+              const adjRef = basePath.collection('adjustments').doc();
+              batch.set(adjRef, {
+                friendName: matchedKey,
+                billId: bill.id,
+                amount: 0,
+                displayAmount: userShare,
+                isPaymentRecord: true,
+                isSettled: true,
+                note: `✓ ชำระแล้ว: ${bill.name}`,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: Date.now()
+              });
+            } else if (!newPaidStatus) {
+              const matchedAdjs = adjustments.filter(a => a.billId === bill.id && a.friendName.toLowerCase() === matchedKey.toLowerCase());
+              matchedAdjs.forEach(adj => {
+                const adjRef = basePath.collection('adjustments').doc(adj.id);
+                batch.delete(adjRef);
+              });
+            }
+
+            await batch.commit();
+            showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
+          } catch (err) {
+            showToast("Update failed: Permission denied", "error");
+          } finally {
+            setIsProcessing(false);
+          }
+        }
+      };
+
+      const handleToggleAdjStatus = async (adj) => {
+        if (!isAdmin || isProcessing) return;
+        const newStatus = !adj.isSettled;
+        setIsProcessing(true);
+        if (db) {
+          try {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('adjustments').doc(adj.id).update({ isSettled: newStatus });
+            showToast(`Updated status to ${newStatus ? 'Paid' : 'Pending'}`);
+          } catch (e) {
+            showToast("Failed to update status", "error");
+          } finally {
+            setIsProcessing(false);
+          }
+        }
+      };
 
       const handleExportJSONBackup = () => {
         const fullBackup = {
@@ -1303,815 +2113,6 @@
         }
       };
 
-      const preprocessImageForOCR = (imageFile) => {
-        return new Promise((resolve) => {
-          const img = new Image();
-          const objectUrl = URL.createObjectURL(imageFile);
-          img.onload = () => {
-            URL.revokeObjectURL(objectUrl);
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            const scale = 1.5;
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-
-            ctx.imageSmoothingEnabled = true;
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-              const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-              const v = gray > 145 ? 255 : 0;
-              d[i] = v;
-              d[i + 1] = v;
-              d[i + 2] = v;
-            }
-            ctx.putImageData(imgData, 0, 0);
-
-            canvas.toBlob((blob) => {
-              if (blob) resolve(blob);
-              else resolve(imageFile);
-            }, 'image/png');
-          };
-          img.onerror = () => resolve(imageFile);
-          img.src = objectUrl;
-        });
-      };
-
-      const parseTextContent = (fullText) => {
-        const cleanLines = fullText
-          .replace(/[—–]/g, '-')
-          .replace(/[oO](?=[0-9])/g, '0')
-          .split('\n')
-          .map(l => l.trim())
-          .filter(Boolean);
-
-        let extractedItems = [];
-        let rFare = 0, tFee = 0, dFee = 0, pCharge = 0, dAmount = 0;
-
-        for (let i = 0; i < cleanLines.length; i++) {
-          const line = cleanLines[i];
-
-          if (/delivery\s*fee|rider\s*fee|driver\s*fee|shipping/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              dFee = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
-            }
-            continue;
-          }
-
-          if (/packaging|packing|takeaway\s*box|container|bag/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              pCharge = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
-            }
-            continue;
-          }
-
-          if (/discount|promo|voucher|off\b|cashback|rebate/i.test(line)) {
-            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              const rawVal = matches[matches.length - 1].replace(/[-−\sRM]/gi, '').replace(',', '.');
-              dAmount = Math.abs(parseFloat(rawVal) || 0);
-            }
-            continue;
-          }
-
-          if (/toll|expressway|highway/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
-            if (matches) tFee = parseFloat(matches[1].replace(',', '.'));
-            continue;
-          }
-
-          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|sst\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery|invoice|receipt|cashier|terminal|change\b|rounding/i.test(line);
-          if (isNoise) continue;
-
-          const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
-          const match = line.match(itemRegex);
-
-          if (match) {
-            let qty = parseInt(match[1]) || 1;
-            let itemName = match[2].replace(/^[0-9]+x?\s*/i, '').trim();
-            let itemPrice = parseFloat(match[3].replace(',', '.'));
-
-            if (i + 1 < cleanLines.length && /^[0-9]+\s*[xX]$/i.test(cleanLines[i + 1])) {
-              qty = parseInt(cleanLines[i + 1]) || qty;
-            }
-
-            if (itemPrice > 0 && itemName.length >= 2 && !/total|amount|cash|balance/i.test(itemName)) {
-              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
-              if (!exists) {
-                extractedItems.push({
-                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                  name: itemName,
-                  price: itemPrice.toFixed(2),
-                  qty: qty,
-                  taxRate: 0,
-                  sharedWith: [...billFriends]
-                });
-              }
-            }
-          }
-        }
-
-        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
-      };
-
-      const handleAddImages = (e) => {
-        const files = Array.from(e.target.files);
-        if (!files.length) return;
-        setSelectedImages(prev => [...prev, ...files]);
-      };
-
-      const handleRemoveImage = (index) => {
-        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
-      };
-
-      const handleProcessAllImages = async () => {
-        if (!selectedImages.length) return;
-        setOcrProcessing(true);
-        setOcrProgress(0);
-
-        let combinedExtractedItems = [];
-        let extractedRideFare = 0, detectedToll = 0, detectedDiscount = 0, detectedDelivery = 0, detectedPackaging = 0;
-
-        try {
-          showToast("⚡ กำลังปรับแต่งภาพ & สแกนบิลแบบ Offline...");
-          for (let i = 0; i < selectedImages.length; i++) {
-            const rawFile = selectedImages[i];
-            const processedBlob = await preprocessImageForOCR(rawFile);
-
-            const { data: { text } } = await Tesseract.recognize(
-              processedBlob,
-              'eng+tha',
-              {
-                logger: m => {
-                  if (m.status === 'recognizing text') {
-                    const singleProgress = m.progress || 0;
-                    setOcrProgress(Math.round(((i + singleProgress) / selectedImages.length) * 100));
-                  }
-                }
-              }
-            );
-
-            const parsed = parseTextContent(text);
-            parsed.extractedItems.forEach(item => {
-              if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
-                combinedExtractedItems.push(item);
-              }
-            });
-
-            if (parsed.dFee) detectedDelivery = parsed.dFee;
-            if (parsed.pCharge) detectedPackaging = parsed.pCharge;
-            if (parsed.dAmount) detectedDiscount = parsed.dAmount;
-            if (parsed.tFee) detectedToll = parsed.tFee;
-
-            if (billType === 'ride') {
-              const prices = text.split('\n').map(l => {
-                const m = l.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
-                return m ? parseFloat(m[1].replace(',', '.')) : 0;
-              }).filter(p => p > 0);
-              if (prices.length > 0) extractedRideFare = Math.max(extractedRideFare, ...prices);
-            }
-          }
-
-          if (billType === 'ride' && extractedRideFare > 0) {
-            setRideFare(extractedRideFare);
-            if (detectedToll) setTollFee(detectedToll);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast("สแกนค่าโดยสารสำเร็จ!");
-          } else if (combinedExtractedItems.length > 0 || detectedDelivery > 0 || detectedPackaging > 0 || detectedDiscount > 0) {
-            if (combinedExtractedItems.length > 0) setBillItems(combinedExtractedItems);
-            if (detectedPackaging) setPackagingCharge(detectedPackaging);
-            if (detectedDelivery) setDeliveryFee(detectedDelivery);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast(`🎉 สแกนสำเร็จ ${combinedExtractedItems.length} รายการ!`);
-          } else {
-            showToast("OCR อ่านรายการไม่ชัดเจน แนะนำให้ใช้ปุ่ม '📝 วางข้อความ'", "error");
-          }
-        } catch (err) {
-          console.error("Scanning Error:", err);
-          showToast(`เกิดข้อผิดพลาดในการสแกน: ${err.message}`, "error");
-        } finally {
-          setOcrProcessing(false);
-          setSelectedImages([]);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-      };
-
-      const handleParseRawText = () => {
-        if (!rawOrderText.trim()) return;
-        const parsed = parseTextContent(rawOrderText);
-        if (parsed.extractedItems.length > 0 || parsed.dFee || parsed.pCharge || parsed.dAmount) {
-          if (parsed.extractedItems.length > 0) setBillItems(parsed.extractedItems);
-          if (parsed.dFee) setDeliveryFee(parsed.dFee);
-          if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
-          if (parsed.dAmount) setDiscountAmount(parsed.dAmount);
-          showToast(`แกะข้อมูลได้ ${parsed.extractedItems.length} รายการ! 🎉`);
-          setShowRawTextInput(false);
-          setRawOrderText('');
-        } else {
-          showToast("ไม่พบรายการสินค้าที่ระบุราคาชัดเจน", "error");
-        }
-      };
-
-      const calculateBillSplits = (items, scRate, dFee, packCharge, discount, roundAdj, selectedFriends, currentTaxMode, currentBillType, rFare, tFee, lAmt, lBorrower, curRemainderMode = 'distribute', curPaidBy = 'Me (Dom)') => {
-        const splits = {};
-        const friendItemDetails = {};
-        const activeFriendsCount = selectedFriends.length;
-
-        if (currentBillType === 'loan') {
-          const parsedLoanAmt = parseFloat(lAmt) || 0;
-          if (lBorrower) {
-            splits[lBorrower] = parsedLoanAmt;
-            friendItemDetails[lBorrower] = { baseShare: parsedLoanAmt };
-          }
-          return {
-            subtotal: parsedLoanAmt,
-            total: parsedLoanAmt,
-            splits,
-            friendItemDetails
-          };
-        }
-
-        if (currentBillType === 'ride') {
-          const parsedRideFare = parseFloat(rFare) || 0;
-          const parsedToll = parseFloat(tFee) || 0;
-          const parsedDiscount = parseFloat(discount) || 0;
-          const parsedRoundAdj = parseFloat(roundAdj) || 0;
-          
-          const netTotal = Math.max(0, parsedRideFare + parsedToll - parsedDiscount + parsedRoundAdj);
-          const totalCents = Math.round(netTotal * 100);
-          const baseCents = activeFriendsCount > 0 ? Math.floor(totalCents / activeFriendsCount) : 0;
-          let remainderCents = activeFriendsCount > 0 ? (totalCents % activeFriendsCount) : 0;
-
-          selectedFriends.forEach(f => {
-            let shareCents = baseCents;
-            if (curRemainderMode === 'distribute') {
-              if (remainderCents > 0) {
-                shareCents += 1;
-                remainderCents--;
-              }
-            } else if (curRemainderMode === 'payer' && f.toLowerCase() === curPaidBy.toLowerCase()) {
-              shareCents += remainderCents;
-            }
-
-            splits[f] = shareCents / 100;
-
-            friendItemDetails[f] = {
-              baseShare: Math.round((parsedRideFare / (activeFriendsCount || 1)) * 100) / 100,
-              tollShare: Math.round((parsedToll / (activeFriendsCount || 1)) * 100) / 100,
-              discountShare: Math.round((parsedDiscount / (activeFriendsCount || 1)) * 100) / 100,
-            };
-          });
-
-          return {
-            subtotal: parsedRideFare,
-            tollFee: parsedToll,
-            discountAmount: parsedDiscount,
-            total: Math.round(netTotal * 100) / 100,
-            splits,
-            friendItemDetails
-          };
-        }
-
-        const friendBaseShares = {};
-        const friendTaxShares = {};
-        
-        selectedFriends.forEach(f => {
-          friendBaseShares[f] = 0;
-          friendTaxShares[f] = 0;
-        });
-
-        let subtotal = 0;
-        let taxBreakdown = { 0: 0, 6: 0, 7: 0, 8: 0 };
-        let totalTax = 0;
-
-        items.forEach(item => {
-          const price = parseFloat(item.price) || 0;
-          const qty = parseInt(item.qty) || 1;
-          const itemTotal = price * qty;
-          const taxRate = parseFloat(item.taxRate) || 0;
-
-          subtotal += itemTotal;
-
-          let itemTaxAmount = 0;
-          if (currentTaxMode === 'addon') {
-            itemTaxAmount = itemTotal * (taxRate / 100);
-          } else {
-            itemTaxAmount = itemTotal - (itemTotal / (1 + (taxRate / 100)));
-          }
-
-          taxBreakdown[taxRate] = (taxBreakdown[taxRate] || 0) + itemTaxAmount;
-          totalTax += itemTaxAmount;
-
-          const sharedList = (item.sharedWith || []).filter(f => selectedFriends.includes(f));
-          if (sharedList.length > 0) {
-            const itemTotalCents = Math.round(itemTotal * 100);
-            const baseShareCents = Math.floor(itemTotalCents / sharedList.length);
-            let remShareCents = itemTotalCents % sharedList.length;
-
-            const itemTaxCents = Math.round(itemTaxAmount * 100);
-            const baseTaxCents = Math.floor(itemTaxCents / sharedList.length);
-            let remTaxCents = itemTaxCents % sharedList.length;
-
-            sharedList.forEach(f => {
-              const allocatedCents = baseShareCents + (remShareCents > 0 ? 1 : 0);
-              if (remShareCents > 0) remShareCents--;
-              friendBaseShares[f] = (friendBaseShares[f] || 0) + (allocatedCents / 100);
-
-              const allocatedTaxCents = baseTaxCents + (remTaxCents > 0 ? 1 : 0);
-              if (remTaxCents > 0) remTaxCents--;
-              friendTaxShares[f] = (friendTaxShares[f] || 0) + (allocatedTaxCents / 100);
-            });
-          }
-        });
-
-        const totalSc = subtotal * (scRate / 100);
-        const parsedDFee = parseFloat(dFee) || 0;
-        const parsedPackCharge = parseFloat(packCharge) || 0;
-        const parsedDiscount = parseFloat(discount) || 0;
-        const parsedRoundAdj = parseFloat(roundAdj) || 0;
-
-        const perPersonDelivery = activeFriendsCount > 0 ? (parsedDFee / activeFriendsCount) : 0;
-        const perPersonPackaging = activeFriendsCount > 0 ? (parsedPackCharge / activeFriendsCount) : 0;
-
-        let totalDistributedCents = 0;
-
-        selectedFriends.forEach(f => {
-          const base = friendBaseShares[f] || 0;
-          const friendSc = base * (scRate / 100);
-          const friendTax = currentTaxMode === 'addon' ? (friendTaxShares[f] || 0) : 0;
-          const userDiscountShare = subtotal > 0 ? (base / subtotal) * parsedDiscount : (parsedDiscount / (activeFriendsCount || 1));
-          
-          const finalPersonAmount = Math.max(0, base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare);
-          const personCents = Math.round(finalPersonAmount * 100);
-          splits[f] = personCents / 100;
-          totalDistributedCents += personCents;
-
-          friendItemDetails[f] = {
-            baseShare: Math.round(base * 100) / 100,
-            scShare: Math.round(friendSc * 100) / 100,
-            taxShare: Math.round((friendTaxShares[f] || 0) * 100) / 100,
-            deliveryShare: Math.round(perPersonDelivery * 100) / 100,
-            packagingShare: Math.round(perPersonPackaging * 100) / 100,
-            discountShare: Math.round(userDiscountShare * 100) / 100,
-          };
-        });
-
-        const addedTaxToTotal = currentTaxMode === 'addon' ? totalTax : 0;
-        const finalTotal = Math.round((subtotal + totalSc + addedTaxToTotal + parsedDFee + parsedPackCharge - parsedDiscount + parsedRoundAdj) * 100) / 100;
-        const targetTotalCents = Math.round(finalTotal * 100);
-
-        if (activeFriendsCount > 0 && totalDistributedCents !== targetTotalCents) {
-          const diffCents = targetTotalCents - totalDistributedCents;
-          const targetPerson = (curRemainderMode === 'payer' && selectedFriends.includes(curPaidBy)) 
-            ? curPaidBy 
-            : selectedFriends[selectedFriends.length - 1];
-          splits[targetPerson] = Math.max(0, Math.round((splits[targetPerson] + (diffCents / 100)) * 100) / 100);
-        }
-
-        return {
-          subtotal: Math.round(subtotal * 100) / 100,
-          serviceChargeAmount: Math.round(totalSc * 100) / 100,
-          deliveryFee: parsedDFee,
-          packagingCharge: parsedPackCharge,
-          discountAmount: parsedDiscount,
-          taxMode: currentTaxMode,
-          taxBreakdown,
-          totalTax: Math.round(totalTax * 100) / 100,
-          roundingAdjustment: parsedRoundAdj,
-          total: finalTotal,
-          splits,
-          friendItemDetails
-        };
-      };
-
-      const handleStartEditBill = (bill) => {
-        if (!isAdmin) {
-          showToast("Only Admin can edit transactions", "error");
-          return;
-        }
-        setEditingBillId(bill.id);
-        setNewBillName(bill.name);
-        setBillType(bill.billType || 'delivery');
-        setPaidBy(bill.paidBy || 'Me (Dom)');
-        setRemainderMode(bill.remainderMode || 'distribute');
-        setTaxMode(bill.taxMode || 'inclusive');
-        setNewBillDate(bill.date);
-        setRideFare(bill.rideFare || '');
-        setTollFee(bill.tollFee || '');
-        setRideRoute(bill.rideRoute || '');
-        setLoanAmount(bill.loanAmount || '');
-        setLoanBorrower(bill.loanBorrower || '');
-        setServiceChargeRate(bill.serviceChargeRate !== undefined ? bill.serviceChargeRate : 0);
-        setDeliveryFee(bill.deliveryFee || 0);
-        setPackagingCharge(bill.packagingCharge || 0);
-        setDiscountAmount(bill.discountAmount || 0);
-        setRoundingAdj(bill.roundingAdjustment || 0);
-        
-        const existingParticipants = new Set([
-          ...Object.keys(bill.splits || {}),
-          ...(bill.items || []).flatMap(i => i.sharedWith || [])
-        ]);
-        const participantsArray = Array.from(existingParticipants);
-        setBillFriends(participantsArray.length > 0 ? participantsArray : friends.filter(f => !f.isArchived).map(f => f.name));
-
-        const loadedItems = (bill.items || []).map(item => ({
-          ...item,
-          id: item.id || Date.now().toString() + Math.random().toString(36).substring(2, 5),
-          taxRate: item.taxRate !== undefined ? item.taxRate : 0,
-          sharedWith: item.sharedWith || []
-        }));
-        setBillItems(loadedItems);
-        setActiveTab('new-bill');
-      };
-
-      // --- SAVE BILL + FIFO AUTO NET-OFF ---
-      const handleSaveBill = async (e) => {
-        e.preventDefault();
-        if (!isAdmin) {
-          showToast("Permission denied: Admin only", "error");
-          return;
-        }
-        if (!newBillName.trim()) {
-          showToast("Please enter a transaction title", "error");
-          return;
-        }
-
-        const calculated = calculateBillSplits(
-          billItems,
-          serviceChargeRate,
-          deliveryFee,
-          packagingCharge,
-          discountAmount,
-          roundingAdj,
-          billFriends,
-          taxMode,
-          billType,
-          rideFare,
-          tollFee,
-          loanAmount,
-          loanBorrower,
-          remainderMode,
-          paidBy
-        );
-
-        let initialPaidStatus = {};
-        if (editingBillId) {
-          const oldBill = bills.find(b => b.id === editingBillId);
-          initialPaidStatus = oldBill?.paidStatus || {};
-        }
-
-        const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
-
-        participantsToProcess.forEach(f => {
-          if (initialPaidStatus[f] === undefined) {
-            const isCurrentPayer = f.toLowerCase() === paidBy.toLowerCase();
-            initialPaidStatus[f] = isCurrentPayer ? true : false;
-          }
-        });
-
-        const billPayload = {
-          name: newBillName,
-          billType,
-          paidBy,
-          remainderMode,
-          taxMode,
-          date: newBillDate,
-          rideFare: parseFloat(rideFare) || 0,
-          tollFee: parseFloat(tollFee) || 0,
-          rideRoute,
-          loanAmount: parseFloat(loanAmount) || 0,
-          loanBorrower,
-          subtotal: calculated.subtotal,
-          serviceChargeRate,
-          serviceChargeAmount: calculated.serviceChargeAmount || 0,
-          deliveryFee: calculated.deliveryFee || 0,
-          packagingCharge: calculated.packagingCharge || 0,
-          discountAmount: calculated.discountAmount || 0,
-          taxBreakdown: calculated.taxBreakdown || {},
-          totalTax: calculated.totalTax || 0,
-          roundingAdjustment: calculated.roundingAdjustment || 0,
-          total: calculated.total,
-          items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
-            id: item.id,
-            name: item.name,
-            price: parseFloat(item.price) || 0,
-            qty: parseInt(item.qty) || 1,
-            taxRate: parseFloat(item.taxRate || 0),
-            sharedWith: item.sharedWith || []
-          })),
-          splits: calculated.splits,
-          friendItemDetails: calculated.friendItemDetails,
-          paidStatus: initialPaidStatus,
-          updatedAt: Date.now()
-        };
-
-        if (db) {
-          try {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            const batch = db.batch();
-
-            let billDocRef;
-            if (editingBillId) {
-              billDocRef = basePath.collection('bills').doc(editingBillId);
-              batch.update(billDocRef, billPayload);
-            } else {
-              billPayload.createdAt = Date.now();
-              billDocRef = basePath.collection('bills').doc();
-              batch.set(billDocRef, billPayload);
-            }
-
-            // ⚡ SMART FIFO AUTO-NETOFF: ถ้าเพื่อนจ่าย และ Dom มีส่วนต้องออก ให้วิ่งไปตัดบิลเก่าที่เพื่อนค้างเราทันที
-            const isDomPayer = /me|dom/i.test(paidBy);
-            const myShareInThisBill = calculated.splits?.['Me (Dom)'] || calculated.splits?.['ตัวฉันเอง'] || 0;
-
-            if (!isDomPayer && myShareInThisBill > 0) {
-              const friendPayerName = paidBy;
-              const unpaidBills = bills
-                .filter(b => {
-                  const bDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
-                  const splitsKeys = Object.keys(b.splits || {});
-                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase());
-                  const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
-                  return bDomPayer && isUnpaid;
-                })
-                .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-              if (unpaidBills.length > 0) {
-                let remainingCredit = myShareInThisBill;
-                let autoSettledBillIds = [billDocRef.id];
-                let settledCount = 0;
-
-                for (const oldBill of unpaidBills) {
-                  if (remainingCredit <= 0.009) break;
-
-                  const splitsKeys = Object.keys(oldBill.splits || {});
-                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase()) || friendPayerName;
-                  const billDebt = oldBill.splits[matchedKey] || 0;
-                  const oldBDoc = basePath.collection('bills').doc(oldBill.id);
-
-                  if (remainingCredit >= billDebt) {
-                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
-                    batch.update(oldBDoc, { paidStatus: nextStatus });
-                    remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
-                    autoSettledBillIds.push(oldBill.id);
-                    settledCount++;
-                  } else {
-                    const remainingDebt = Math.round((billDebt - remainingCredit) * 100) / 100;
-                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
-                    batch.update(oldBDoc, { paidStatus: nextStatus });
-
-                    const partAdjRef = basePath.collection('adjustments').doc();
-                    batch.set(partAdjRef, {
-                      friendName: friendPayerName,
-                      amount: remainingDebt,
-                      displayAmount: remainingDebt,
-                      isPaymentRecord: false,
-                      isSettled: false,
-                      note: `⚙️ ยอดคงเหลือบิล: ${oldBill.name} (หักล้างอัตโนมัติด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM)`,
-                      date: newBillDate,
-                      createdAt: Date.now()
-                    });
-
-                    autoSettledBillIds.push(oldBill.id);
-                    remainingCredit = 0;
-                    settledCount++;
-                    break;
-                  }
-                }
-
-                // ป้องกันหักซ้ำซ้อนใน getFriendBalances
-                initialPaidStatus['Me (Dom)'] = true;
-                initialPaidStatus['ตัวฉันเอง'] = true;
-                batch.update(billDocRef, { paidStatus: initialPaidStatus });
-
-                const autoLogRef = basePath.collection('adjustments').doc();
-                batch.set(autoLogRef, {
-                  friendName: friendPayerName,
-                  amount: 0,
-                  displayAmount: myShareInThisBill,
-                  isPaymentRecord: true,
-                  isSettled: true,
-                  relatedBillIds: autoSettledBillIds,
-                  note: `⚡ Auto Net-off: ${friendPayerName} ออกค่า ${newBillName} ให้ (${myShareInThisBill.toFixed(2)} RM) -> ล้างบิลเก่าอัตโนมัติ ${settledCount} บิล`,
-                  date: newBillDate,
-                  createdAt: Date.now() + 1
-                });
-              }
-            }
-
-            await batch.commit();
-            showToast("บันทึกบิลและคำนวณยอดเรียบร้อย! 🎉");
-          } catch (err) {
-            showToast("Save failed: Permission denied", "error");
-          }
-        }
-
-        setEditingBillId(null);
-        setViewingBillId(null);
-        setActiveTab('bills');
-      };
-
-      const handleTogglePaid = async (bill, friendName) => {
-        if (!isAdmin) {
-          showToast("Only Admin can change payment status", "error");
-          return;
-        }
-        const splitsKeys = Object.keys(bill.splits || {});
-        const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
-        const currentPaid = !!bill.paidStatus?.[matchedKey];
-        const newPaidStatus = !currentPaid;
-        const updatedStatus = { ...(bill.paidStatus || {}), [matchedKey]: newPaidStatus };
-        const userShare = bill.splits?.[matchedKey] || 0;
-        
-        if (db) {
-          try {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            const batch = db.batch();
-
-            const billRef = basePath.collection('bills').doc(bill.id);
-            batch.update(billRef, { paidStatus: updatedStatus });
-
-            if (newPaidStatus && userShare > 0) {
-              const adjRef = basePath.collection('adjustments').doc();
-              batch.set(adjRef, {
-                friendName: matchedKey,
-                billId: bill.id,
-                amount: 0,
-                displayAmount: userShare,
-                isPaymentRecord: true,
-                isSettled: true,
-                note: `✓ ชำระแล้ว: ${bill.name}`,
-                date: new Date().toISOString().split('T')[0],
-                createdAt: Date.now()
-              });
-            } else if (!newPaidStatus) {
-              const matchedAdjs = adjustments.filter(a => a.billId === bill.id && a.friendName.toLowerCase() === matchedKey.toLowerCase());
-              matchedAdjs.forEach(adj => {
-                const adjRef = basePath.collection('adjustments').doc(adj.id);
-                batch.delete(adjRef);
-              });
-            }
-
-            await batch.commit();
-            showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
-          } catch (err) {
-            showToast("Update failed: Permission denied", "error");
-          }
-        }
-      };
-
-      const handleToggleAdjStatus = async (adj) => {
-        if (!isAdmin) return;
-        const newStatus = !adj.isSettled;
-        if (db) {
-          try {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            await basePath.collection('adjustments').doc(adj.id).update({ isSettled: newStatus });
-            showToast(`Updated status to ${newStatus ? 'Paid' : 'Pending'}`);
-          } catch (e) {
-            showToast("Failed to update status", "error");
-          }
-        }
-      };
-
-      const handleDeleteBill = async (billId) => {
-        if (!isAdmin) {
-          showToast("Only Admin can delete bills", "error");
-          return;
-        }
-        if (!confirm("Are you sure you want to delete this bill?")) return;
-        if (db) {
-          try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(billId).delete();
-            setViewingBillId(null);
-            showToast("Bill deleted");
-          } catch (err) {
-            showToast("Delete failed: Permission denied", "error");
-          }
-        }
-      };
-
-      const handleAddFriend = async (e) => {
-        e.preventDefault();
-        if (!isAdmin) {
-          showToast("Only Admin can add friends", "error");
-          return;
-        }
-        const name = newFriendName.trim();
-        if (!name) return;
-        if (friends.some(f => f.name.toLowerCase() === name.toLowerCase())) {
-          showToast("Friend name already exists", "error");
-          return;
-        }
-
-        const newF = { name, isSelf: false, isArchived: false, createdAt: Date.now() };
-        if (db) {
-          try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add(newF);
-            showToast("Friend added");
-          } catch (err) {
-            showToast("Failed to add friend", "error");
-          }
-        }
-        setNewFriendName('');
-      };
-
-      const handleToggleArchiveFriend = async (friend) => {
-        if (!isAdmin) {
-          showToast("Only Admin can archive friends", "error");
-          return;
-        }
-        const actionText = friend.isArchived ? "Restore" : "Archive";
-        if (!confirm(`${actionText} friend "${friend.name}"? (Past records remain safe)`)) return;
-
-        if (db) {
-          try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({
-              isArchived: !friend.isArchived
-            });
-            showToast(`Friend ${actionText.toLowerCase()}d successfully`);
-          } catch (err) {
-            showToast("Action failed: Permission denied", "error");
-          }
-        }
-      };
-
-      const handleStartRenameFriend = (friend) => {
-        if (!isAdmin) return;
-        setRenamingFriendId(friend.id);
-        setRenameValue(friend.name);
-      };
-
-      const handleCancelRenameFriend = () => {
-        setRenamingFriendId(null);
-        setRenameValue('');
-      };
-
-      const handleConfirmRenameFriend = async (friend) => {
-        if (!isAdmin) return;
-        const newName = renameValue.trim();
-        if (!newName || newName === friend.name) {
-          handleCancelRenameFriend();
-          return;
-        }
-        if (friends.some(f => f.id !== friend.id && f.name.toLowerCase() === newName.toLowerCase())) {
-          showToast("This name already exists", "error");
-          return;
-        }
-
-        const oldName = friend.name;
-        const renameInBill = (bill) => {
-          const newItems = (bill.items || []).map(item => ({
-            ...item,
-            sharedWith: (item.sharedWith || []).map(n => n === oldName ? newName : n)
-          }));
-          const newSplits = {};
-          Object.entries(bill.splits || {}).forEach(([k, v]) => {
-            newSplits[k === oldName ? newName : k] = v;
-          });
-          const newPaidStatus = {};
-          Object.entries(bill.paidStatus || {}).forEach(([k, v]) => {
-            newPaidStatus[k === oldName ? newName : k] = v;
-          });
-          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus, paidBy: bill.paidBy === oldName ? newName : bill.paidBy };
-        };
-
-        try {
-          if (db) {
-            const batch = db.batch();
-            const friendRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id);
-            batch.update(friendRef, { name: newName });
-
-            bills.forEach(bill => {
-              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName)) || bill.paidBy === oldName;
-              if (touches) {
-                const updated = renameInBill(bill);
-                const billRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id);
-                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus, paidBy: updated.paidBy });
-              }
-            });
-
-            adjustments.forEach(adj => {
-              if (adj.friendName === oldName) {
-                const adjRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id);
-                batch.update(adjRef, { friendName: newName });
-              }
-            });
-
-            await batch.commit();
-            showToast(`Renamed to "${newName}"`);
-          }
-        } catch (err) {
-          showToast("Rename failed: Permission denied", "error");
-        }
-        handleCancelRenameFriend();
-      };
-
       const filteredBills = useMemo(() => {
         const term = searchQuery.trim().toLowerCase();
         return bills.filter(bill => {
@@ -2135,6 +2136,19 @@
           return true;
         });
       }, [bills, searchQuery, statusFilter, friends]);
+
+      const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
+        const fObj = friends.find(f => f.name === name);
+        if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
+        return acc;
+      }, 0);
+
+      const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
+        const fObj = friends.find(f => f.name === name);
+        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
+      }).length;
+
+      const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
 
       return (
         <div className="pb-16 min-h-screen">
@@ -2300,10 +2314,10 @@
                   </div>
 
                   <div className="space-y-3">
-                    {filteredDashboardFriends.length === 0 ? (
+                    {friends.filter(f => !f.isSelf && (dashboardDebtFilter === 'all' ? true : dashboardDebtFilter === 'receivable' ? (friendBalances[f.name]?.totalOwed > 0) : (friendBalances[f.name]?.totalOwed < 0))).length === 0 ? (
                       <div className="py-8 text-center text-textMuted text-sm">{t('allSettled')}</div>
                     ) : (
-                      filteredDashboardFriends.map(friend => {
+                      friends.filter(f => !f.isSelf && (dashboardDebtFilter === 'all' ? true : dashboardDebtFilter === 'receivable' ? (friendBalances[f.name]?.totalOwed > 0) : (friendBalances[f.name]?.totalOwed < 0))).map(friend => {
                         const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
                         const isDebtor = balance.totalOwed > 0;
 
@@ -2446,7 +2460,7 @@
                     </div>
                   )}
 
-                  {/* SMART SCANNER */}
+                  {/* SMART SCANNER WITH ROTATION */}
                   {billType !== 'loan' && (
                     <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
@@ -2456,7 +2470,15 @@
                           </p>
                           <p className="text-xs text-textSecondary mt-0.5">Canvas Pre-processing + Smart Regex for Grab, Aeon & 7-11</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
+                          <button
+                            type="button"
+                            onClick={() => setImageRotation(prev => (prev + 90) % 360)}
+                            className="bg-subtle hover:bg-line text-textPrimary border border-line px-2.5 py-1.5 rounded-xl text-xs font-bold transition"
+                            title="Rotate Image 90 Degrees"
+                          >
+                            🔄 {imageRotation}°
+                          </button>
                           <input 
                             type="file" 
                             accept="image/*" 
@@ -2972,8 +2994,8 @@
                   )}
 
                   <div className="pt-4 border-t border-line">
-                    <button type="submit" className="w-full bg-mint hover:bg-emerald-600 text-bg font-bold py-3 rounded-xl transition text-sm shadow-md shadow-mint/20">
-                      {t('save')}
+                    <button type="submit" disabled={isProcessing} className="w-full bg-mint hover:bg-emerald-600 text-bg font-bold py-3 rounded-xl transition text-sm shadow-md shadow-mint/20 disabled:opacity-50">
+                      {isProcessing ? 'กำลังบันทึกข้อมูล...' : t('save')}
                     </button>
                   </div>
                 </form>
@@ -3157,8 +3179,9 @@
                                           </span>
                                         ) : isAdmin ? (
                                           <button
+                                            disabled={isProcessing}
                                             onClick={() => handleTogglePaid(bill, fName)}
-                                            className={`px-3 py-1.5 rounded-lg font-bold transition text-xs ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                            className={`px-3 py-1.5 rounded-lg font-bold transition text-xs disabled:opacity-50 ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
                                           >
                                             {isPaid ? t('paid') : t('pending')}
                                           </button>
@@ -3336,8 +3359,9 @@
 
                           {adj.amount > 0 && isAdmin && (
                             <button
+                              disabled={isProcessing}
                               onClick={() => handleToggleAdjStatus(adj)}
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition disabled:opacity-50 ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
                             >
                               {adj.isSettled ? t('paid') : t('pending')}
                             </button>
@@ -3345,8 +3369,9 @@
                           
                           {isAdmin && (
                             <button
+                              disabled={isProcessing}
                               onClick={() => handleDeleteAdjustment(adj)}
-                              className="text-coral hover:underline text-xs ml-1"
+                              className="text-coral hover:underline text-xs ml-1 disabled:opacity-50"
                               title="ลบและคืนสถานะบิลกลับเป็น Pending"
                             >
                               {t('delete')}
@@ -3742,6 +3767,7 @@
                             const isFriendPayer = (b.paidBy || '').toLowerCase() === selectedFriendForHistory.toLowerCase();
                             const domShareInThisBill = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
                             const isDomPaid = b.paidStatus?.['Me (Dom)'] || b.paidStatus?.['ตัวฉันเอง'] || false;
+                            const fifoTag = fifoSettlementMap[b.id];
 
                             return (
                               <div key={b.id} className={`p-3 rounded-xl border flex flex-col gap-2 ${isFriendPayer ? 'bg-mint-subtle/20 border-mint/40' : 'bg-subtle border-line'}`}>
@@ -3753,6 +3779,11 @@
                                     <p className="text-[10px] text-textMuted">
                                       {b.date} • {isFriendPayer ? `👑 ${selectedFriendForHistory} เป็นคนจ่าย (รวม ${b.total?.toFixed(2)} RM)` : (b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : `ส่วนของเพื่อน: ${userShare.toFixed(2)} RM`)}
                                     </p>
+                                    {fifoTag && (
+                                      <p className="text-[10px] text-indigo-400 font-sans mt-0.5 font-bold">
+                                        ℹ️ {fifoTag}
+                                      </p>
+                                    )}
                                   </div>
                                   <div className="text-right flex items-center gap-2">
                                     <div>
@@ -3762,8 +3793,9 @@
                                     </div>
                                     {isAdmin ? (
                                       <button
+                                        disabled={isProcessing}
                                         onClick={() => handleTogglePaid(b, selectedFriendForHistory)}
-                                        className={`text-[11px] font-bold px-2 py-1 rounded-lg transition ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                        className={`text-[11px] font-bold px-2 py-1 rounded-lg transition disabled:opacity-50 ${isPaid ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
                                         title="Toggle Paid Status"
                                       >
                                         {isPaid ? t('paid') : t('pending')}
@@ -3784,10 +3816,11 @@
                                     </span>
                                     <button
                                       type="button"
+                                      disabled={isProcessing}
                                       onClick={() => handleSmartFifoNetOff(selectedFriendForHistory, domShareInThisBill, b.id, b.name)}
-                                      className="bg-accent hover:bg-accent-hover text-white font-bold px-3 py-1 rounded-lg text-xs transition active:scale-95 shadow-md flex items-center gap-1"
+                                      className="bg-accent hover:bg-accent-hover text-white font-bold px-3 py-1 rounded-lg text-xs transition active:scale-95 shadow-md flex items-center gap-1 disabled:opacity-50"
                                     >
-                                      ⚡ หักล้างหนี้บิลเก่า (FIFO)
+                                      {isProcessing ? 'กำลังหักหนี้...' : '⚡ หักล้างหนี้บิลเก่า (FIFO)'}
                                     </button>
                                   </div>
                                 )}
@@ -3821,8 +3854,9 @@
 
                                 {adj.amount > 0 && isAdmin && (
                                   <button
+                                    disabled={isProcessing}
                                     onClick={() => handleToggleAdjStatus(adj)}
-                                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
+                                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition disabled:opacity-50 ${adj.isSettled ? 'bg-mint text-bg' : 'bg-coral text-white'}`}
                                   >
                                     {adj.isSettled ? t('paid') : t('pending')}
                                   </button>
@@ -3830,8 +3864,9 @@
 
                                 {isAdmin && (
                                   <button
+                                    disabled={isProcessing}
                                     onClick={() => handleDeleteAdjustment(adj)}
-                                    className="text-coral hover:underline text-xs ml-1"
+                                    className="text-coral hover:underline text-xs ml-1 disabled:opacity-50"
                                     title="ลบและคืนสถานะบิลกลับเป็น Pending"
                                   >
                                     {t('delete')}
@@ -4095,8 +4130,9 @@
                       {currentSelectedBalance.totalOwed > 0 && (
                         <button
                           type="button"
+                          disabled={isProcessing}
                           onClick={() => handleSettleFullWithBatch(selectedFriendForAdjust)}
-                          className="w-full bg-mint/15 hover:bg-mint text-mint hover:text-bg border border-mint/40 font-black py-2 px-3 rounded-xl text-xs transition text-center flex items-center justify-center gap-1.5 shadow-sm"
+                          className="w-full bg-mint/15 hover:bg-mint text-mint hover:text-bg border border-mint/40 font-black py-2 px-3 rounded-xl text-xs transition text-center flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                         >
                           <span>{t('settleFullPrompt', { amt: currentSelectedBalance.totalOwed.toFixed(2) })}</span>
                         </button>
@@ -4104,11 +4140,12 @@
 
                       <button
                         type="button"
+                        disabled={isProcessing}
                         onClick={() => {
                           const amt = prompt(`ระบุยอดเงินที่ ${selectedFriendForAdjust} ออกให้เรา (RM):`, adjustAmount || "");
                           if (amt) handleSmartFifoNetOff(selectedFriendForAdjust, amt);
                         }}
-                        className="w-full bg-accent/20 hover:bg-accent text-accent hover:text-white border border-accent/40 font-bold py-2 px-3 rounded-xl text-xs transition text-center flex items-center justify-center gap-1.5"
+                        className="w-full bg-accent/20 hover:bg-accent text-accent hover:text-white border border-accent/40 font-bold py-2 px-3 rounded-xl text-xs transition text-center flex items-center justify-center gap-1.5 disabled:opacity-50"
                       >
                         <span>{t('fifoNetOffBtn')}</span>
                       </button>
@@ -4161,10 +4198,17 @@
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button type="submit" className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-accent/20">{t('save')}</button>
+                  <button type="submit" disabled={isProcessing} className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-accent/20 disabled:opacity-50">{t('save')}</button>
                   <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="bg-subtle border border-line text-textPrimary py-2.5 px-4 rounded-xl text-sm hover:bg-line">{t('cancel')}</button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* OCR / Sanity Check Warning */}
+          {isMismatch && (
+            <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto bg-amber-950/90 border border-amber-500 text-amber-200 p-3 rounded-xl text-xs font-bold shadow-2xl flex items-center justify-between z-50 backdrop-blur-md">
+              <span>⚠️ ยอดรวมสินค้า ({itemsSum.toFixed(2)}) ไม่ตรงกับ Net Total ({calculatedNetTotal.toFixed(2)})</span>
             </div>
           )}
 
