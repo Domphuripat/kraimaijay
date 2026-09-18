@@ -2162,28 +2162,44 @@
       }, [bills, searchQuery, statusFilter, friends]);
 
       const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
-        const fObj = friends.find(f => f.name === name);
-        if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
+        const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        if (!isMe) return acc + Math.max(0, friendBalances[name].totalOwed);
         return acc;
       }, 0);
 
       const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
-        const fObj = friends.find(f => f.name === name);
-        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
+        const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        return !isMe && friendBalances[name].totalOwed > 0;
       }).length;
 
       // ตัวแปรคำนวณจำนวนลูกหนี้/เจ้าหนี้สำหรับปุ่มฟิลเตอร์
       const receivableCount = Object.keys(friendBalances).filter(name => {
-        const fObj = friends.find(f => f.name === name);
-        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
+        const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        return !isMe && friendBalances[name].totalOwed > 0;
       }).length;
 
       const payableCount = Object.keys(friendBalances).filter(name => {
-        const fObj = friends.find(f => f.name === name);
-        return !fObj?.isSelf && friendBalances[name].totalOwed < 0;
+        const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        return !isMe && friendBalances[name].totalOwed < 0;
       }).length;
 
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
+
+      // กรองรายชื่อเพื่อนเฉพาะที่มียอดค้างชำระจริง (ไม่แสดงคนยอด 0 และไม่แสดงตัวเอง)
+      const unsettledFriendList = useMemo(() => {
+        return friends.filter(f => {
+          const isMe = f.isSelf || /me|dom/i.test(f.name);
+          const bal = friendBalances[f.name]?.totalOwed || 0;
+          if (isMe || bal === 0) return false;
+          if (dashboardDebtFilter === 'receivable') return bal > 0;
+          if (dashboardDebtFilter === 'payable') return bal < 0;
+          return true;
+        });
+      }, [friends, friendBalances, dashboardDebtFilter]);
 
       return (
         <div className="pb-16 min-h-screen">
@@ -2349,10 +2365,10 @@
                   </div>
 
                   <div className="space-y-3">
-                    {friends.filter(f => !f.isSelf && (dashboardDebtFilter === 'all' ? true : dashboardDebtFilter === 'receivable' ? (friendBalances[f.name]?.totalOwed > 0) : (friendBalances[f.name]?.totalOwed < 0))).length === 0 ? (
+                    {unsettledFriendList.length === 0 ? (
                       <div className="py-8 text-center text-textMuted text-sm">{t('allSettled')}</div>
                     ) : (
-                      friends.filter(f => !f.isSelf && (dashboardDebtFilter === 'all' ? true : dashboardDebtFilter === 'receivable' ? (friendBalances[f.name]?.totalOwed > 0) : (friendBalances[f.name]?.totalOwed < 0))).map(friend => {
+                      unsettledFriendList.map(friend => {
                         const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
                         const isDebtor = balance.totalOwed > 0;
 
