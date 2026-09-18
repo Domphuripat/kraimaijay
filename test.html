@@ -3,16 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>KraiMaiJayMeeReung - Split, Loan & Settle</title>
+  <title>KraiMaiJay - Mobile App</title>
   
-  <!-- Web App & Home Screen Icons -->
-  <link rel="apple-touch-icon" href="cat.jpg">
-  <link rel="icon" type="image/jpeg" href="cat.jpg">
+  <!-- PWA & Mobile Standalone Meta -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0B0F17">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="KraiMaiJay">
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0B0F17">
+  <link rel="apple-touch-icon" href="cat.jpg">
+  <link rel="icon" type="image/jpeg" href="cat.jpg">
+
+  <!-- ตรวจจับอุปกรณ์: หากเปิดบนหน้าจอคอมพิวเตอร์ ให้สลับกลับไปยัง index.html -->
+  <script>
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isStandalone && !isMobile && window.innerWidth > 768) {
+      window.location.replace('./index.html');
+    }
+  </script>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -98,15 +107,7 @@
       color: #FFFFFF;
     }
     ::-webkit-scrollbar {
-      width: 4px;
-      height: 4px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #0B0F17;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #27354A;
-      border-radius: 9999px;
+      display: none;
     }
   </style>
 </head>
@@ -114,7 +115,7 @@
 
   <div id="root">
     <div class="min-h-screen flex items-center justify-center text-textMuted text-sm font-mono">
-      Loading KraiMaiJayMeeReung...
+      Loading KraiMaiJay App...
     </div>
   </div>
 
@@ -385,10 +386,6 @@
       const [showAuthModal, setShowAuthModal] = useState(false);
       const [inputPin, setInputPin] = useState('');
 
-      // Floating Calculator State
-      const [showCalc, setShowCalc] = useState(false);
-      const [calcInput, setCalcInput] = useState('0');
-
       const [db, setDb] = useState(null);
       const [toast, setToast] = useState(null);
       const [activeTab, setActiveTab] = useState('dashboard');
@@ -431,17 +428,7 @@
         { id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }
       ]);
 
-      const [selectedImages, setSelectedImages] = useState([]);
-      const [imageRotation, setImageRotation] = useState(0);
-      const [ocrProcessing, setOcrProcessing] = useState(false);
-      const [ocrProgress, setOcrProgress] = useState(0);
-      const [showRawTextInput, setShowRawTextInput] = useState(false);
-      const [rawOrderText, setRawOrderText] = useState('');
-      const fileInputRef = useRef(null);
-
       const [newFriendName, setNewFriendName] = useState('');
-      const [renamingFriendId, setRenamingFriendId] = useState(null);
-      const [renameValue, setRenameValue] = useState('');
       const [selectedFriendForAdjust, setSelectedFriendForAdjust] = useState(null);
       const [adjustAmount, setAdjustAmount] = useState('');
       const [adjustNote, setAdjustNote] = useState('');
@@ -479,124 +466,6 @@
         setBillFriends(Object.keys(bill.splits || {}));
         setBillItems(bill.items && bill.items.length > 0 ? bill.items : [{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
         setActiveTab('new-bill');
-      };
-
-      const fifoSettlementMap = useMemo(() => {
-        const map = {};
-        adjustments.forEach(adj => {
-          if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
-            adj.relatedBillIds.forEach(bId => {
-              map[bId] = adj.note || 'Smart FIFO Net-off';
-            });
-          }
-        });
-        return map;
-      }, [adjustments]);
-
-      const itemsSum = useMemo(() => {
-        return billItems.reduce((sum, item) => sum + ((parseFloat(item.price) || 0) * (parseInt(item.qty) || 1)), 0);
-      }, [billItems]);
-
-      const calculatedNetTotal = useMemo(() => {
-        if (billType === 'ride') {
-          return Math.max(0, (parseFloat(rideFare) || 0) + (parseFloat(tollFee) || 0) - (parseFloat(discountAmount) || 0) + (parseFloat(roundingAdj) || 0));
-        }
-        if (billType === 'loan') {
-          return parseFloat(loanAmount) || 0;
-        }
-        return Math.max(0, itemsSum + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - (parseFloat(discountAmount) || 0) + (parseFloat(roundingAdj) || 0));
-      }, [billType, rideFare, tollFee, discountAmount, roundingAdj, loanAmount, itemsSum, deliveryFee, packagingCharge]);
-
-      const isMismatch = useMemo(() => {
-        if (billType === 'ride' || billType === 'loan') return false;
-        return itemsSum > 0 && Math.abs(calculatedNetTotal - (itemsSum + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - (parseFloat(discountAmount) || 0))) > 0.05;
-      }, [billType, calculatedNetTotal, itemsSum, deliveryFee, packagingCharge, discountAmount]);
-
-      const quickMerchantPresets = useMemo(() => {
-        const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
-        const fromBills = bills.filter(b => b.billType !== 'ride' && b.billType !== 'loan').map(b => b.name).filter(Boolean);
-        const set = new Set([...fromBills, ...defaults]);
-        return Array.from(set).slice(0, 8);
-      }, [bills]);
-
-      const quickRoutePresets = useMemo(() => {
-        const defaults = ['Pavilion Bukit Jalil', 'One South', 'Sri Petaling', 'KL Sentral', 'Mid Valley', 'KLCC'];
-        const fromBills = bills.filter(b => b.billType === 'ride').map(b => b.rideRoute).filter(Boolean);
-        const set = new Set([...fromBills, ...defaults]);
-        return Array.from(set).slice(0, 6);
-      }, [bills]);
-
-      const copyStatementTextToClipboard = (friendName) => {
-        const hist = getFriendHistory(friendName);
-        const bal = friendBalances[friendName] || { totalOwed: 0, billsOwed: 0, adjustedOwed: 0 };
-        const isDebtor = bal.totalOwed > 0;
-        
-        const unpaidBills = hist.bills.filter(b => {
-          const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
-          return !b.paidStatus?.[matchedKey];
-        });
-
-        let text = `🧾 *สรุปยอดหนี้คงค้าง: ${friendName}*\n`;
-        text += `📅 ข้อมูล ณ วันที่: ${new Date().toLocaleDateString('th-TH')}\n`;
-        text += `---------------------------------\n`;
-        
-        if (unpaidBills.length > 0) {
-          text += `*รายการที่ยังไม่เคลียร์ (${unpaidBills.length} บิล):*\n`;
-          unpaidBills.forEach(b => {
-            const matchedKey = Object.keys(b.splits || {}).find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
-            const amt = (b.splits[matchedKey] || 0).toFixed(2);
-            text += `• ${b.name} (${b.date}): ${amt} RM\n`;
-          });
-          text += `---------------------------------\n`;
-        }
-
-        if (bal.adjustedOwed !== 0) {
-          text += `⚙️ ยอดปรับลด/จ่ายบางส่วน: ${bal.adjustedOwed.toFixed(2)} RM\n`;
-        }
-
-        if (isDebtor) {
-          text += `💸 *ยอดสุทธิที่ต้องโอนให้ Dom: ${bal.totalOwed.toFixed(2)} RM*\n`;
-        } else {
-          text += `🤝 *ยอดสุทธิที่ Dom ต้องจ่ายให้ ${friendName}: ${Math.abs(bal.totalOwed).toFixed(2)} RM*\n`;
-        }
-        text += `ขอบคุณครับ 🙏✨`;
-
-        navigator.clipboard.writeText(text).then(() => {
-          showToast("📋 คัดลอกข้อความสรุปยอดส่งในแชทแล้ว!");
-        }).catch(() => {
-          showToast("ไม่สามารถคัดลอกข้อความได้", "error");
-        });
-      };
-
-      const shareToSocial = (text, platform = 'whatsapp') => {
-        if (platform === 'whatsapp') {
-          window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-        } else if (platform === 'ig') {
-          navigator.clipboard.writeText(text).then(() => {
-            showToast("Copied text! Opening Instagram...");
-            window.open('https://instagram.com/direct/inbox/', '_blank');
-          }).catch(() => {
-            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-          });
-        }
-      };
-
-      const handleCalcBtn = (val) => {
-        if (val === 'C') {
-          setCalcInput('0');
-        } else if (val === 'DEL') {
-          setCalcInput(prev => prev.length > 1 ? prev.slice(0, -1) : '0');
-        } else if (val === '=') {
-          try {
-            const clean = calcInput.replace(/[^0-9+\-*/.]/g, '');
-            const res = Function(`'use strict'; return (${clean})`)();
-            setCalcInput((Math.round(res * 100) / 100).toString());
-          } catch (e) {
-            setCalcInput('Error');
-          }
-        } else {
-          setCalcInput(prev => prev === '0' || prev === 'Error' ? val : prev + val);
-        }
       };
 
       useEffect(() => {
@@ -674,7 +543,7 @@
             if (hasAdminRole) {
               showToast("👑 Signed in as Admin Dom!");
             } else {
-              showToast(`Logged in as ${userEmail} (View Only)`);
+              showToast(`Logged in as ${userEmail} (Viewer)`);
             }
           }
         } catch (err) {
@@ -689,9 +558,7 @@
           localStorage.setItem('kraimaijay_secret_admin', 'true');
           try {
             await firebase.auth().signInAnonymously();
-          } catch (err) {
-            console.warn("Anonymous auth failed", err);
-          }
+          } catch (err) {}
           setShowAuthModal(false);
           setInputPin('');
           showToast("👑 PIN Correct: Admin mode unlocked!");
@@ -708,7 +575,7 @@
         try {
           await firebase.auth().signOut();
         } catch (e) {}
-        showToast("Logged out. Returned to View-Only mode");
+        showToast("Logged out to Viewer mode");
       };
 
       const getFriendBalances = () => {
@@ -843,7 +710,6 @@
             setSelectedFriendForAdjust(null);
           }
         } catch (err) {
-          console.error("Batch settle error:", err);
           showToast("Failed to settle: " + (err.message || "Permission Denied"), "error");
         } finally {
           setIsProcessing(false);
@@ -971,58 +837,7 @@
             setSelectedFriendForAdjust(null);
           }
         } catch (err) {
-          console.error("FIFO Error:", err);
           showToast("เกิดข้อผิดพลาดในการตัดหนี้: " + err.message, "error");
-        } finally {
-          setIsProcessing(false);
-        }
-      };
-
-      const handleDeleteAdjustment = async (adj) => {
-        if (!isAdmin || isProcessing) return;
-        if (!confirm(`ต้องการลบประวัติ "${adj.note}" ใช่หรือไม่? (สถานะบิลจะถูกคืนค่ากลับเป็น Pending)`)) return;
-
-        setIsProcessing(true);
-        try {
-          if (db) {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            const batch = db.batch();
-
-            const adjRef = basePath.collection('adjustments').doc(adj.id);
-            batch.delete(adjRef);
-
-            if (adj.billId) {
-              const billObj = bills.find(b => b.id === adj.billId);
-              if (billObj) {
-                const splitsKeys = Object.keys(billObj.splits || {});
-                const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
-                const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
-                const billRef = basePath.collection('bills').doc(adj.billId);
-                batch.update(billRef, { paidStatus: newPaidStatus });
-              }
-            }
-
-            if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
-              adj.relatedBillIds.forEach(bId => {
-                const billObj = bills.find(b => b.id === bId);
-                if (billObj) {
-                  const nextStatus = { ...(billObj.paidStatus || {}) };
-                  Object.keys(nextStatus).forEach(k => {
-                    if (k.toLowerCase() === adj.friendName.toLowerCase() || /me|dom|ตัวฉันเอง/i.test(k)) {
-                      nextStatus[k] = false;
-                    }
-                  });
-                  const billRef = basePath.collection('bills').doc(bId);
-                  batch.update(billRef, { paidStatus: nextStatus });
-                }
-              });
-            }
-
-            await batch.commit();
-            showToast("ลบประวัติและดึงสถานะบิลกลับมาค้างชำระเรียบร้อย! 🔄");
-          }
-        } catch (err) {
-          showToast("Delete failed: Permission denied", "error");
         } finally {
           setIsProcessing(false);
         }
@@ -1030,38 +845,15 @@
 
       const handleDeleteBill = async (billId) => {
         if (!isAdmin || isProcessing) return;
-        if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่? (หากบิลนี้เคยถูกนำไปตัดหนี้ FIFO ระบบจะปลดสถานะบิลเก่ากลับมาค้างชำระให้อัตโนมัติ)")) return;
+        if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) return;
 
         setIsProcessing(true);
         try {
           if (db) {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            const batch = db.batch();
-
-            batch.delete(basePath.collection('bills').doc(billId));
-
-            const relatedAdjs = adjustments.filter(a => a.sourceBillId === billId || (a.relatedBillIds && a.relatedBillIds.includes(billId)));
-            relatedAdjs.forEach(adj => {
-              batch.delete(basePath.collection('adjustments').doc(adj.id));
-              if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
-                adj.relatedBillIds.forEach(oldBId => {
-                  if (oldBId !== billId) {
-                    const oldBill = bills.find(b => b.id === oldBId);
-                    if (oldBill) {
-                      const nextStatus = { ...(oldBill.paidStatus || {}) };
-                      Object.keys(nextStatus).forEach(k => {
-                        if (k.toLowerCase() === adj.friendName.toLowerCase()) nextStatus[k] = false;
-                      });
-                      batch.update(basePath.collection('bills').doc(oldBId), { paidStatus: nextStatus });
-                    }
-                  }
-                });
-              }
-            });
-
-            await batch.commit();
+            await basePath.collection('bills').doc(billId).delete();
             setViewingBillId(null);
-            showToast("ลบบิลและคืนสถานะหนี้เรียบร้อย! 🔄");
+            showToast("ลบบิลเรียบร้อย! 🔄");
           }
         } catch (err) {
           showToast("Delete failed: " + err.message, "error");
@@ -1072,10 +864,7 @@
 
       const handleSaveAdjustment = async (e) => {
         e.preventDefault();
-        if (!isAdmin) {
-          showToast("Only Admin can adjust balances", "error");
-          return;
-        }
+        if (!isAdmin) return;
         const amount = parseFloat(adjustAmount);
         if (isNaN(amount) || amount <= 0) {
           showToast("Please enter a valid amount", "error");
@@ -1088,8 +877,8 @@
           amount: finalAmount,
           displayAmount: amount,
           isPaymentRecord: adjustType === 'minus',
-          isSettled: adjustType === 'minus' ? true : false,
-          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
+          isSettled: adjustType === 'minus',
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้' : `ชำระบางส่วน (${amount.toFixed(2)} RM)`),
           date: new Date().toISOString().split('T')[0],
           createdAt: Date.now()
         };
@@ -1097,9 +886,9 @@
         if (db) {
           try {
             await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').add(newAdj);
-            showToast(`Adjustment of ${amount.toFixed(2)} RM saved`);
+            showToast(`บันทึกปรับยอด ${amount.toFixed(2)} RM เรียบร้อย`);
           } catch (err) {
-            showToast("Save failed: Permission denied", "error");
+            showToast("Save failed", "error");
           }
         }
         setSelectedFriendForAdjust(null);
@@ -1109,10 +898,7 @@
 
       const handleAddFriend = async (e) => {
         e.preventDefault();
-        if (!isAdmin) {
-          showToast("Only Admin can add friends", "error");
-          return;
-        }
+        if (!isAdmin) return;
         const name = newFriendName.trim();
         if (!name) return;
 
@@ -1144,10 +930,7 @@
       };
 
       const handleToggleArchiveFriend = async (friend) => {
-        if (!isAdmin) {
-          showToast("Only Admin can archive friends", "error");
-          return;
-        }
+        if (!isAdmin) return;
         const actionText = friend.isArchived ? "Restore" : "Archive";
         if (!confirm(`${actionText} friend "${friend.name}"?`)) return;
 
@@ -1158,293 +941,8 @@
             });
             showToast(`Friend ${actionText.toLowerCase()}d successfully`);
           } catch (err) {
-            showToast("Action failed: Permission denied", "error");
+            showToast("Action failed", "error");
           }
-        }
-      };
-
-      const handleStartRenameFriend = (friend) => {
-        if (!isAdmin) return;
-        setRenamingFriendId(friend.id);
-        setRenameValue(friend.name);
-      };
-
-      const handleCancelRenameFriend = () => {
-        setRenamingFriendId(null);
-        setRenameValue('');
-      };
-
-      const handleConfirmRenameFriend = async (friend) => {
-        if (!isAdmin) return;
-        const newName = renameValue.trim();
-        if (!newName || newName === friend.name) {
-          handleCancelRenameFriend();
-          return;
-        }
-        if (friends.some(f => f.id !== friend.id && f.name.toLowerCase() === newName.toLowerCase())) {
-          showToast("This name already exists", "error");
-          return;
-        }
-
-        const oldName = friend.name;
-        const renameInBill = (bill) => {
-          const newItems = (bill.items || []).map(item => ({
-            ...item,
-            sharedWith: (item.sharedWith || []).map(n => n === oldName ? newName : n)
-          }));
-          const newSplits = {};
-          Object.entries(bill.splits || {}).forEach(([k, v]) => {
-            newSplits[k === oldName ? newName : k] = v;
-          });
-          const newPaidStatus = {};
-          Object.entries(bill.paidStatus || {}).forEach(([k, v]) => {
-            newPaidStatus[k === oldName ? newName : k] = v;
-          });
-          return { ...bill, items: newItems, splits: newSplits, paidStatus: newPaidStatus, paidBy: bill.paidBy === oldName ? newName : bill.paidBy };
-        };
-
-        try {
-          if (db) {
-            const batch = db.batch();
-            const friendRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id);
-            batch.update(friendRef, { name: newName });
-
-            bills.forEach(bill => {
-              const touches = Object.keys(bill.splits || {}).includes(oldName) || (bill.items || []).some(i => (i.sharedWith || []).includes(oldName)) || bill.paidBy === oldName;
-              if (touches) {
-                const updated = renameInBill(bill);
-                const billRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id);
-                batch.update(billRef, { items: updated.items, splits: updated.splits, paidStatus: updated.paidStatus, paidBy: updated.paidBy });
-              }
-            });
-
-            adjustments.forEach(adj => {
-              if (adj.friendName === oldName) {
-                const adjRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').doc(adj.id);
-                batch.update(adjRef, { friendName: newName });
-              }
-            });
-
-            await batch.commit();
-            showToast(`Renamed to "${newName}"`);
-          }
-        } catch (err) {
-          showToast("Rename failed: Permission denied", "error");
-        }
-        handleCancelRenameFriend();
-      };
-
-      const preprocessImageWithRotation = (file, angle) => {
-        return new Promise((resolve) => {
-          const img = new Image();
-          const objectUrl = URL.createObjectURL(file);
-          img.onload = () => {
-            URL.revokeObjectURL(objectUrl);
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            if (angle === 90 || angle === 270) {
-              canvas.width = img.height;
-              canvas.height = img.width;
-            } else {
-              canvas.width = img.width;
-              canvas.height = img.height;
-            }
-
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.rotate((angle * Math.PI) / 180);
-            ctx.drawImage(img, -img.width / 2, -img.height / 2);
-
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-              const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-              const v = gray > 145 ? 255 : 0;
-              d[i] = v;
-              d[i + 1] = v;
-              d[i + 2] = v;
-            }
-            ctx.putImageData(imgData, 0, 0);
-
-            canvas.toBlob((blob) => resolve(blob || file), 'image/png');
-          };
-          img.src = objectUrl;
-        });
-      };
-
-      const parseTextContent = (fullText) => {
-        const cleanLines = fullText
-          .replace(/[—–]/g, '-')
-          .replace(/[oO](?=[0-9])/g, '0')
-          .split('\n')
-          .map(l => l.trim())
-          .filter(Boolean);
-
-        let extractedItems = [];
-        let rFare = 0, tFee = 0, dFee = 0, pCharge = 0, dAmount = 0;
-
-        for (let i = 0; i < cleanLines.length; i++) {
-          const line = cleanLines[i];
-
-          if (/delivery\s*fee|rider\s*fee|driver\s*fee|shipping/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              dFee = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
-            }
-            continue;
-          }
-
-          if (/packaging|packing|takeaway\s*box|container|bag/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              pCharge = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
-            }
-            continue;
-          }
-
-          if (/discount|promo|voucher|off\b|cashback|rebate/i.test(line)) {
-            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              const rawVal = matches[matches.length - 1].replace(/[-−\sRM]/gi, '').replace(',', '.');
-              dAmount = Math.abs(parseFloat(rawVal) || 0);
-            }
-            continue;
-          }
-
-          if (/toll|expressway|highway/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
-            if (matches) tFee = parseFloat(matches[1].replace(',', '.'));
-            continue;
-          }
-
-          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|sst\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery|invoice|receipt|cashier|terminal|change\b|rounding/i.test(line);
-          if (isNoise) continue;
-
-          const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
-          const match = line.match(itemRegex);
-
-          if (match) {
-            let qty = parseInt(match[1]) || 1;
-            let itemName = match[2].replace(/^[0-9]+x?\s*/i, '').trim();
-            let itemPrice = parseFloat(match[3].replace(',', '.'));
-
-            if (i + 1 < cleanLines.length && /^[0-9]+\s*[xX]$/i.test(cleanLines[i + 1])) {
-              qty = parseInt(cleanLines[i + 1]) || qty;
-            }
-
-            if (itemPrice > 0 && itemName.length >= 2 && !/total|amount|cash|balance/i.test(itemName)) {
-              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
-              if (!exists) {
-                extractedItems.push({
-                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                  name: itemName,
-                  price: itemPrice.toFixed(2),
-                  qty: qty,
-                  taxRate: 0,
-                  sharedWith: [...billFriends]
-                });
-              }
-            }
-          }
-        }
-
-        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
-      };
-
-      const handleAddImages = (e) => {
-        const files = Array.from(e.target.files);
-        if (!files.length) return;
-        setSelectedImages(prev => [...prev, ...files]);
-      };
-
-      const handleRemoveImage = (index) => {
-        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
-      };
-
-      const handleProcessAllImages = async () => {
-        if (!selectedImages.length) return;
-        setOcrProcessing(true);
-        setOcrProgress(0);
-
-        let combinedExtractedItems = [];
-        let extractedRideFare = 0, detectedToll = 0, detectedDiscount = 0, detectedDelivery = 0, detectedPackaging = 0;
-
-        try {
-          showToast("⚡ กำลังประมวลผล OCR...");
-          for (let i = 0; i < selectedImages.length; i++) {
-            const rawFile = selectedImages[i];
-            const processedBlob = await preprocessImageWithRotation(rawFile, imageRotation);
-
-            const { data: { text } } = await Tesseract.recognize(
-              processedBlob,
-              'eng+tha',
-              {
-                logger: m => {
-                  if (m.status === 'recognizing text') {
-                    const singleProgress = m.progress || 0;
-                    setOcrProgress(Math.round(((i + singleProgress) / selectedImages.length) * 100));
-                  }
-                }
-              }
-            );
-
-            const parsed = parseTextContent(text);
-            parsed.extractedItems.forEach(item => {
-              if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
-                combinedExtractedItems.push(item);
-              }
-            });
-
-            if (parsed.dFee) detectedDelivery = parsed.dFee;
-            if (parsed.pCharge) detectedPackaging = parsed.pCharge;
-            if (parsed.dAmount) detectedDiscount = parsed.dAmount;
-            if (parsed.tFee) detectedToll = parsed.tFee;
-
-            if (billType === 'ride') {
-              const prices = text.split('\n').map(l => {
-                const m = l.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
-                return m ? parseFloat(m[1].replace(',', '.')) : 0;
-              }).filter(p => p > 0);
-              if (prices.length > 0) extractedRideFare = Math.max(extractedRideFare, ...prices);
-            }
-          }
-
-          if (billType === 'ride' && extractedRideFare > 0) {
-            setRideFare(extractedRideFare);
-            if (detectedToll) setTollFee(detectedToll);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast("สแกนค่าโดยสารสำเร็จ!");
-          } else if (combinedExtractedItems.length > 0 || detectedDelivery > 0 || detectedPackaging > 0 || detectedDiscount > 0) {
-            if (combinedExtractedItems.length > 0) setBillItems(combinedExtractedItems);
-            if (detectedPackaging) setPackagingCharge(detectedPackaging);
-            if (detectedDelivery) setDeliveryFee(detectedDelivery);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast(`🎉 สแกนสำเร็จ ${combinedExtractedItems.length} รายการ!`);
-          } else {
-            showToast("OCR อ่านไม่ชัด แนะนำให้วางข้อความสรุป", "error");
-          }
-        } catch (err) {
-          showToast(`สแกนไม่สำเร็จ: ${err.message}`, "error");
-        } finally {
-          setOcrProcessing(false);
-          setSelectedImages([]);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-      };
-
-      const handleParseRawText = () => {
-        if (!rawOrderText.trim()) return;
-        const parsed = parseTextContent(rawOrderText);
-        if (parsed.extractedItems.length > 0 || parsed.dFee || parsed.pCharge || parsed.dAmount) {
-          if (parsed.extractedItems.length > 0) setBillItems(parsed.extractedItems);
-          if (parsed.dFee) setDeliveryFee(parsed.dFee);
-          if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
-          if (parsed.dAmount) setDiscountAmount(parsed.dAmount);
-          showToast(`อ่านข้อมูลสำเร็จ ${parsed.extractedItems.length} รายการ! 🎉`);
-          setShowRawTextInput(false);
-          setRawOrderText('');
-        } else {
-          showToast("ไม่พบรายการสินค้าที่ระบุราคาชัดเจน", "error");
         }
       };
 
@@ -1459,12 +957,7 @@
             splits[lBorrower] = parsedLoanAmt;
             friendItemDetails[lBorrower] = { baseShare: parsedLoanAmt };
           }
-          return {
-            subtotal: parsedLoanAmt,
-            total: parsedLoanAmt,
-            splits,
-            friendItemDetails
-          };
+          return { subtotal: parsedLoanAmt, total: parsedLoanAmt, splits, friendItemDetails };
         }
 
         if (currentBillType === 'ride') {
@@ -1481,10 +974,7 @@
           selectedFriends.forEach(f => {
             let shareCents = baseCents;
             if (curRemainderMode === 'distribute') {
-              if (remainderCents > 0) {
-                shareCents += 1;
-                remainderCents--;
-              }
+              if (remainderCents > 0) { shareCents += 1; remainderCents--; }
             } else if (curRemainderMode === 'payer' && f.toLowerCase() === curPaidBy.toLowerCase()) {
               shareCents += remainderCents;
             }
@@ -1509,11 +999,7 @@
 
         const friendBaseShares = {};
         const friendTaxShares = {};
-        
-        selectedFriends.forEach(f => {
-          friendBaseShares[f] = 0;
-          friendTaxShares[f] = 0;
-        });
+        selectedFriends.forEach(f => { friendBaseShares[f] = 0; friendTaxShares[f] = 0; });
 
         let subtotal = 0;
         let taxBreakdown = { 0: 0, 6: 0, 7: 0, 8: 0 };
@@ -1526,14 +1012,7 @@
           const taxRate = parseFloat(item.taxRate) || 0;
 
           subtotal += itemTotal;
-
-          let itemTaxAmount = 0;
-          if (currentTaxMode === 'addon') {
-            itemTaxAmount = itemTotal * (taxRate / 100);
-          } else {
-            itemTaxAmount = itemTotal - (itemTotal / (1 + (taxRate / 100)));
-          }
-
+          let itemTaxAmount = currentTaxMode === 'addon' ? itemTotal * (taxRate / 100) : itemTotal - (itemTotal / (1 + (taxRate / 100)));
           taxBreakdown[taxRate] = (taxBreakdown[taxRate] || 0) + itemTaxAmount;
           totalTax += itemTaxAmount;
 
@@ -1543,18 +1022,10 @@
             const baseShareCents = Math.floor(itemTotalCents / sharedList.length);
             let remShareCents = itemTotalCents % sharedList.length;
 
-            const itemTaxCents = Math.round(itemTaxAmount * 100);
-            const baseTaxCents = Math.floor(itemTaxCents / sharedList.length);
-            let remTaxCents = itemTaxCents % sharedList.length;
-
             sharedList.forEach(f => {
               const allocatedCents = baseShareCents + (remShareCents > 0 ? 1 : 0);
               if (remShareCents > 0) remShareCents--;
               friendBaseShares[f] = (friendBaseShares[f] || 0) + (allocatedCents / 100);
-
-              const allocatedTaxCents = baseTaxCents + (remTaxCents > 0 ? 1 : 0);
-              if (remTaxCents > 0) remTaxCents--;
-              friendTaxShares[f] = (friendTaxShares[f] || 0) + (allocatedTaxCents / 100);
             });
           }
         });
@@ -1573,10 +1044,9 @@
         selectedFriends.forEach(f => {
           const base = friendBaseShares[f] || 0;
           const friendSc = base * (scRate / 100);
-          const friendTax = currentTaxMode === 'addon' ? (friendTaxShares[f] || 0) : 0;
           const userDiscountShare = subtotal > 0 ? (base / subtotal) * parsedDiscount : (parsedDiscount / (activeFriendsCount || 1));
           
-          const finalPersonAmount = Math.max(0, base + friendSc + friendTax + perPersonDelivery + perPersonPackaging - userDiscountShare);
+          const finalPersonAmount = Math.max(0, base + friendSc + perPersonDelivery + perPersonPackaging - userDiscountShare);
           const personCents = Math.round(finalPersonAmount * 100);
           splits[f] = personCents / 100;
           totalDistributedCents += personCents;
@@ -1584,7 +1054,6 @@
           friendItemDetails[f] = {
             baseShare: Math.round(base * 100) / 100,
             scShare: Math.round(friendSc * 100) / 100,
-            taxShare: Math.round((friendTaxShares[f] || 0) * 100) / 100,
             deliveryShare: Math.round(perPersonDelivery * 100) / 100,
             packagingShare: Math.round(perPersonPackaging * 100) / 100,
             discountShare: Math.round(userDiscountShare * 100) / 100,
@@ -1605,14 +1074,9 @@
 
         return {
           subtotal: Math.round(subtotal * 100) / 100,
-          serviceChargeAmount: Math.round(totalSc * 100) / 100,
           deliveryFee: parsedDFee,
           packagingCharge: parsedPackCharge,
           discountAmount: parsedDiscount,
-          taxMode: currentTaxMode,
-          taxBreakdown,
-          totalTax: Math.round(totalTax * 100) / 100,
-          roundingAdjustment: parsedRoundAdj,
           total: finalTotal,
           splits,
           friendItemDetails
@@ -1656,7 +1120,7 @@
         participantsToProcess.forEach(f => {
           if (initialPaidStatus[f] === undefined) {
             const isCurrentPayer = f.toLowerCase() === paidBy.toLowerCase();
-            initialPaidStatus[f] = isCurrentPayer ? true : false;
+            initialPaidStatus[f] = isCurrentPayer;
           }
         });
 
@@ -1673,14 +1137,9 @@
           loanAmount: parseFloat(loanAmount) || 0,
           loanBorrower,
           subtotal: calculated.subtotal,
-          serviceChargeRate,
-          serviceChargeAmount: calculated.serviceChargeAmount || 0,
           deliveryFee: calculated.deliveryFee || 0,
           packagingCharge: calculated.packagingCharge || 0,
           discountAmount: calculated.discountAmount || 0,
-          taxBreakdown: calculated.taxBreakdown || {},
-          totalTax: calculated.totalTax || 0,
-          roundingAdjustment: calculated.roundingAdjustment || 0,
           total: calculated.total,
           items: (billType === 'ride' || billType === 'loan') ? [] : billItems.map(item => ({
             id: item.id,
@@ -1700,97 +1159,12 @@
         if (db) {
           try {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            const batch = db.batch();
-
-            let billDocRef;
             if (editingBillId) {
-              billDocRef = basePath.collection('bills').doc(editingBillId);
-              batch.update(billDocRef, billPayload);
+              await basePath.collection('bills').doc(editingBillId).update(billPayload);
             } else {
               billPayload.createdAt = Date.now();
-              billDocRef = basePath.collection('bills').doc();
-              batch.set(billDocRef, billPayload);
+              await basePath.collection('bills').add(billPayload);
             }
-
-            const isDomPayer = /me|dom/i.test(paidBy);
-            const myShareInThisBill = calculated.splits?.['Me (Dom)'] || calculated.splits?.['ตัวฉันเอง'] || 0;
-
-            if (!isDomPayer && myShareInThisBill > 0) {
-              const friendPayerName = paidBy;
-              const unpaidBills = bills
-                .filter(b => {
-                  const bDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
-                  const splitsKeys = Object.keys(b.splits || {});
-                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase());
-                  const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
-                  return bDomPayer && isUnpaid;
-                })
-                .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-              if (unpaidBills.length > 0) {
-                let remainingCredit = myShareInThisBill;
-                let autoSettledBillIds = [billDocRef.id];
-                let settledCount = 0;
-
-                for (const oldBill of unpaidBills) {
-                  if (remainingCredit <= 0.009) break;
-
-                  const splitsKeys = Object.keys(oldBill.splits || {});
-                  const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase()) || friendPayerName;
-                  const billDebt = oldBill.splits[matchedKey] || 0;
-                  const oldBDoc = basePath.collection('bills').doc(oldBill.id);
-
-                  if (remainingCredit >= billDebt) {
-                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
-                    batch.update(oldBDoc, { paidStatus: nextStatus });
-                    remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
-                    autoSettledBillIds.push(oldBill.id);
-                    settledCount++;
-                  } else {
-                    const remainingDebt = Math.round((billDebt - remainingCredit) * 100) / 100;
-                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
-                    batch.update(oldBDoc, { paidStatus: nextStatus });
-
-                    const partAdjRef = basePath.collection('adjustments').doc();
-                    batch.set(partAdjRef, {
-                      friendName: friendPayerName,
-                      amount: remainingDebt,
-                      displayAmount: remainingDebt,
-                      isPaymentRecord: false,
-                      isSettled: false,
-                      note: `⚙️ ยอดค้างส่วนต่างบิล: ${oldBill.name} (ตัดด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM)`,
-                      date: newBillDate,
-                      createdAt: Date.now()
-                    });
-
-                    autoSettledBillIds.push(oldBill.id);
-                    remainingCredit = 0;
-                    settledCount++;
-                    break;
-                  }
-                }
-
-                initialPaidStatus['Me (Dom)'] = true;
-                initialPaidStatus['ตัวฉันเอง'] = true;
-                batch.update(billDocRef, { paidStatus: initialPaidStatus });
-
-                const autoLogRef = basePath.collection('adjustments').doc();
-                batch.set(autoLogRef, {
-                  friendName: friendPayerName,
-                  amount: 0,
-                  displayAmount: myShareInThisBill,
-                  sourceBillId: billDocRef.id,
-                  isPaymentRecord: true,
-                  isSettled: true,
-                  relatedBillIds: autoSettledBillIds,
-                  note: `⚡ Auto Net-off: ${friendPayerName} ออกค่า ${newBillName} ให้ (${myShareInThisBill.toFixed(2)} RM) -> ล้างบิลเก่าอัตโนมัติ ${settledCount} บิล`,
-                  date: newBillDate,
-                  createdAt: Date.now() + 1
-                });
-              }
-            }
-
-            await batch.commit();
             showToast("บันทึกบิลเรียบร้อย! 🎉");
           } catch (err) {
             showToast("Save failed: Permission denied", "error");
@@ -1846,199 +1220,10 @@
             await batch.commit();
             showToast(`Updated ${matchedKey} to ${newPaidStatus ? 'Paid' : 'Pending'}`);
           } catch (err) {
-            showToast("Update failed: Permission denied", "error");
+            showToast("Update failed", "error");
           } finally {
             setIsProcessing(false);
           }
-        }
-      };
-
-      const handleExportJSONBackup = () => {
-        const fullBackup = {
-          version: "1.0",
-          exportDate: new Date().toISOString(),
-          friends,
-          bills,
-          adjustments
-        };
-        const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast("JSON Backup downloaded! 📦");
-      };
-
-      const handleExportCSVReport = () => {
-        let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-        csvContent += "Date,Type,Title,Route,PaidBy,Subtotal(RM),Total(RM),Participants,Unpaid Pax\n";
-
-        bills.forEach(b => {
-          const type = b.billType === 'ride' ? 'Ride' : b.billType === 'loan' ? 'Loan' : 'Food/Delivery';
-          const title = `"${(b.name || '').replace(/"/g, '""')}"`;
-          const route = `"${(b.rideRoute || '').replace(/"/g, '""')}"`;
-          const pBy = `"${b.paidBy || 'Me (Dom)'}"`;
-          const sub = (b.subtotal || 0).toFixed(2);
-          const tot = (b.total || 0).toFixed(2);
-          const parts = `"${Object.keys(b.splits || {}).join(', ')}"`;
-          const unpaidList = Object.keys(b.splits || {}).filter(name => !b.paidStatus?.[name]);
-          const unpaid = `"${unpaidList.join(', ')}"`;
-
-          csvContent += `${b.date},${type},${title},${route},${pBy},${sub},${tot},${parts},${unpaid}\n`;
-        });
-
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `KraiMaiJay_Bills_${new Date().toISOString().split('T')[0]}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast("Bills CSV Report downloaded! 📊");
-      };
-
-      const handleRestoreJSON = (e) => {
-        if (!isAdmin) {
-          showToast("Admin only can restore data", "error");
-          return;
-        }
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          try {
-            const data = JSON.parse(event.target.result);
-            if (!data.friends || !data.bills) {
-              showToast("Invalid backup JSON format", "error");
-              return;
-            }
-
-            if (!confirm(`Are you sure you want to restore ${data.bills.length} bills?`)) return;
-
-            if (db) {
-              const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-              const batch = db.batch();
-
-              data.friends.forEach(f => {
-                const ref = basePath.collection('friends').doc(f.id || undefined);
-                batch.set(ref, { name: f.name, isSelf: f.isSelf || false, isArchived: f.isArchived || false, createdAt: f.createdAt || Date.now() });
-              });
-
-              data.bills.forEach(b => {
-                const ref = basePath.collection('bills').doc(b.id || undefined);
-                batch.set(ref, b);
-              });
-
-              (data.adjustments || []).forEach(a => {
-                const ref = basePath.collection('adjustments').doc(a.id || undefined);
-                batch.set(ref, a);
-              });
-
-              await batch.commit();
-              showToast("Backup restored successfully! 🎉");
-            }
-          } catch (err) {
-            showToast("Failed to parse JSON", "error");
-          } finally {
-            if (restoreInputRef.current) restoreInputRef.current.value = '';
-          }
-        };
-        reader.readAsText(file);
-      };
-
-      const monthlyBills = useMemo(() => {
-        return bills.filter(b => (b.date || '').startsWith(selectedMonth));
-      }, [bills, selectedMonth]);
-
-      const monthlyStats = useMemo(() => {
-        let totalGroup = 0;
-        let foodTotal = 0;
-        let rideTotal = 0;
-        let loanTotal = 0;
-        const friendShares = {};
-        const dailyMyExpenses = {};
-
-        friends.forEach(f => { friendShares[f.name] = 0; });
-
-        monthlyBills.forEach(b => {
-          const tot = b.total || 0;
-          totalGroup += tot;
-          if (b.billType === 'ride') {
-            rideTotal += tot;
-          } else if (b.billType === 'loan') {
-            loanTotal += tot;
-          } else {
-            foodTotal += tot;
-          }
-
-          const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
-          if (b.date && selfAmount > 0) {
-            if (!dailyMyExpenses[b.date]) {
-              dailyMyExpenses[b.date] = { total: 0, items: [] };
-            }
-            dailyMyExpenses[b.date].total += selfAmount;
-            dailyMyExpenses[b.date].items.push({ name: b.name, amount: selfAmount, type: b.billType });
-          }
-
-          Object.entries(b.splits || {}).forEach(([pName, pAmt]) => {
-            const fObj = friends.find(f => f.name.toLowerCase() === pName.toLowerCase());
-            const key = fObj ? fObj.name : pName;
-            friendShares[key] = (friendShares[key] || 0) + (pAmt || 0);
-          });
-        });
-
-        const sortedSpenders = Object.entries(friendShares)
-          .filter(([_, amt]) => amt > 0)
-          .sort((a, b) => b[1] - a[1]);
-
-        return {
-          totalGroup,
-          foodTotal,
-          rideTotal,
-          loanTotal,
-          count: monthlyBills.length,
-          avgPerBill: monthlyBills.length > 0 ? (totalGroup / monthlyBills.length) : 0,
-          foodPct: totalGroup > 0 ? Math.round((foodTotal / totalGroup) * 100) : 0,
-          ridePct: totalGroup > 0 ? Math.round((rideTotal / totalGroup) * 100) : 0,
-          sortedSpenders,
-          dailyMyExpenses
-        };
-      }, [monthlyBills, friends]);
-
-      const handleExportPDF = async (ref, filename) => {
-        if (!ref.current) return;
-        try {
-          showToast("Generating PDF...");
-          const canvas = await html2canvas(ref.current, { scale: 2, backgroundColor: '#0B0F17' });
-          const imgData = canvas.toDataURL('image/png');
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          const imgWidth = 210;
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-          pdf.save(`${filename}.pdf`);
-          showToast("PDF Downloaded!");
-        } catch (err) {
-          showToast("Failed to generate PDF", "error");
-        }
-      };
-
-      const handleExportElement = async (ref, filename) => {
-        if (!ref.current) return;
-        try {
-          showToast("Generating image...");
-          const canvas = await html2canvas(ref.current, { scale: 2, backgroundColor: '#0B0F17' });
-          const image = canvas.toDataURL('image/png');
-          const link = document.createElement('a');
-          link.href = image;
-          link.download = `${filename}.png`;
-          link.click();
-          showToast("Image saved!");
-        } catch (err) {
-          showToast("Failed to generate image", "error");
         }
       };
 
@@ -2047,9 +1232,7 @@
         return bills.filter(bill => {
           const matchTitle = (bill.name || '').toLowerCase().includes(term);
           const matchRoute = (bill.rideRoute || '').toLowerCase().includes(term);
-          const matchItem = (bill.items || []).some(item => (item.name || '').toLowerCase().includes(term));
-          
-          if (term && !matchTitle && !matchRoute && !matchItem) return false;
+          if (term && !matchTitle && !matchRoute) return false;
 
           const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
             const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
@@ -2058,10 +1241,6 @@
 
           if (statusFilter === 'pending') return unpaidCount > 0;
           if (statusFilter === 'settled') return unpaidCount === 0;
-          if (statusFilter === 'ride') return bill.billType === 'ride';
-          if (statusFilter === 'loan') return bill.billType === 'loan';
-          if (statusFilter === 'food') return bill.billType !== 'ride' && bill.billType !== 'loan';
-
           return true;
         });
       }, [bills, searchQuery, statusFilter, friends]);
@@ -2091,8 +1270,6 @@
         return !isMe && friendBalances[name].totalOwed < 0;
       }).length;
 
-      const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
-
       const unsettledFriendList = useMemo(() => {
         return friends.filter(f => {
           const isMe = f.isSelf || /me|dom/i.test(f.name);
@@ -2106,7 +1283,7 @@
 
       return (
         <div className="min-h-screen">
-          {/* Header Mobile Compact */}
+          {/* Header Mobile */}
           <header className="bg-surface/90 border-b border-line sticky top-0 z-30 backdrop-blur-lg px-4 py-3">
             <div className="max-w-md mx-auto flex justify-between items-center">
               <div className="flex items-center gap-2.5">
@@ -2121,7 +1298,7 @@
                     {t('appTitle')}
                   </span>
                   <span className="text-[9px] text-coral font-bold tracking-widest uppercase mt-0.5">
-                    Made by Dom 🔥
+                    Mobile App 🔥
                   </span>
                 </div>
               </div>
@@ -2129,7 +1306,7 @@
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={handleLangToggle}
-                  className="bg-subtle border border-line text-xs font-bold px-2.5 py-1 rounded-lg"
+                  className="bg-subtle border border-line text-xs font-bold px-2 py-1 rounded-lg"
                 >
                   {lang === 'en' ? '🇹🇭' : '🇬🇧'}
                 </button>
@@ -2137,7 +1314,7 @@
                 {isAdmin ? (
                   <button 
                     onClick={handleLogoutAdmin}
-                    className="bg-subtle hover:bg-coral/20 text-textSecondary hover:text-coral border border-line p-1.5 rounded-lg text-xs"
+                    className="bg-subtle text-textSecondary border border-line p-1.5 rounded-lg text-xs"
                     title="Lock Admin Mode"
                   >
                     🔒
@@ -2154,7 +1331,7 @@
             </div>
           </header>
 
-          {/* Main Content Area */}
+          {/* Main Container */}
           <main className="max-w-md mx-auto px-4 mt-4 space-y-4">
             
             {/* 1. DASHBOARD */}
@@ -2162,13 +1339,13 @@
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-surface border border-coral/30 bg-gradient-to-br from-coral-subtle/30 to-surface p-4 rounded-2xl">
-                    <p className="text-[10px] text-coral font-bold uppercase tracking-wider font-mono">{t('totalOutstanding')}</p>
+                    <p className="text-[10px] text-coral font-bold uppercase font-mono">{t('totalOutstanding')}</p>
                     <p className="text-2xl font-black text-coral mt-1 font-mono tabular">{totalOwedAmount.toFixed(2)} <span className="text-xs font-sans">RM</span></p>
                     <p className="text-[10px] text-textSecondary mt-0.5">{t('pendingFriends', { n: pendingDebtorsCount })}</p>
                   </div>
 
                   <div className="bg-surface border border-mint/30 bg-gradient-to-br from-mint-subtle/30 to-surface p-4 rounded-2xl">
-                    <p className="text-[10px] text-mint font-bold uppercase tracking-wider font-mono">{t('myExpenseToday')}</p>
+                    <p className="text-[10px] text-mint font-bold uppercase font-mono">{t('myExpenseToday')}</p>
                     <p className="text-2xl font-black text-mint mt-1 font-mono tabular">{todayMyExpense.toFixed(2)} <span className="text-xs font-sans">RM</span></p>
                     <p className="text-[10px] text-textSecondary mt-0.5">{t('calculatedToday', { n: todayBillsCount })}</p>
                   </div>
@@ -2176,26 +1353,23 @@
 
                 <div className="bg-surface rounded-2xl p-4 border border-line space-y-3">
                   <div className="flex justify-between items-center">
-                    <h2 className="text-xs font-bold text-textMuted uppercase tracking-wider font-mono">
-                      {t('unsettledFriends')}
-                    </h2>
-
+                    <h2 className="text-xs font-bold text-textMuted uppercase font-mono">{t('unsettledFriends')}</h2>
                     <div className="flex bg-subtle p-1 rounded-xl border border-line gap-1 text-[11px]">
                       <button
                         onClick={() => setDashboardDebtFilter('all')}
-                        className={`px-2 py-0.5 rounded-lg font-semibold transition ${dashboardDebtFilter === 'all' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary'}`}
+                        className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'all' ? 'bg-accent text-white' : 'text-textSecondary'}`}
                       >
                         All ({receivableCount + payableCount})
                       </button>
                       <button
                         onClick={() => setDashboardDebtFilter('receivable')}
-                        className={`px-2 py-0.5 rounded-lg font-semibold transition ${dashboardDebtFilter === 'receivable' ? 'bg-coral text-white shadow-sm' : 'text-textSecondary'}`}
+                        className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'receivable' ? 'bg-coral text-white' : 'text-textSecondary'}`}
                       >
                         + {receivableCount}
                       </button>
                       <button
                         onClick={() => setDashboardDebtFilter('payable')}
-                        className={`px-2 py-0.5 rounded-lg font-semibold transition ${dashboardDebtFilter === 'payable' ? 'bg-mint text-bg font-bold shadow-sm' : 'text-textSecondary'}`}
+                        className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'payable' ? 'bg-mint text-bg font-bold' : 'text-textSecondary'}`}
                       >
                         - {payableCount}
                       </button>
@@ -2211,22 +1385,16 @@
                         const isDebtor = balance.totalOwed > 0;
 
                         return (
-                          <div key={friend.id} className="bg-subtle border border-line/80 active:border-accent/60 p-3.5 rounded-xl flex justify-between items-center transition">
-                            <div 
-                              className="cursor-pointer flex-1 pr-2"
-                              onClick={() => setSelectedFriendForHistory(friend.name)}
-                            >
+                          <div key={friend.id} className="bg-subtle border border-line/80 p-3.5 rounded-xl flex justify-between items-center">
+                            <div className="cursor-pointer flex-1 pr-2" onClick={() => setSelectedFriendForHistory(friend.name)}>
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-bold text-textPrimary text-sm">
-                                  {friend.name}
-                                </span>
+                                <span className="font-bold text-textPrimary text-sm">{friend.name}</span>
                                 <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${isDebtor ? 'text-coral bg-coral-subtle/50' : 'text-mint bg-mint-subtle/50'}`}>
                                   {isDebtor ? 'ค้างเรา' : 'เราค้าง'}
                                 </span>
                               </div>
                               <div className="text-[11px] text-textSecondary font-mono mt-0.5">
                                 {t('bills')}: {balance.billsOwed.toFixed(2)} RM
-                                {balance.adjustedOwed !== 0 && ` | Adj: ${balance.adjustedOwed.toFixed(2)} RM`}
                               </div>
                             </div>
                             
@@ -2253,15 +1421,13 @@
               </div>
             )}
 
-            {/* 2. BILL CREATION FORM */}
+            {/* 2. BILL FORM */}
             {activeTab === 'new-bill' && (
               isAdmin ? (
                 <form onSubmit={handleSaveBill} className="bg-surface rounded-2xl p-5 border border-line space-y-4">
                   <div className="flex justify-between items-center pb-2 border-b border-line">
-                    <h2 className="text-base font-bold text-textPrimary">
-                      {editingBillId ? t('editTx') : t('createTx')}
-                    </h2>
-                    <button type="button" onClick={() => setActiveTab('bills')} className="text-textSecondary text-xs">✕ {t('cancel')}</button>
+                    <h2 className="text-base font-bold text-textPrimary">{editingBillId ? t('editTx') : t('createTx')}</h2>
+                    <button type="button" onClick={() => setActiveTab('bills')} className="text-textSecondary text-xs">✕</button>
                   </div>
 
                   <div className="grid grid-cols-4 gap-1.5">
@@ -2274,7 +1440,7 @@
                           if (type === 'delivery') { setTaxMode('inclusive'); setServiceChargeRate(0); }
                           if (type === 'dinein') { setTaxMode('addon'); setDeliveryFee(0); setPackagingCharge(0); }
                         }}
-                        className={`py-2 rounded-xl text-xs font-bold border capitalize transition ${billType === type ? 'bg-accent text-white border-accent shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
+                        className={`py-2 rounded-xl text-xs font-bold border capitalize ${billType === type ? 'bg-accent text-white border-accent' : 'bg-subtle border-line text-textSecondary'}`}
                       >
                         {type === 'delivery' ? '🛵 Food' : type === 'ride' ? '🚗 Ride' : type === 'dinein' ? '🍽️ Dine' : '💸 Loan'}
                       </button>
@@ -2290,7 +1456,7 @@
                             key={f.id}
                             type="button"
                             onClick={() => setPaidBy(f.name)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold transition ${paidBy.toLowerCase() === f.name.toLowerCase() ? 'bg-mint text-bg' : 'bg-surface text-textSecondary border border-line'}`}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold ${paidBy.toLowerCase() === f.name.toLowerCase() ? 'bg-mint text-bg' : 'bg-surface text-textSecondary border border-line'}`}
                           >
                             {f.name}
                           </button>
@@ -2300,137 +1466,109 @@
                   )}
 
                   <div className="space-y-3">
-                    <div>
-                      <input 
-                        type="text" 
-                        value={newBillName}
-                        onChange={(e) => setNewBillName(e.target.value)}
-                        className="w-full bg-subtle border border-line rounded-xl px-3.5 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
-                        placeholder="ชื่อรายการ / ร้านอาหาร / จุดหมาย"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <input 
-                        type="date" 
-                        value={newBillDate}
-                        onChange={(e) => setNewBillDate(e.target.value)}
-                        className="w-full bg-subtle border border-line rounded-xl px-3.5 py-2 text-textPrimary text-xs focus:border-accent outline-none"
-                      />
-                    </div>
+                    <input 
+                      type="text" 
+                      value={newBillName}
+                      onChange={(e) => setNewBillName(e.target.value)}
+                      className="w-full bg-subtle border border-line rounded-xl px-3.5 py-2.5 text-textPrimary text-sm outline-none"
+                      placeholder="ชื่อรายการ / ร้านอาหาร / จุดหมาย"
+                      required
+                    />
+                    <input 
+                      type="date" 
+                      value={newBillDate}
+                      onChange={(e) => setNewBillDate(e.target.value)}
+                      className="w-full bg-subtle border border-line rounded-xl px-3.5 py-2 text-textPrimary text-xs outline-none"
+                    />
                   </div>
 
-                  {/* FORM FIELDS ACCORDING TO TYPE */}
                   {billType === 'loan' ? (
                     <div className="bg-subtle p-3.5 rounded-xl border border-coral/30 space-y-3">
-                      <div>
-                        <label className="block text-xs text-textSecondary mb-1 font-bold">คนที่ยืมเงิน</label>
-                        <select
-                          value={loanBorrower}
-                          onChange={(e) => setLoanBorrower(e.target.value)}
-                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary outline-none"
-                          required
-                        >
-                          <option value="">-- เลือกผู้ยืม --</option>
-                          {friends.filter(f => !f.isSelf && !f.isArchived).map(f => (
-                            <option key={f.id} value={f.name}>{f.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-coral mb-1 font-bold">ยอดเงินที่ยืม (RM)</label>
-                        <input 
-                          type="text" 
-                          inputMode="decimal"
-                          value={loanAmount}
-                          onChange={(e) => setLoanAmount(e.target.value)}
-                          onBlur={(e) => setLoanAmount(evaluateMathExpression(e.target.value))}
-                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary font-mono font-bold"
-                          placeholder="0.00"
-                          required
-                        />
-                      </div>
+                      <select
+                        value={loanBorrower}
+                        onChange={(e) => setLoanBorrower(e.target.value)}
+                        className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary outline-none"
+                        required
+                      >
+                        <option value="">-- เลือกผู้ยืม --</option>
+                        {friends.filter(f => !f.isSelf && !f.isArchived).map(f => (
+                          <option key={f.id} value={f.name}>{f.name}</option>
+                        ))}
+                      </select>
+                      <input 
+                        type="text" 
+                        inputMode="decimal"
+                        value={loanAmount}
+                        onChange={(e) => setLoanAmount(e.target.value)}
+                        onBlur={(e) => setLoanAmount(evaluateMathExpression(e.target.value))}
+                        className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary font-mono font-bold"
+                        placeholder="จำนวนเงิน (RM)"
+                        required
+                      />
                     </div>
                   ) : billType === 'ride' ? (
                     <div className="bg-subtle p-3.5 rounded-xl border border-bolt/30 space-y-3">
                       <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[11px] text-textSecondary mb-1 font-bold">ค่าโดยสาร (RM)</label>
-                          <input 
-                            type="text" 
-                            inputMode="decimal"
-                            value={rideFare}
-                            onChange={(e) => setRideFare(e.target.value)}
-                            onBlur={(e) => setRideFare(evaluateMathExpression(e.target.value))}
-                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary font-mono"
-                            placeholder="0.00"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] text-amber mb-1 font-bold">ค่าทางด่วน (RM)</label>
-                          <input 
-                            type="text" 
-                            inputMode="decimal"
-                            value={tollFee}
-                            onChange={(e) => setTollFee(e.target.value)}
-                            onBlur={(e) => setTollFee(evaluateMathExpression(e.target.value))}
-                            className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary font-mono"
-                            placeholder="0.00"
-                          />
-                        </div>
-                      </div>
-                      <div>
                         <input 
                           type="text" 
-                          value={rideRoute}
-                          onChange={(e) => setRideRoute(e.target.value)}
-                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs text-textPrimary"
-                          placeholder="รายละเอียดเส้นทาง (เช่น Pavilion -> Condo)"
+                          inputMode="decimal"
+                          value={rideFare}
+                          onChange={(e) => setRideFare(e.target.value)}
+                          onBlur={(e) => setRideFare(evaluateMathExpression(e.target.value))}
+                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary font-mono"
+                          placeholder="ค่าโดยสาร (RM)"
+                          required
+                        />
+                        <input 
+                          type="text" 
+                          inputMode="decimal"
+                          value={tollFee}
+                          onChange={(e) => setTollFee(e.target.value)}
+                          onBlur={(e) => setTollFee(evaluateMathExpression(e.target.value))}
+                          className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-textPrimary font-mono"
+                          placeholder="ค่าทางด่วน (RM)"
                         />
                       </div>
+                      <input 
+                        type="text" 
+                        value={rideRoute}
+                        onChange={(e) => setRideRoute(e.target.value)}
+                        className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs text-textPrimary"
+                        placeholder="เส้นทาง (เช่น Pavilion -> KLCC)"
+                      />
                     </div>
                   ) : (
                     <div className="space-y-3">
                       <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-[10px] text-emerald-400 font-bold mb-1">ค่าส่ง</label>
-                          <input 
-                            type="text" 
-                            inputMode="decimal"
-                            value={deliveryFee}
-                            onChange={(e) => setDeliveryFee(e.target.value)}
-                            className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs text-textPrimary font-mono"
-                            placeholder="0.00"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-amber font-bold mb-1">กล่อง/ห่อ</label>
-                          <input 
-                            type="text" 
-                            inputMode="decimal"
-                            value={packagingCharge}
-                            onChange={(e) => setPackagingCharge(e.target.value)}
-                            className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs text-textPrimary font-mono"
-                            placeholder="0.00"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-coral font-bold mb-1">ส่วนลด (-)</label>
-                          <input 
-                            type="text" 
-                            inputMode="decimal"
-                            value={discountAmount}
-                            onChange={(e) => setDiscountAmount(e.target.value)}
-                            className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs text-textPrimary font-mono"
-                            placeholder="0.00"
-                          />
-                        </div>
+                        <input 
+                          type="text" 
+                          inputMode="decimal"
+                          value={deliveryFee}
+                          onChange={(e) => setDeliveryFee(e.target.value)}
+                          className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs text-textPrimary font-mono"
+                          placeholder="ค่าส่ง"
+                        />
+                        <input 
+                          type="text" 
+                          inputMode="decimal"
+                          value={packagingCharge}
+                          onChange={(e) => setPackagingCharge(e.target.value)}
+                          className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs text-textPrimary font-mono"
+                          placeholder="กล่อง/ห่อ"
+                        />
+                        <input 
+                          type="text" 
+                          inputMode="decimal"
+                          value={discountAmount}
+                          onChange={(e) => setDiscountAmount(e.target.value)}
+                          className="w-full bg-subtle border border-line rounded-xl px-2.5 py-1.5 text-xs text-textPrimary font-mono"
+                          placeholder="ส่วนลด"
+                        />
                       </div>
 
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <label className="text-xs font-bold text-textSecondary">รายการอาหาร ({billItems.length})</label>
+                          <label className="text-xs font-bold text-textSecondary">เมนูอาหาร</label>
                           <button
                             type="button"
                             onClick={() => setBillItems([...billItems, { id: Date.now().toString(), name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }])}
@@ -2439,7 +1577,7 @@
                             + เพิ่มเมนู
                           </button>
                         </div>
-                        {billItems.map((item, index) => (
+                        {billItems.map(item => (
                           <div key={item.id} className="bg-subtle p-3 rounded-xl border border-line space-y-2">
                             <div className="flex gap-2">
                               <input
@@ -2484,7 +1622,6 @@
                     </div>
                   )}
 
-                  {/* PARTICIPANTS */}
                   {billType !== 'loan' && (
                     <div>
                       <label className="block text-xs font-bold text-textSecondary mb-1.5">คนร่วมหาร ({billFriends.length})</label>
@@ -2520,7 +1657,7 @@
               )
             )}
 
-            {/* 3. HISTORY */}
+            {/* 3. BILL HISTORY */}
             {activeTab === 'bills' && (
               <div className="space-y-3">
                 <input 
@@ -2672,17 +1809,16 @@
 
           </main>
 
-          {/* MOBILE BOTTOM SHEET MODAL (Statement) */}
+          {/* BOTTOM SHEET: STATEMENT */}
           {selectedFriendForHistory && (
             <div 
               className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end"
               onClick={() => setSelectedFriendForHistory(null)}
             >
               <div 
-                className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom"
+                className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
               >
-                {/* Handle Bar */}
                 <div className="w-10 h-1 bg-line rounded-full mx-auto mt-3 mb-1"></div>
 
                 <div className="p-4 border-b border-line flex justify-between items-center">
@@ -2719,6 +1855,79 @@
             </div>
           )}
 
+          {/* BOTTOM SHEET: ADJUST */}
+          {selectedFriendForAdjust && isAdmin && (
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end"
+              onClick={() => setSelectedFriendForAdjust(null)}
+            >
+              <form 
+                onSubmit={handleSaveAdjustment}
+                className="bg-surface border-t border-line rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl p-5 space-y-4"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="w-10 h-1 bg-line rounded-full mx-auto -mt-2 mb-1"></div>
+
+                <div className="flex justify-between items-center pb-2 border-b border-line">
+                  <h3 className="font-bold text-sm">ปรับยอด: {selectedFriendForAdjust}</h3>
+                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-textSecondary text-xs">ปิด ✕</button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 bg-subtle p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('minus')}
+                    className={`py-2 text-xs font-bold rounded-lg ${adjustType === 'minus' ? 'bg-mint text-bg' : 'text-textSecondary'}`}
+                  >
+                    หักลบยอด (-)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('plus')}
+                    className={`py-2 text-xs font-bold rounded-lg ${adjustType === 'plus' ? 'bg-coral text-white' : 'text-textSecondary'}`}
+                  >
+                    เพิ่มหนี้ (+)
+                  </button>
+                </div>
+
+                <input 
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="จำนวนเงิน (RM)"
+                  value={adjustAmount}
+                  onChange={(e) => setAdjustAmount(e.target.value)}
+                  onBlur={(e) => setAdjustAmount(evaluateMathExpression(e.target.value))}
+                  className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-sm font-mono outline-none"
+                  required
+                />
+
+                <input 
+                  type="text"
+                  placeholder="หมายเหตุ (เช่น โอนเงินคืนแล้ว)"
+                  value={adjustNote}
+                  onChange={(e) => setAdjustNote(e.target.value)}
+                  className="w-full bg-subtle border border-line rounded-xl px-3 py-2 text-xs outline-none"
+                />
+
+                <div className="space-y-2 pt-2">
+                  <button type="submit" disabled={isProcessing} className="w-full bg-accent text-white font-bold py-2.5 rounded-xl text-xs">
+                    บันทึกรายการ
+                  </button>
+                  {friendBalances[selectedFriendForAdjust]?.totalOwed > 0 && (
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => handleSettleFullWithBatch(selectedFriendForAdjust)}
+                      className="w-full bg-mint/15 text-mint border border-mint/40 font-bold py-2 rounded-xl text-xs"
+                    >
+                      ⚡ เคลียร์บิลทั้งหมด ({friendBalances[selectedFriendForAdjust]?.totalOwed.toFixed(2)} RM)
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )}
+
           {/* MOBILE BOTTOM NAVIGATION BAR */}
           <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface/95 backdrop-blur-xl border-t border-line px-4 py-2 pb-safe flex justify-around items-center max-w-md mx-auto">
             <button 
@@ -2737,7 +1946,6 @@
               <span className="text-[10px]">{t('navHistory')}</span>
             </button>
 
-            {/* Central Primary Action Button */}
             {isAdmin && (
               <button 
                 onClick={() => {
@@ -2769,7 +1977,7 @@
             </button>
           </nav>
 
-          {/* AUTH MODAL */}
+          {/* PIN AUTH MODAL */}
           {showAuthModal && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAuthModal(false)}>
               <div className="bg-surface border border-line rounded-3xl p-6 w-full max-w-xs space-y-4" onClick={e => e.stopPropagation()}>
@@ -2804,6 +2012,13 @@
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
+
+    // Service Worker Registration for PWA Standalone Support
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>
