@@ -404,6 +404,7 @@
 
       const [dashboardDebtFilter, setDashboardDebtFilter] = useState('all');
 
+      // Search, Filters & Analytics Month Selection
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
@@ -668,6 +669,148 @@
         showToast("Logged out. Returned to View-Only mode");
       };
 
+      // --- BALANCE CALCULATION (ป้องกันการหักลบซ้ำ 2 ต่อ) ---
+      const getFriendBalances = () => {
+        const balances = {};
+        friends.forEach(f => {
+          balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
+        });
+
+        bills.forEach(bill => {
+          const billPayer = bill.paidBy || 'Me (Dom)';
+          const isDomPayer = /me|dom/i.test(billPayer);
+
+          if (isDomPayer) {
+            Object.keys(bill.splits || {}).forEach(name => {
+              const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+              const realName = fObj ? fObj.name : name;
+              const isSelf = fObj?.isSelf || /me|dom/i.test(realName);
+              if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
+                balances[realName].billsOwed += bill.splits[name];
+              }
+            });
+          } else {
+            const payerObj = friends.find(f => f.name.toLowerCase() === billPayer.toLowerCase());
+            const realPayerName = payerObj ? payerObj.name : billPayer;
+            
+            const myShare = bill.splits?.['Me (Dom)'] || bill.splits?.['ตัวฉันเอง'] || 0;
+            const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
+
+            if (balances[realPayerName] && myShare > 0 && !isMySharePaid) {
+              balances[realPayerName].billsOwed -= myShare;
+            }
+          }
+        });
+
+        adjustments.forEach(adj => {
+          const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
+          const realName = fObj ? fObj.name : adj.friendName;
+          if (balances[realName] && adj.amount !== undefined && !adj.isSettled) {
+            balances[realName].adjustedOwed += adj.amount;
+          }
+        });
+
+        Object.keys(balances).forEach(name => {
+          balances[name].totalOwed = Math.round((balances[name].billsOwed + balances[name].adjustedOwed) * 100) / 100;
+        });
+
+        return balances;
+      };
+
+      const friendBalances = getFriendBalances();
+
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayMyExpense = bills
+        .filter(b => b.date === todayDateStr)
+        .reduce((sum, b) => {
+          const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
+          return sum + selfAmount;
+        }, 0);
+      const todayBillsCount = bills.filter(b => b.date === todayDateStr).length;
+
+      const getFriendHistory = (friendName) => {
+        const friendBills = bills.filter(b => {
+          const keys = Object.keys(b.splits || {});
+          const touchesFriend = keys.some(k => k.toLowerCase() === friendName.toLowerCase());
+          const isFriendPayer = (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
+          return touchesFriend || isFriendPayer;
+        });
+        const friendAdjustments = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
+        return { bills: friendBills, adjustments: friendAdjustments };
+      };
+
+      // --- FULL SETTLE (ไม่สร้างยอดติดลบทับซ้อน) ---
+      const handleSettleFullWithBatch = async (friendName) => {
+        if (!isAdmin) {
+          showToast("Only Admin can change payment status", "error");
+          return;
+        }
+
+        const unpaidBills = bills.filter(b => {
+          const splitsKeys = Object.keys(b.splits || {});
+          const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
+          const hasSplit = matchedKey && b.splits[matchedKey] !== undefined;
+          const isPaid = matchedKey ? (b.paidStatus?.[matchedKey] === true) : false;
+          return hasSplit && !isPaid;
+        });
+
+        const curBalance = friendBalances[friendName]?.totalOwed || 0;
+
+        if (!confirm(t('settleConfirmModal', { n: unpaidBills.length, name: friendName }))) {
+          return;
+        }
+
+        try {
+          if (db) {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            const batch = db.batch();
+            let operationsCount = 0;
+            const settledBillIds = [];
+
+            unpaidBills.forEach(bill => {
+              const bDoc = basePath.collection('bills').doc(bill.id);
+              const splitsKeys = Object.keys(bill.splits || {});
+              const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
+              const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
+              batch.update(bDoc, { paidStatus: nextStatus });
+              settledBillIds.push(bill.id);
+              operationsCount++;
+            });
+
+            adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase() && !a.isSettled).forEach(adj => {
+              const aDoc = basePath.collection('adjustments').doc(adj.id);
+              batch.update(aDoc, { isSettled: true });
+              operationsCount++;
+            });
+
+            // บันทึก Log การจ่ายเงิน (amount: 0 เพื่อไม่ให้ไปลดซ้ำกับบิลที่กลายเป็น Paid)
+            const settleLogRef = basePath.collection('adjustments').doc();
+            batch.set(settleLogRef, {
+              friendName,
+              amount: 0,
+              displayAmount: curBalance,
+              isPaymentRecord: true,
+              isSettled: true,
+              relatedBillIds: settledBillIds,
+              note: `⚡ เคลียร์ยอดบิลทั้งหมด (${unpaidBills.length} รายการ)`,
+              date: new Date().toISOString().split('T')[0],
+              createdAt: Date.now() + 1
+            });
+            operationsCount++;
+
+            if (operationsCount > 0) {
+              await batch.commit();
+              showToast(`🎉 Cleared all bills and logged payment for ${friendName}!`);
+            }
+
+            setSelectedFriendForAdjust(null);
+          }
+        } catch (err) {
+          console.error("Batch settle error:", err);
+          showToast("Failed to settle: " + (err.message || "Permission Denied"), "error");
+        }
+      };
+
       // --- SMART FIFO AUTO-NETOFF FUNCTION ---
       const handleSmartFifoNetOff = async (friendName, creditAmount, sourceBillId = '', sourceBillName = '') => {
         if (!isAdmin) {
@@ -694,6 +837,11 @@
             const dateB = new Date(b.date || 0).getTime();
             return dateA !== dateB ? dateA - dateB : (a.createdAt || 0) - (b.createdAt || 0);
           });
+
+        if (unpaidBills.length === 0) {
+          showToast(`${friendName} ไม่มีบิลเก่าที่ค้างชำระอยู่`, "info");
+          return;
+        }
 
         try {
           if (db) {
@@ -742,24 +890,23 @@
               }
             }
 
-            // ⚠️ ป้องกันการหักซ้ำ 2 เด้ง: เซตสถานะบิลต้นทางที่เพื่อนออกเงินให้ ให้ส่วนของ Dom กลายเป็น Paid ทันที
+            // เซตสถานะส่วนของ Dom ในบิลต้นทางให้เป็น Paid ป้องกันการหักซ้ำ 2 เด้ง
             if (sourceBillId) {
-              const srcDoc = basePath.collection('bills').doc(sourceBillId);
               const srcBill = bills.find(b => b.id === sourceBillId);
               if (srcBill) {
                 const nextStatus = { ...(srcBill.paidStatus || {}) };
                 Object.keys(srcBill.splits || {}).forEach(k => {
                   if (/me|dom|ตัวฉันเอง/i.test(k)) nextStatus[k] = true;
                 });
-                batch.update(srcDoc, { paidStatus: nextStatus });
+                batch.update(basePath.collection('bills').doc(sourceBillId), { paidStatus: nextStatus });
                 autoSettledBillIds.push(sourceBillId);
               }
             }
 
-            // บันทึก Log การหักกลบลบหนี้
             const logRef = basePath.collection('adjustments').doc();
             batch.set(logRef, {
               friendName,
+              amount: 0,
               displayAmount: parsedCredit,
               isPaymentRecord: true,
               isSettled: true,
@@ -793,89 +940,121 @@
         }
       };
 
-      const handleSettleFullWithBatch = async (friendName) => {
+      // --- TWO-WAY UNSETTLE SYNC ON DELETE ADJUSTMENT ---
+      const handleDeleteAdjustment = async (adj) => {
         if (!isAdmin) {
-          showToast("Only Admin can change payment status", "error");
+          showToast("Only Admin can delete adjustments", "error");
           return;
         }
+        if (!confirm(`ต้องการลบประวัติ "${adj.note}" ใช่หรือไม่? (สถานะบิลจะถูกคืนค่ากลับเป็น Pending)`)) return;
 
-        const unpaidBills = bills.filter(b => {
-          const splitsKeys = Object.keys(b.splits || {});
-          const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
-          const hasSplit = matchedKey && b.splits[matchedKey] !== undefined;
-          const isPaid = matchedKey ? (b.paidStatus?.[matchedKey] === true) : false;
-          return hasSplit && !isPaid;
-        });
-
-        const curBalance = friendBalances[friendName]?.totalOwed || 0;
-
-        if (!confirm(t('settleConfirmModal', { n: unpaidBills.length, name: friendName }))) {
-          return;
-        }
-
-        try {
-          if (db) {
+        if (db) {
+          try {
             const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
             const batch = db.batch();
-            let operationsCount = 0;
-            const settledBillIds = [];
 
-            unpaidBills.forEach(bill => {
-              const bDoc = basePath.collection('bills').doc(bill.id);
-              const splitsKeys = Object.keys(bill.splits || {});
-              const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase()) || friendName;
-              const nextStatus = { ...(bill.paidStatus || {}), [matchedKey]: true };
-              batch.update(bDoc, { paidStatus: nextStatus });
-              settledBillIds.push(bill.id);
-              operationsCount++;
-            });
+            const adjRef = basePath.collection('adjustments').doc(adj.id);
+            batch.delete(adjRef);
 
-            adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase() && a.amount > 0 && !a.isSettled).forEach(adj => {
-              const aDoc = basePath.collection('adjustments').doc(adj.id);
-              batch.update(aDoc, { isSettled: true });
-              operationsCount++;
-            });
+            if (adj.billId) {
+              const billObj = bills.find(b => b.id === adj.billId);
+              if (billObj) {
+                const splitsKeys = Object.keys(billObj.splits || {});
+                const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
+                const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
+                const billRef = basePath.collection('bills').doc(adj.billId);
+                batch.update(billRef, { paidStatus: newPaidStatus });
+              }
+            }
 
-            const currentAdjOwed = friendBalances[friendName]?.adjustedOwed || 0;
-            if (currentAdjOwed !== 0) {
-              const newAdjRef = basePath.collection('adjustments').doc();
-              batch.set(newAdjRef, {
-                friendName,
-                displayAmount: Math.abs(currentAdjOwed),
-                isPaymentRecord: false,
-                isSettled: true,
-                note: `⚡ Auto Settle: Cleared remaining adjustments`,
-                date: new Date().toISOString().split('T')[0],
-                createdAt: Date.now()
+            if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
+              adj.relatedBillIds.forEach(bId => {
+                const billObj = bills.find(b => b.id === bId);
+                if (billObj) {
+                  const nextStatus = { ...(billObj.paidStatus || {}) };
+                  Object.keys(nextStatus).forEach(k => {
+                    if (k.toLowerCase() === adj.friendName.toLowerCase() || /me|dom|ตัวฉันเอง/i.test(k)) {
+                      nextStatus[k] = false;
+                    }
+                  });
+                  const billRef = basePath.collection('bills').doc(bId);
+                  batch.update(billRef, { paidStatus: nextStatus });
+                }
               });
-              operationsCount++;
             }
 
-            const settleLogRef = basePath.collection('adjustments').doc();
-            batch.set(settleLogRef, {
-              friendName,
-              displayAmount: curBalance,
-              isPaymentRecord: true,
-              isSettled: true,
-              relatedBillIds: settledBillIds,
-              note: `⚡ เคลียร์ยอดบิลทั้งหมด (${unpaidBills.length} รายการ)`,
-              date: new Date().toISOString().split('T')[0],
-              createdAt: Date.now() + 1
-            });
-            operationsCount++;
-
-            if (operationsCount > 0) {
-              await batch.commit();
-              showToast(`🎉 Cleared all bills and logged payment for ${friendName}!`);
-            }
-
-            setSelectedFriendForAdjust(null);
+            await batch.commit();
+            showToast("ลบประวัติและดึงสถานะบิลกลับมาค้างชำระเรียบร้อย! 🔄");
+          } catch (err) {
+            showToast("Delete failed: Permission denied", "error");
           }
-        } catch (err) {
-          console.error("Batch settle error:", err);
-          showToast("Failed to settle: " + (err.message || "Permission Denied"), "error");
         }
       };
+
+      const handleSaveAdjustment = async (e) => {
+        e.preventDefault();
+        if (!isAdmin) {
+          showToast("Only Admin can adjust balances", "error");
+          return;
+        }
+        const amount = parseFloat(adjustAmount);
+        if (isNaN(amount) || amount <= 0) {
+          showToast("Please enter a valid amount", "error");
+          return;
+        }
+
+        const finalAmount = adjustType === 'plus' ? amount : -amount;
+        const newAdj = {
+          friendName: selectedFriendForAdjust,
+          amount: finalAmount,
+          displayAmount: amount,
+          isPaymentRecord: adjustType === 'minus',
+          isSettled: adjustType === 'minus' ? true : false,
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
+          date: new Date().toISOString().split('T')[0],
+          createdAt: Date.now()
+        };
+
+        if (db) {
+          try {
+            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').add(newAdj);
+            showToast(`Adjustment of ${amount.toFixed(2)} RM saved`);
+          } catch (err) {
+            showToast("Save failed: Permission denied", "error");
+          }
+        }
+        setSelectedFriendForAdjust(null);
+        setAdjustAmount('');
+        setAdjustNote('');
+      };
+
+      const filteredDashboardFriends = useMemo(() => {
+        return friends.filter(friend => {
+          if (friend.isSelf) return false;
+          const balance = friendBalances[friend.name] || { totalOwed: 0 };
+          if (balance.totalOwed === 0) return false;
+          
+          if (dashboardDebtFilter === 'receivable') return balance.totalOwed > 0;
+          if (dashboardDebtFilter === 'payable') return balance.totalOwed < 0;
+          return true;
+        });
+      }, [friends, friendBalances, dashboardDebtFilter]);
+
+      const receivableCount = Object.values(friendBalances).filter(b => b.totalOwed > 0).length;
+      const payableCount = Object.values(friendBalances).filter(b => b.totalOwed < 0).length;
+
+      const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
+        const fObj = friends.find(f => f.name === name);
+        if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
+        return acc;
+      }, 0);
+
+      const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
+        const fObj = friends.find(f => f.name === name);
+        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
+      }).length;
+
+      const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
 
       const handleExportJSONBackup = () => {
         const fullBackup = {
@@ -1510,101 +1689,6 @@
         };
       };
 
-      // --- DUAL-WAY DEBT CALCULATION (ป้องกันการหักยอดซ้ำ) ---
-      const getFriendBalances = () => {
-        const balances = {};
-        friends.forEach(f => {
-          balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
-        });
-
-        bills.forEach(bill => {
-          const billPayer = bill.paidBy || 'Me (Dom)';
-          const isDomPayer = /me|dom/i.test(billPayer);
-
-          if (isDomPayer) {
-            Object.keys(bill.splits || {}).forEach(name => {
-              const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
-              const realName = fObj ? fObj.name : name;
-              const isSelf = fObj?.isSelf || /me|dom/i.test(realName);
-              if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
-                balances[realName].billsOwed += bill.splits[name];
-              }
-            });
-          } else {
-            const payerObj = friends.find(f => f.name.toLowerCase() === billPayer.toLowerCase());
-            const realPayerName = payerObj ? payerObj.name : billPayer;
-            
-            const myShare = bill.splits?.['Me (Dom)'] || bill.splits?.['ตัวฉันเอง'] || 0;
-            const isMySharePaid = bill.paidStatus?.['Me (Dom)'] || bill.paidStatus?.['ตัวฉันเอง'] || false;
-
-            // หักลบเฉพาะเมื่อส่วนของเราในบิลนี้ยังไม่ได้เคลียร์/ยังไม่ได้นำไปตัดหนี้ FIFO
-            if (balances[realPayerName] && myShare > 0 && !isMySharePaid) {
-              balances[realPayerName].billsOwed -= myShare;
-            }
-          }
-        });
-
-        adjustments.forEach(adj => {
-          const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
-          const realName = fObj ? fObj.name : adj.friendName;
-          if (balances[realName] && adj.amount !== undefined && !adj.isSettled) {
-            balances[realName].adjustedOwed += adj.amount;
-          }
-        });
-
-        Object.keys(balances).forEach(name => {
-          balances[name].totalOwed = Math.round((balances[name].billsOwed + balances[name].adjustedOwed) * 100) / 100;
-        });
-
-        return balances;
-      };
-
-      const friendBalances = getFriendBalances();
-
-      const todayDateStr = new Date().toISOString().split('T')[0];
-      const todayMyExpense = bills
-        .filter(b => b.date === todayDateStr)
-        .reduce((sum, b) => {
-          const selfAmount = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
-          return sum + selfAmount;
-        }, 0);
-      const todayBillsCount = bills.filter(b => b.date === todayDateStr).length;
-
-      const getFriendHistory = (friendName) => {
-        const friendBills = bills.filter(b => {
-          const keys = Object.keys(b.splits || {});
-          const touchesFriend = keys.some(k => k.toLowerCase() === friendName.toLowerCase());
-          const isFriendPayer = (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
-          return touchesFriend || isFriendPayer;
-        });
-        const friendAdjustments = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
-        return { bills: friendBills, adjustments: friendAdjustments };
-      };
-
-      const filteredBills = useMemo(() => {
-        const term = searchQuery.trim().toLowerCase();
-        return bills.filter(bill => {
-          const matchTitle = (bill.name || '').toLowerCase().includes(term);
-          const matchRoute = (bill.rideRoute || '').toLowerCase().includes(term);
-          const matchItem = (bill.items || []).some(item => (item.name || '').toLowerCase().includes(term));
-          
-          if (term && !matchTitle && !matchRoute && !matchItem) return false;
-
-          const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
-            const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
-            return !(fObj?.isSelf) && !bill.paidStatus?.[n];
-          }).length;
-
-          if (statusFilter === 'pending') return unpaidCount > 0;
-          if (statusFilter === 'settled') return unpaidCount === 0;
-          if (statusFilter === 'ride') return bill.billType === 'ride';
-          if (statusFilter === 'loan') return bill.billType === 'loan';
-          if (statusFilter === 'food') return bill.billType !== 'ride' && bill.billType !== 'loan';
-
-          return true;
-        });
-      }, [bills, searchQuery, statusFilter, friends]);
-
       const handleStartEditBill = (bill) => {
         if (!isAdmin) {
           showToast("Only Admin can edit transactions", "error");
@@ -1800,7 +1884,7 @@
                   }
                 }
 
-                // เซตให้ส่วนของ Dom ในบิลนี้เป็น Paid เพื่อป้องกันการหักยอดซ้ำใน getFriendBalances
+                // ป้องกันหักซ้ำซ้อนใน getFriendBalances
                 initialPaidStatus['Me (Dom)'] = true;
                 initialPaidStatus['ตัวฉันเอง'] = true;
                 batch.update(billDocRef, { paidStatus: initialPaidStatus });
@@ -1808,6 +1892,7 @@
                 const autoLogRef = basePath.collection('adjustments').doc();
                 batch.set(autoLogRef, {
                   friendName: friendPayerName,
+                  amount: 0,
                   displayAmount: myShareInThisBill,
                   isPaymentRecord: true,
                   isSettled: true,
@@ -1856,6 +1941,7 @@
               batch.set(adjRef, {
                 friendName: matchedKey,
                 billId: bill.id,
+                amount: 0,
                 displayAmount: userShare,
                 isPaymentRecord: true,
                 isSettled: true,
@@ -2026,121 +2112,29 @@
         handleCancelRenameFriend();
       };
 
-      // --- TWO-WAY UNSETTLE SYNC ON DELETE ADJUSTMENT ---
-      const handleDeleteAdjustment = async (adj) => {
-        if (!isAdmin) {
-          showToast("Only Admin can delete adjustments", "error");
-          return;
-        }
-        if (!confirm(`ต้องการลบประวัติ "${adj.note}" ใช่หรือไม่? (สถานะบิลที่เคยถูกเคลียร์จะถูกปลดกลับมาค้างชำระตามเดิม)`)) return;
-
-        if (db) {
-          try {
-            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
-            const batch = db.batch();
-
-            const adjRef = basePath.collection('adjustments').doc(adj.id);
-            batch.delete(adjRef);
-
-            if (adj.billId) {
-              const billObj = bills.find(b => b.id === adj.billId);
-              if (billObj) {
-                const splitsKeys = Object.keys(billObj.splits || {});
-                const matchedKey = splitsKeys.find(k => k.toLowerCase() === adj.friendName.toLowerCase()) || adj.friendName;
-                const newPaidStatus = { ...(billObj.paidStatus || {}), [matchedKey]: false };
-                const billRef = basePath.collection('bills').doc(adj.billId);
-                batch.update(billRef, { paidStatus: newPaidStatus });
-              }
-            }
-
-            if (adj.relatedBillIds && Array.isArray(adj.relatedBillIds)) {
-              adj.relatedBillIds.forEach(bId => {
-                const billObj = bills.find(b => b.id === bId);
-                if (billObj) {
-                  const nextStatus = { ...(billObj.paidStatus || {}) };
-                  Object.keys(nextStatus).forEach(k => {
-                    if (k.toLowerCase() === adj.friendName.toLowerCase() || /me|dom|ตัวฉันเอง/i.test(k)) {
-                      nextStatus[k] = false;
-                    }
-                  });
-                  const billRef = basePath.collection('bills').doc(bId);
-                  batch.update(billRef, { paidStatus: nextStatus });
-                }
-              });
-            }
-
-            await batch.commit();
-            showToast("ลบประวัติและดึงสถานะบิลกลับมาค้างชำระเรียบร้อย! 🔄");
-          } catch (err) {
-            showToast("Delete failed: Permission denied", "error");
-          }
-        }
-      };
-
-      const handleSaveAdjustment = async (e) => {
-        e.preventDefault();
-        if (!isAdmin) {
-          showToast("Only Admin can adjust balances", "error");
-          return;
-        }
-        const amount = parseFloat(adjustAmount);
-        if (isNaN(amount) || amount <= 0) {
-          showToast("Please enter a valid amount", "error");
-          return;
-        }
-
-        const finalAmount = adjustType === 'plus' ? amount : -amount;
-        const newAdj = {
-          friendName: selectedFriendForAdjust,
-          amount: finalAmount,
-          displayAmount: amount,
-          isPaymentRecord: adjustType === 'minus',
-          isSettled: adjustType === 'minus' ? true : false,
-          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
-          date: new Date().toISOString().split('T')[0],
-          createdAt: Date.now()
-        };
-
-        if (db) {
-          try {
-            await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').add(newAdj);
-            showToast(`Adjustment of ${amount.toFixed(2)} RM saved`);
-          } catch (err) {
-            showToast("Save failed: Permission denied", "error");
-          }
-        }
-        setSelectedFriendForAdjust(null);
-        setAdjustAmount('');
-        setAdjustNote('');
-      };
-
-      const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
-        const fObj = friends.find(f => f.name === name);
-        if (!fObj?.isSelf) return acc + Math.max(0, friendBalances[name].totalOwed);
-        return acc;
-      }, 0);
-
-      const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
-        const fObj = friends.find(f => f.name === name);
-        return !fObj?.isSelf && friendBalances[name].totalOwed > 0;
-      }).length;
-
-      const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
-
-      const filteredDashboardFriends = useMemo(() => {
-        return friends.filter(friend => {
-          if (friend.isSelf) return false;
-          const balance = friendBalances[friend.name] || { totalOwed: 0 };
-          if (balance.totalOwed === 0) return false;
+      const filteredBills = useMemo(() => {
+        const term = searchQuery.trim().toLowerCase();
+        return bills.filter(bill => {
+          const matchTitle = (bill.name || '').toLowerCase().includes(term);
+          const matchRoute = (bill.rideRoute || '').toLowerCase().includes(term);
+          const matchItem = (bill.items || []).some(item => (item.name || '').toLowerCase().includes(term));
           
-          if (dashboardDebtFilter === 'receivable') return balance.totalOwed > 0;
-          if (dashboardDebtFilter === 'payable') return balance.totalOwed < 0;
+          if (term && !matchTitle && !matchRoute && !matchItem) return false;
+
+          const unpaidCount = Object.keys(bill.splits || {}).filter(n => {
+            const fObj = friends.find(f => f.name.toLowerCase() === n.toLowerCase());
+            return !(fObj?.isSelf) && !bill.paidStatus?.[n];
+          }).length;
+
+          if (statusFilter === 'pending') return unpaidCount > 0;
+          if (statusFilter === 'settled') return unpaidCount === 0;
+          if (statusFilter === 'ride') return bill.billType === 'ride';
+          if (statusFilter === 'loan') return bill.billType === 'loan';
+          if (statusFilter === 'food') return bill.billType !== 'ride' && bill.billType !== 'loan';
+
           return true;
         });
-      }, [friends, friendBalances, dashboardDebtFilter]);
-
-      const receivableCount = Object.values(friendBalances).filter(b => b.totalOwed > 0).length;
-      const payableCount = Object.values(friendBalances).filter(b => b.totalOwed < 0).length;
+      }, [bills, searchQuery, statusFilter, friends]);
 
       return (
         <div className="pb-16 min-h-screen">
