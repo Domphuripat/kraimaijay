@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="cat.jpg">
   <link rel="icon" type="image/jpeg" href="cat.jpg">
 
-  <!-- สลับไป index.html อัตโนมัติหากเปิดผ่านจอคอมพิวเตอร์ -->
+  <!-- สลับไปหน้าจอคอม index.html อัตโนมัติหากไม่ใช่จอมือถือ -->
   <script>
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -143,7 +143,7 @@
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
 
-      // ฟอร์มสร้างบิล
+      // ฟอร์มสร้าง/แก้ไขบิล
       const [editingBillId, setEditingBillId] = useState(null);
       const [newBillName, setNewBillName] = useState('');
       const [billType, setBillType] = useState('delivery');
@@ -166,13 +166,13 @@
       const [roundingAdj, setRoundingAdj] = useState(0);
       const [billItems, setBillItems] = useState([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
 
-      // OCR
+      // OCR สแกนบิล
       const [selectedImages, setSelectedImages] = useState([]);
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
       const fileInputRef = useRef(null);
 
-      // จัดการเพื่อนและปรับยอด
+      // สมาชิก & ปรับยอด
       const [newFriendName, setNewFriendName] = useState('');
       const [selectedFriendForAdjust, setSelectedFriendForAdjust] = useState(null);
       const [adjustAmount, setAdjustAmount] = useState('');
@@ -235,6 +235,50 @@
         } catch (e) { console.warn(e); }
       }, []);
 
+      // จัดการแก้ไขบิล
+      const handleStartEditBill = (bill) => {
+        setEditingBillId(bill.id);
+        setNewBillName(bill.name || '');
+        setBillType(bill.billType || 'delivery');
+        setPaidBy(bill.paidBy || 'Me (Dom)');
+        setRemainderMode(bill.remainderMode || 'distribute');
+        setTaxMode(bill.taxMode || 'inclusive');
+        setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
+        setDeliveryFee(bill.deliveryFee || 0);
+        setPackagingCharge(bill.packagingCharge || 0);
+        setDiscountAmount(bill.discountAmount || 0);
+        setServiceChargeRate(bill.serviceChargeRate || 0);
+        setRoundingAdj(bill.roundingAdjustment || 0);
+        setRideFare(bill.rideFare || '');
+        setTollFee(bill.tollFee || '');
+        setRideRoute(bill.rideRoute || '');
+        setLoanAmount(bill.loanAmount || '');
+        setLoanBorrower(bill.loanBorrower || '');
+        setBillFriends(Object.keys(bill.splits || {}));
+        setBillItems(bill.items && bill.items.length > 0 ? bill.items : [{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
+        setActiveTab('new-bill');
+      };
+
+      const handleDeleteBill = async (billId) => {
+        if (!isAdmin || isProcessing) return;
+        if (!confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) return;
+
+        setIsProcessing(true);
+        try {
+          if (db) {
+            const basePath = db.collection('artifacts').doc(appId).collection('public').doc('data');
+            await basePath.collection('bills').doc(billId).delete();
+            setViewingBillId(null);
+            showToast("ลบบิลเรียบร้อย! 🔄");
+          }
+        } catch (err) {
+          showToast("ลบไม่สำเร็จ: " + err.message, "error");
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      // เข้าสู่ระบบแอดมิน
       const handleGoogleLogin = async () => {
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
@@ -283,6 +327,7 @@
         showToast("ออกจากระบบสู่โหมดดูอย่างเดียว");
       };
 
+      // คำนวณยอดหนี้คงค้าง
       const friendBalances = useMemo(() => {
         const balances = {};
         friends.forEach(f => { balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }; });
@@ -378,7 +423,7 @@
         };
       }, [bills, selectedMonth, friends]);
 
-      // แก้ไข Infinite Loop ในการคำนวณปฏิทิน
+      // ปฏิทินรายจ่ายที่แก้ไขบั๊กค้างเรียบร้อย
       const calendarMatrix = useMemo(() => {
         if (!selectedMonth) return [];
         const [year, month] = selectedMonth.split('-').map(Number);
@@ -499,22 +544,22 @@
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-surface border border-coral/30 p-4 rounded-2xl">
-                    <p className="text-[10px] text-coral font-bold uppercase font-mono">Total Outstanding</p>
+                    <p className="text-[10px] text-coral font-bold uppercase font-mono">ยอดที่ต้องเก็บเพื่อน</p>
                     <p className="text-2xl font-black text-coral font-mono tabular">{totalOwedAmount.toFixed(2)} <span className="text-xs">RM</span></p>
                   </div>
                   <div className="bg-surface border border-mint/30 p-4 rounded-2xl">
-                    <p className="text-[10px] text-mint font-bold uppercase font-mono">My Expense Today</p>
+                    <p className="text-[10px] text-mint font-bold uppercase font-mono">ยอดของฉันวันนี้</p>
                     <p className="text-2xl font-black text-mint font-mono tabular">{todayMyExpense.toFixed(2)} <span className="text-xs">RM</span></p>
                   </div>
                 </div>
 
                 <div className="bg-surface rounded-2xl p-4 border border-line space-y-3">
                   <div className="flex justify-between items-center">
-                    <h2 className="text-xs font-bold text-textMuted uppercase font-mono">Unsettled Friends</h2>
+                    <h2 className="text-xs font-bold text-textMuted uppercase font-mono">ยอดค้างชำระรายคน</h2>
                     <div className="flex bg-subtle p-1 rounded-xl border border-line gap-1 text-[11px]">
-                      <button onClick={() => setDashboardDebtFilter('all')} className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'all' ? 'bg-accent text-white' : 'text-textSecondary'}`}>All</button>
-                      <button onClick={() => setDashboardDebtFilter('receivable')} className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'receivable' ? 'bg-coral text-white' : 'text-textSecondary'}`}>+ Owe Me</button>
-                      <button onClick={() => setDashboardDebtFilter('payable')} className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'payable' ? 'bg-mint text-bg font-bold' : 'text-textSecondary'}`}>- I Owe</button>
+                      <button onClick={() => setDashboardDebtFilter('all')} className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'all' ? 'bg-accent text-white' : 'text-textSecondary'}`}>ทั้งหมด</button>
+                      <button onClick={() => setDashboardDebtFilter('receivable')} className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'receivable' ? 'bg-coral text-white' : 'text-textSecondary'}`}>เพื่อนค้างเรา</button>
+                      <button onClick={() => setDashboardDebtFilter('payable')} className={`px-2 py-0.5 rounded-lg font-semibold ${dashboardDebtFilter === 'payable' ? 'bg-mint text-bg font-bold' : 'text-textSecondary'}`}>เราค้างเพื่อน</button>
                     </div>
                   </div>
 
@@ -598,7 +643,7 @@
                           <span className="font-bold text-mint">{bill.total?.toFixed(2)} RM</span>
                         </div>
                         {isCollapsed && (
-                          <div className="pt-2 border-t border-line space-y-1.5 text-xs" onClick={e => e.stopPropagation()}>
+                          <div className="pt-2 border-t border-line space-y-2 text-xs" onClick={e => e.stopPropagation()}>
                             {Object.keys(bill.splits || {}).map(fName => (
                               <div key={fName} className="flex justify-between items-center">
                                 <span>{fName} ({bill.splits[fName]?.toFixed(2)} RM)</span>
@@ -612,6 +657,18 @@
                                 )}
                               </div>
                             ))}
+
+                            {/* ปุ่มแก้ไข และ ลบบิล */}
+                            {isAdmin && (
+                              <div className="flex justify-between items-center pt-2 border-t border-line text-xs font-bold">
+                                <button onClick={() => handleStartEditBill(bill)} className="text-accent active:scale-95 transition">
+                                  ✏️ แก้ไขบิล
+                                </button>
+                                <button onClick={() => handleDeleteBill(bill.id)} className="text-coral active:scale-95 transition">
+                                  🗑️ ลบบิล
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -689,6 +746,29 @@
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  {/* ประวัติการปรับยอดและการชำระเงินรวม */}
+                  <div className="pt-2 border-t border-line space-y-2">
+                    <p className="text-xs font-bold text-textPrimary">📑 ประวัติการชำระเงิน & ปรับยอด ({adjustments.length})</p>
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                      {adjustments.length === 0 ? (
+                        <p className="text-[11px] text-textMuted py-2 text-center">ยังไม่มีประวัติการทำรายการ</p>
+                      ) : (
+                        adjustments.map(adj => (
+                          <div key={adj.id} className="bg-subtle p-2 rounded-lg flex justify-between items-center text-xs font-mono">
+                            <div>
+                              <span className="font-sans font-bold text-textPrimary">{adj.friendName}</span>
+                              <span className="text-[10px] text-textMuted ml-1.5">({adj.date})</span>
+                              <p className="text-[10px] text-textSecondary font-sans">{adj.note}</p>
+                            </div>
+                            <span className={`font-bold ${adj.amount > 0 ? 'text-coral' : 'text-mint'}`}>
+                              {adj.amount > 0 ? '+' : ''}{(adj.displayAmount || adj.amount || 0).toFixed(2)} RM
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
 
                   {/* สรุปยอดส่วนแบ่งรายบุคคล */}
