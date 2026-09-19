@@ -1497,7 +1497,7 @@
                   <span>Google Sign-in</span>
                 </button>
                 <form onSubmit={handleVerifyPin} className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-700">
-                  <input type="password" pattern="[0-9]*" inputMode="numeric" maxLength="6" placeholder="กรอก PIN 4 หลัก (2323)" value={inputPin} onChange={e => setInputPin(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 text-center font-mono text-base tracking-widest outline-none focus:border-brandPurple dark:text-white" autoFocus />
+                  <input type="password" pattern="[0-9]*" inputMode="numeric" maxLength="6" placeholder="กรอก PIN 4 หลัก" value={inputPin} onChange={e => setInputPin(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 text-center font-mono text-base tracking-widest outline-none focus:border-brandPurple dark:text-white" autoFocus />
                   <button type="submit" className="w-full bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-brandPurple/20">ปลดล็อค</button>
                 </form>
               </div>
