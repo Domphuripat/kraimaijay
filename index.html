@@ -9,7 +9,9 @@
   <meta name="theme-color" content="#080C14">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ใครไม่จ่ายมีเรื่อง">
   <link rel="icon" type="image/jpeg" href="cat.jpg">
+  <link rel="apple-touch-icon" href="cat.jpg">
 
   <!-- Google Fonts: Modern Thai Font (Prompt) & Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -138,7 +140,6 @@
       const [db, setDb] = useState(null);
       const [toast, setToast] = useState(null);
       const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'bills' | 'logs' | 'calendar' | 'settings' | 'new-bill'
-      const [settingsSubPage, setSettingsSubPage] = useState('general');
 
       const [lang, setLang] = useState(() => localStorage.getItem('kraimaijay_lang') || 'th');
       const restoreInputRef = useRef(null);
@@ -148,7 +149,6 @@
       const [adjustments, setAdjustments] = useState([]);
 
       const [searchQuery, setSearchQuery] = useState('');
-      const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
 
@@ -624,6 +624,15 @@
         setBillItems(bill.items && bill.items.length > 0 ? bill.items : [{ id: '1', name: '', price: '', qty: 1, sharedWith: [] }]);
         setSelectedBillForDetail(null);
         setActiveTab('new-bill');
+      };
+
+      const getFriendHistory = (friendName) => {
+        const fBills = bills.filter(b => {
+          const keys = Object.keys(b.splits || {});
+          return keys.some(k => k.toLowerCase() === friendName.toLowerCase()) || (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
+        });
+        const fAdjs = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
+        return { bills: fBills, adjustments: fAdjs };
       };
 
       return (
