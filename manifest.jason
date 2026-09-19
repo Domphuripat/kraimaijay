@@ -1,0 +1,20 @@
+{
+  "name": "KraiMaiJayMeeReung",
+  "short_name": "KraiMaiJay",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#080C14",
+  "theme_color": "#080C14",
+  "icons": [
+    {
+      "src": "cat.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "cat.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
