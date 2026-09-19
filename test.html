@@ -21,7 +21,7 @@
     }
   </script>
 
-  <!-- Tailwind CSS -->
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -47,7 +47,7 @@
     }
   </script>
 
-  <!-- React & Libraries -->
+  <!-- React, Babel, Tesseract, html2canvas -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -62,8 +62,8 @@
 
   <style>
     body {
-      background: radial-gradient(circle at 10% 10%, rgba(243, 230, 245, 0.7), transparent 40%),
-                  radial-gradient(circle at 90% 20%, rgba(225, 230, 255, 0.7), transparent 45%),
+      background: radial-gradient(circle at 10% 10%, rgba(243, 230, 245, 0.75), transparent 40%),
+                  radial-gradient(circle at 90% 20%, rgba(225, 230, 255, 0.75), transparent 45%),
                   #F8F8FC;
       min-height: 100vh;
       -webkit-tap-highlight-color: transparent;
@@ -137,6 +137,7 @@
       const [statusFilter, setStatusFilter] = useState('all');
       const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
+      const restoreInputRef = useRef(null);
 
       // ฟอร์มสร้างบิล
       const [editingBillId, setEditingBillId] = useState(null);
@@ -166,8 +167,9 @@
       const [selectedFriendForHistory, setSelectedFriendForHistory] = useState(null);
       const friendSlipRef = useRef(null);
 
-      // ตั้งค่า
-      const [settingsSubPage, setSettingsSubPage] = useState(null);
+      // ตั้งค่า Settings Subpages
+      const [settingsSubPage, setSettingsSubPage] = useState(null); // 'general' | 'categories' | 'notifications' | 'data' | 'account' | 'members'
+      const [selectedTheme, setSelectedTheme] = useState('system');
       const [selectedLang, setSelectedLang] = useState('th');
 
       const showToast = (message, type = 'success') => {
@@ -220,7 +222,7 @@
             const hasAdminRole = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
             setIsAdminByGoogle(hasAdminRole);
             setShowAuthModal(false);
-            showToast(hasAdminRole ? "👑 เข้าสู่ระบบแอดมินแล้ว!" : `เข้าสู่ระบบเป็น ${userEmail}`);
+            showToast(hasAdminRole ? "👑 เข้าสู่ระบบแอดมินสำเร็จ!" : `เข้าสู่ระบบเป็น ${userEmail}`);
           }
         } catch (err) {
           showToast("เข้าสู่ระบบไม่สำเร็จ", "error");
@@ -250,7 +252,7 @@
         showToast("เปลี่ยนเป็นโหมดผู้ชม");
       };
 
-      // คำนวณหนี้
+      // คำนวณหนี้คงค้าง
       const friendBalances = useMemo(() => {
         const balances = {};
         friends.forEach(f => { balances[f.name] = { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }; });
@@ -305,14 +307,15 @@
 
       const monthlyStats = useMemo(() => {
         const monthly = bills.filter(b => (b.date || '').startsWith(selectedMonth));
-        let totalGroup = 0, foodTotal = 0, rideTotal = 0;
+        let totalGroup = 0, foodTotal = 0, rideTotal = 0, loanTotal = 0;
         const dailyMyExpenses = {};
 
         monthly.forEach(b => {
           const tot = b.total || 0;
           totalGroup += tot;
           if (b.billType === 'ride') rideTotal += tot;
-          else if (b.billType !== 'loan') foodTotal += tot;
+          else if (b.billType === 'loan') loanTotal += tot;
+          else foodTotal += tot;
 
           const self = b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0;
           if (b.date && self > 0) {
@@ -322,17 +325,23 @@
           }
         });
 
+        const foodPct = totalGroup > 0 ? Math.round((foodTotal / totalGroup) * 100) : 0;
+        const ridePct = totalGroup > 0 ? Math.round((rideTotal / totalGroup) * 100) : 0;
+
         return {
           totalGroup,
           foodTotal,
           rideTotal,
+          loanTotal,
+          foodPct,
+          ridePct,
           count: monthly.length,
           avgPerBill: monthly.length > 0 ? (totalGroup / monthly.length) : 0,
           dailyMyExpenses
         };
       }, [bills, selectedMonth]);
 
-      // ปฏิทิน
+      // ปฏิทินรายจ่าย
       const calendarMatrix = useMemo(() => {
         if (!selectedMonth) return [];
         const [year, month] = selectedMonth.split('-').map(Number);
@@ -377,7 +386,6 @@
         return { bills: fBills, adjustments: fAdjs };
       };
 
-      // บันทึกบิล
       const handleSaveBill = async (e) => {
         e.preventDefault();
         if (!isAdmin || isProcessing) return;
@@ -460,7 +468,6 @@
         }
       };
 
-      // บันทึกปรับยอด
       const handleSaveAdjustment = async (e) => {
         e.preventDefault();
         if (!isAdmin) return;
@@ -505,10 +512,10 @@
       return (
         <div className="max-w-md mx-auto min-h-screen px-4 pt-5 pb-8 flex flex-col justify-between">
           
-          {/* ================= 1. OVERVIEW TAB ================= */}
+          {/* ================= 1. OVERVIEW SCREEN[cite: 8, 9] ================= */}
           {activeTab === 'overview' && (
             <div className="space-y-5 animate-in fade-in duration-200">
-              {/* Header Top[cite: 2] */}
+              {/* Header Top[cite: 8] */}
               <div className="flex justify-between items-end">
                 <div>
                   <p className="text-xs text-slate-400 font-medium">{new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
@@ -526,7 +533,7 @@
                 </button>
               </div>
 
-              {/* Debt Card Inspired by Credit Card[cite: 2] */}
+              {/* Debt Card Inspired by Credit Card[cite: 8] */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-slate-800 text-sm">ยอดหนี้ค้างชำระทั้งหมด</span>
@@ -560,7 +567,7 @@
                     </div>
                   </div>
 
-                  {/* Add Friend Quick Box[cite: 2] */}
+                  {/* Add Friend Quick Box[cite: 8] */}
                   <div 
                     onClick={() => {
                       if (!isAdmin) { setShowAuthModal(true); return; }
@@ -580,7 +587,7 @@
                 </div>
               </div>
 
-              {/* 4 Bento Metrics[cite: 2] */}
+              {/* 4 Bento Metrics[cite: 8] */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-cardDue text-white rounded-3xl p-4 flex flex-col justify-between h-32 shadow-md shadow-indigo-500/10">
                   <span className="text-xs font-medium text-white/80">ยอดของฉันวันนี้</span>
@@ -615,13 +622,13 @@
                 </div>
               </div>
 
-              {/* Unsettled Balances[cite: 2] */}
+              {/* Upcoming / Unsettled Balances[cite: 8] */}
               <div className="space-y-2 pt-1">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
                     <span>🔔</span> ยอดค้างชำระรายบุคคล
                   </span>
-                  <button onClick={() => setActiveTab('settings')} className="text-brandPurple font-semibold">ดูสมาชิก &gt;</button>
+                  <button onClick={() => { setActiveTab('settings'); setSettingsSubPage('members'); }} className="text-brandPurple font-semibold">ดูสมาชิก &gt;</button>
                 </div>
 
                 <div className="space-y-2">
@@ -629,7 +636,7 @@
                     const bal = friendBalances[f.name]?.totalOwed || 0;
                     return (
                       <div key={f.id} className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 flex justify-between items-center">
-                        <div className="flex items-center gap-3" onClick={() => setSelectedFriendForHistory(f.name)}>
+                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setSelectedFriendForHistory(f.name)}>
                           <div className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center font-bold text-slate-700 text-sm">
                             {f.name.charAt(0).toUpperCase()}
                           </div>
@@ -661,33 +668,62 @@
                   })}
                 </div>
               </div>
+
+              {/* By Category Inspired Card[cite: 9] */}
+              <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-3">
+                <h3 className="text-xs font-bold text-slate-900">By category</h3>
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
+                  <div style={{ width: `${monthlyStats.foodPct}%` }} className="bg-mint h-full"></div>
+                  <div style={{ width: `${monthlyStats.ridePct}%` }} className="bg-brandPurple h-full"></div>
+                </div>
+                <div className="space-y-2 pt-1 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="flex items-center gap-2 text-slate-600">
+                      <span className="w-2 h-2 rounded-full bg-mint"></span> อาหาร & เครื่องดื่ม
+                    </span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-slate-400 font-medium">{monthlyStats.foodPct}%</span>
+                      <span className="font-bold text-slate-900">MYR {monthlyStats.foodTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="flex items-center gap-2 text-slate-600">
+                      <span className="w-2 h-2 rounded-full bg-brandPurple"></span> ค่าเดินทาง (Grab / Bolt)
+                    </span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-slate-400 font-medium">{monthlyStats.ridePct}%</span>
+                      <span className="font-bold text-slate-900">MYR {monthlyStats.rideTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* ================= 2. BILLS TAB[cite: 3] ================= */}
+          {/* ================= 2. BILLS SCREEN[cite: 10] ================= */}
           {activeTab === 'bills' && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex justify-between items-end">
                 <div>
-                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">ประวัติบิล</h1>
+                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">All bills</h1>
                   <p className="text-xs text-slate-400 font-medium mt-0.5">{bills.length} รายการทั้งหมด</p>
                 </div>
                 {isAdmin && (
                   <button onClick={() => { setBillFriends(friends.map(f => f.name)); setActiveTab('new-bill'); }} className="bg-capsuleDark text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-1 active:scale-95 transition">
-                    <span className="text-base leading-none">+</span> สร้างบิล
+                    <span className="text-base leading-none">+</span> Add
                   </button>
                 )}
               </div>
 
-              {/* Segmented Filter Pills[cite: 3] */}
+              {/* Segmented Filter Pills[cite: 10] */}
               <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-3">
                 <div className="flex bg-slate-100 p-1 rounded-2xl text-xs font-semibold text-slate-500 overflow-x-auto hide-scrollbar">
                   {[
-                    { id: 'all', label: 'ทั้งหมด' },
-                    { id: 'pending', label: 'ค้างชำระ' },
-                    { id: 'settled', label: 'เคลียร์แล้ว' },
-                    { id: 'food', label: 'อาหาร' },
-                    { id: 'ride', label: 'ค่ารถ' },
+                    { id: 'all', label: 'All' },
+                    { id: 'pending', label: 'Pending' },
+                    { id: 'settled', label: 'Settled' },
+                    { id: 'food', label: 'Food' },
+                    { id: 'ride', label: 'Rides' },
                   ].map(f => (
                     <button
                       key={f.id}
@@ -701,14 +737,14 @@
 
                 <input
                   type="text"
-                  placeholder="ค้นหาชื่อร้าน, เมนู, เส้นทาง..."
+                  placeholder="Search..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs outline-none focus:border-brandPurple font-medium"
                 />
               </div>
 
-              {/* Bill Cards List[cite: 2, 3] */}
+              {/* Bill List Cards[cite: 8, 10] */}
               <div className="space-y-2.5">
                 {bills.filter(b => (b.name || '').toLowerCase().includes(searchQuery.toLowerCase())).map(bill => {
                   const isCollapsed = viewingBillId === bill.id;
@@ -741,7 +777,7 @@
                         <div className="text-right">
                           <span className="text-xs font-black text-slate-900">MYR {(bill.total || 0).toFixed(2)}</span>
                           <span className={`block text-[9px] font-bold mt-0.5 ${unpaidCount === 0 ? 'text-mint' : 'text-coral'}`}>
-                            {unpaidCount === 0 ? '✓ เคลียร์ครบ' : `รอ ${unpaidCount} คน`}
+                            {unpaidCount === 0 ? '✓ SETTLED' : `${unpaidCount} PENDING`}
                           </span>
                         </div>
                       </div>
@@ -797,15 +833,15 @@
             </div>
           )}
 
-          {/* ================= 3. CALENDAR TAB[cite: 4] ================= */}
+          {/* ================= 3. CALENDAR SCREEN[cite: 11] ================= */}
           {activeTab === 'calendar' && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div>
-                <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">ปฏิทินรายจ่าย</h1>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">ยอดใช้จ่ายของฉันแยกตามวัน</p>
+                <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Calendar</h1>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Every charge date this month</p>
               </div>
 
-              {/* Month Selector[cite: 4] */}
+              {/* Month Selector Bar[cite: 11] */}
               <div className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 flex justify-between items-center text-xs font-bold">
                 <input 
                   type="month"
@@ -815,26 +851,26 @@
                 />
               </div>
 
-              {/* Summary Badges[cite: 4] */}
+              {/* 3 Summary Badges[cite: 11] */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="bg-cardDue text-white rounded-2xl p-3 flex flex-col justify-between h-20">
-                  <span className="text-[10px] text-white/80">เดือนนี้</span>
+                  <span className="text-[10px] text-white/80">This month</span>
                   <p className="text-xs font-black">MYR {monthlyStats.totalGroup.toFixed(0)}</p>
                 </div>
                 <div className="bg-cardYear text-slate-800 rounded-2xl p-3 flex flex-col justify-between h-20">
-                  <span className="text-[10px] text-slate-600">ค่าอาหาร</span>
-                  <p className="text-xs font-black">MYR {monthlyStats.foodTotal.toFixed(0)}</p>
+                  <span className="text-[10px] text-slate-600">Charges</span>
+                  <p className="text-xs font-black">{monthlyStats.count} times</p>
                 </div>
                 <div className="bg-cardAvg text-slate-900 rounded-2xl p-3 flex flex-col justify-between h-20">
-                  <span className="text-[10px] text-slate-700">ค่ารถ</span>
-                  <p className="text-xs font-black">MYR {monthlyStats.rideTotal.toFixed(0)}</p>
+                  <span className="text-[10px] text-slate-700">Food/Rides</span>
+                  <p className="text-xs font-black">MYR {monthlyStats.foodTotal.toFixed(0)}</p>
                 </div>
               </div>
 
-              {/* Calendar Grid[cite: 4] */}
+              {/* Calendar Grid Box[cite: 11] */}
               <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-3">
                 <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400">
-                  <span>อา.</span><span>จ.</span><span>อ.</span><span>พ.</span><span>พฤ.</span><span>ศ.</span><span>ส.</span>
+                  <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
                 </div>
 
                 <div className="grid grid-cols-7 gap-y-2 text-center text-xs font-semibold text-slate-700">
@@ -880,98 +916,345 @@
             </div>
           )}
 
-          {/* ================= 4. SETTINGS & MEMBERS TAB[cite: 6, 7] ================= */}
+          {/* ================= 4. SETTINGS SCREEN[cite: 12, 13, 14, 15, 16, 17] ================= */}
           {activeTab === 'settings' && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              {settingsSubPage === 'members' ? (
+              {/* หน้าย่อย: General[cite: 13] */}
+              {settingsSubPage === 'general' && (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setSettingsSubPage(null)} className="text-slate-600 text-sm font-bold">&lt; ย้อนกลับ</button>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setSettingsSubPage(null)} className="text-slate-600 text-sm font-bold flex items-center gap-1 active:scale-95 transition">
+                      <span>&lt;</span> Settings
+                    </button>
+                  </div>
+                  <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 space-y-5">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-900 leading-none">General</h2>
+                      <p className="text-[11px] text-slate-400 mt-1">Language, theme and the currency used for totals</p>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900 leading-tight">Language</h3>
+                        <p className="text-[10px] text-slate-400">Menu and interface language</p>
+                      </div>
+                      <div className="bg-slate-100 p-1 rounded-xl flex text-xs font-semibold text-slate-600">
+                        <button onClick={() => setSelectedLang('th')} className={`px-3 py-1 rounded-lg transition ${selectedLang === 'th' ? 'bg-white shadow-sm text-slate-900' : ''}`}>ไทย</button>
+                        <button onClick={() => setSelectedLang('en')} className={`px-3 py-1 rounded-lg transition ${selectedLang === 'en' ? 'bg-white shadow-sm text-slate-900' : ''}`}>English</button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900 leading-tight">Theme</h3>
+                        <p className="text-[10px] text-slate-400">Light, dark, or follow your device</p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2.5 pt-1">
+                        <div onClick={() => setSelectedTheme('light')} className={`border-2 rounded-2xl p-2.5 flex flex-col items-center gap-2 cursor-pointer transition ${selectedTheme === 'light' ? 'border-brandPurple bg-indigo-50/20' : 'border-slate-100'}`}>
+                          <div className="w-full h-12 bg-slate-100 rounded-xl p-1.5 flex flex-col justify-between">
+                            <div className="w-2 h-2 rounded-full bg-brandPurple"></div>
+                            <div className="w-6 h-2 bg-slate-300 rounded-full"></div>
+                          </div>
+                          <span className="text-[11px] font-semibold text-slate-700">Light</span>
+                        </div>
+                        <div onClick={() => setSelectedTheme('dark')} className={`border-2 rounded-2xl p-2.5 flex flex-col items-center gap-2 cursor-pointer transition ${selectedTheme === 'dark' ? 'border-brandPurple bg-indigo-50/20' : 'border-slate-100'}`}>
+                          <div className="w-full h-12 bg-capsuleDark rounded-xl p-1.5 flex flex-col justify-between">
+                            <div className="w-2 h-2 rounded-full bg-brandPurple"></div>
+                            <div className="w-6 h-2 bg-slate-700 rounded-full"></div>
+                          </div>
+                          <span className="text-[11px] font-semibold text-slate-700">Dark</span>
+                        </div>
+                        <div onClick={() => setSelectedTheme('system')} className={`border-2 rounded-2xl p-2.5 flex flex-col items-center gap-2 cursor-pointer transition ${selectedTheme === 'system' ? 'border-brandPurple bg-indigo-50/20' : 'border-slate-100'}`}>
+                          <div className="w-full h-12 rounded-xl flex overflow-hidden border border-slate-200">
+                            <div className="w-1/2 bg-white p-1"><div className="w-2 h-2 rounded-full bg-brandPurple"></div></div>
+                            <div className="w-1/2 bg-capsuleDark p-1 flex items-end"><div className="w-3 h-1.5 bg-slate-600 rounded-full"></div></div>
+                          </div>
+                          <span className="text-[11px] font-bold text-brandPurple flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-brandPurple"></span> System
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900 leading-tight">Base currency</h3>
+                        <p className="text-[10px] text-slate-400">Every total is converted into this currency</p>
+                      </div>
+                      <span className="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800">MYR</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* หน้าย่อย: Categories[cite: 14] */}
+              {settingsSubPage === 'categories' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setSettingsSubPage(null)} className="text-slate-600 text-sm font-bold flex items-center gap-1 active:scale-95 transition">
+                      <span>&lt;</span> Settings
+                    </button>
+                  </div>
+                  <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h2 className="text-base font-extrabold text-slate-900 leading-none">Categories</h2>
+                        <p className="text-[11px] text-slate-400 mt-1">หมวดหมู่ค่าใช้จ่ายในแอป</p>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {[
+                        { icon: '🛵', name: 'อาหาร & เครื่องดื่ม (Food Delivery)', color: 'bg-rose-100' },
+                        { icon: '🚗', name: 'การเดินทาง (Grab / Bolt)', color: 'bg-emerald-100' },
+                        { icon: '🍽️', name: 'ทานที่ร้าน (Dine-in)', color: 'bg-indigo-100' },
+                        { icon: '💸', name: 'ยืมเงิน (Loan)', color: 'bg-amber-100' },
+                      ].map((cat, idx) => (
+                        <div key={idx} className="py-3 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-3">
+                            <span className={`w-8 h-8 rounded-xl ${cat.color} flex items-center justify-center text-sm`}>{cat.icon}</span>
+                            <span className="font-bold text-slate-800">{cat.name}</span>
+                          </div>
+                          <span className="text-slate-400">✏️</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* หน้าย่อย: Data[cite: 15] */}
+              {settingsSubPage === 'data' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setSettingsSubPage(null)} className="text-slate-600 text-sm font-bold flex items-center gap-1 active:scale-95 transition">
+                      <span>&lt;</span> Settings
+                    </button>
+                  </div>
+                  <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 space-y-5">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-900 leading-none">Data</h2>
+                      <p className="text-[11px] text-slate-400 mt-1">Back up, import and move your data between devices</p>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900 leading-tight">Export data</h3>
+                        <p className="text-[10px] text-slate-400">Download a JSON file with bills & history</p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const full = { version: "1.0", exportDate: new Date().toISOString(), friends, bills, adjustments };
+                          const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
+                          const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                          a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
+                          showToast("ส่งออกข้อมูล JSON สำเร็จ! 📦");
+                        }}
+                        className="bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 transition"
+                      >
+                        Export JSON
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900 leading-tight">Import data</h3>
+                        <p className="text-[10px] text-slate-400">From a JSON file you exported earlier</p>
+                      </div>
+                      <div>
+                        <input type="file" accept=".json" ref={restoreInputRef} onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = async (event) => {
+                            try {
+                              const d = JSON.parse(event.target.result);
+                              if (d.bills && d.friends) {
+                                const batch = db.batch();
+                                const base = db.collection('artifacts').doc(appId).collection('public').doc('data');
+                                d.friends.forEach(f => batch.set(base.collection('friends').doc(f.id || undefined), f));
+                                d.bills.forEach(b => batch.set(base.collection('bills').doc(b.id || undefined), b));
+                                await batch.commit();
+                                showToast("กู้คืนข้อมูลสำเร็จ! 🎉");
+                              }
+                            } catch (err) { showToast("ไฟล์ไม่ถูกต้อง", "error"); }
+                          };
+                          reader.readAsText(file);
+                        }} className="hidden" />
+                        <button onClick={() => restoreInputRef.current && restoreInputRef.current.click()} className="bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 transition">
+                          Import JSON
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* หน้าย่อย: Notifications[cite: 16, 17] */}
+              {settingsSubPage === 'notifications' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setSettingsSubPage(null)} className="text-slate-600 text-sm font-bold flex items-center gap-1 active:scale-95 transition">
+                      <span>&lt;</span> Settings
+                    </button>
+                  </div>
+                  <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 space-y-4">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-900 leading-none">Notifications</h2>
+                      <p className="text-[11px] text-slate-400 mt-1">Set once, applies to every pending debt</p>
+                    </div>
+
+                    <div className="space-y-2 pt-2">
+                      <p className="text-xs font-bold text-slate-800">Remind me (default)</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <button className="bg-slate-100 p-2.5 rounded-xl font-bold text-slate-600">7 days before</button>
+                        <button className="bg-capsuleDark p-2.5 rounded-xl font-bold text-white">3 days before</button>
+                        <button className="bg-slate-100 p-2.5 rounded-xl font-bold text-slate-600">1 day before</button>
+                        <button className="bg-slate-100 p-2.5 rounded-xl font-bold text-slate-600">On the day</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* หน้าย่อย: Members & Statements */}
+              {settingsSubPage === 'members' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setSettingsSubPage(null)} className="text-slate-600 text-sm font-bold flex items-center gap-1 active:scale-95 transition">
+                      <span>&lt;</span> Settings
+                    </button>
                   </div>
                   <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-3">
-                    <h2 className="font-bold text-base text-slate-900">จัดการสมาชิกในกลุ่ม</h2>
-                    {isAdmin && (
-                      <form onSubmit={async (e) => {
-                        e.preventDefault();
-                        const n = prompt("ชื่อสมาชิกใหม่:");
-                        if (n && n.trim()) {
-                          await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add({
-                            name: n.trim(), isSelf: false, isArchived: false, createdAt: Date.now()
-                          });
-                          showToast(`เพิ่ม ${n} เรียบร้อย!`);
-                        }
-                      }}>
-                        <button type="submit" className="w-full bg-brandPurple text-white py-2 rounded-xl text-xs font-bold">+ เพิ่มเพื่อน</button>
-                      </form>
-                    )}
+                    <div className="flex justify-between items-center">
+                      <h2 className="font-bold text-slate-900 text-sm">สมาชิกในกลุ่ม ({friends.length} คน)</h2>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            const n = prompt("ระบุชื่อสมาชิกใหม่:");
+                            if (n && n.trim()) {
+                              db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add({
+                                name: n.trim(), isSelf: false, isArchived: false, createdAt: Date.now()
+                              });
+                              showToast(`เพิ่ม ${n} สำเร็จ!`);
+                            }
+                          }}
+                          className="text-brandPurple text-xs font-bold"
+                        >
+                          + เพิ่มเพื่อน
+                        </button>
+                      )}
+                    </div>
                     <div className="divide-y divide-slate-100">
                       {friends.map(friend => (
                         <div key={friend.id} className="py-2.5 flex justify-between items-center text-xs">
                           <span className="font-bold text-slate-800">{friend.name}</span>
                           {!friend.isSelf && (
-                            <button onClick={() => setSelectedFriendForHistory(friend.name)} className="bg-slate-100 px-3 py-1 rounded-xl text-slate-700 font-semibold">Statement</button>
+                            <button onClick={() => setSelectedFriendForHistory(friend.name)} className="bg-slate-100 px-3 py-1 rounded-xl text-slate-700 font-semibold">
+                              Statement
+                            </button>
                           )}
                         </div>
                       ))}
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">การตั้งค่า</h1>
+              )}
 
-                  {/* Profile Card[cite: 6] */}
+              {/* หน้าหลัก Settings Menu List[cite: 12] */}
+              {!settingsSubPage && (
+                <div className="space-y-4">
+                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Settings</h1>
+
+                  {/* Profile Card[cite: 12] */}
                   <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex items-center gap-3.5">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-brandPurple to-rose-400 text-white font-bold text-lg flex items-center justify-center shadow-md shadow-brandPurple/20">
-                      {isAdmin ? 'A' : 'V'}
+                      P
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-slate-900 leading-tight">
-                        {isAdmin ? 'Admin (Dom)' : 'Viewer Account'}
+                        prptnpdk26domm@gmail.com
                       </h3>
-                      <p className="text-[11px] text-slate-400 mt-0.5 font-medium">Synced with Firebase Firestore</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 font-medium">Synced to cloud</p>
                     </div>
                   </div>
 
-                  {/* Menu List[cite: 6] */}
+                  {/* List Container Card[cite: 12] */}
                   <div className="bg-white rounded-3xl p-2 shadow-sm border border-slate-100 divide-y divide-slate-100">
-                    <div onClick={() => setSettingsSubPage('members')} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
+                    <div onClick={() => setSettingsSubPage('general')} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
                       <div className="flex items-center gap-3.5">
-                        <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 text-base">👥</div>
+                        <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 text-base">⚙️</div>
                         <div>
-                          <h4 className="text-xs font-bold text-slate-900 leading-tight">สมาชิกในกลุ่ม (Members)</h4>
-                          <p className="text-[10px] text-slate-400 mt-0.5">จัดการรายชื่อเพื่อนและสเตตเมนต์</p>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight">General</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Language, theme and the currency use...</p>
                         </div>
                       </div>
                       <span className="text-slate-300 text-sm font-bold">&gt;</span>
                     </div>
 
-                    <div onClick={() => {
-                      const full = { version: "1.0", exportDate: new Date().toISOString(), friends, bills, adjustments };
-                      const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
-                      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-                      a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
-                      showToast("ดาวน์โหลดไฟล์สำรองแล้ว! 📦");
-                    }} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
+                    <div onClick={() => setSettingsSubPage('categories')} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 text-base">🏷️</div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight">Categories</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Add, rename, and pick an icon and color...</p>
+                        </div>
+                      </div>
+                      <span className="text-slate-300 text-sm font-bold">&gt;</span>
+                    </div>
+
+                    <div onClick={() => setSettingsSubPage('members')} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 text-base">💳</div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight">Payment methods & Members</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Group members, debts and statement...</p>
+                        </div>
+                      </div>
+                      <span className="text-slate-300 text-sm font-bold">&gt;</span>
+                    </div>
+
+                    <div onClick={() => setSettingsSubPage('notifications')} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 text-base">🔔</div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight">Notifications</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Set once, applies to every item and ever...</p>
+                        </div>
+                      </div>
+                      <span className="text-slate-300 text-sm font-bold">&gt;</span>
+                    </div>
+
+                    <div onClick={() => setSettingsSubPage('data')} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
                       <div className="flex items-center gap-3.5">
                         <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 text-base">🗄️</div>
                         <div>
-                          <h4 className="text-xs font-bold text-slate-900 leading-tight">สำรองข้อมูล (Backup JSON)</h4>
-                          <p className="text-[10px] text-slate-400 mt-0.5">ส่งออกประวัติบิลและสมาชิกทั้งหมด</p>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight">Data</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Back up, import and move your data be...</p>
+                        </div>
+                      </div>
+                      <span className="text-slate-300 text-sm font-bold">&gt;</span>
+                    </div>
+
+                    <div onClick={() => !isAdmin && setShowAuthModal(true)} className="p-3 flex items-center justify-between cursor-pointer active:bg-slate-50 rounded-2xl transition">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 text-base">👤</div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight">Account</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">The account your data syncs with</p>
                         </div>
                       </div>
                       <span className="text-slate-300 text-sm font-bold">&gt;</span>
                     </div>
                   </div>
 
-                  {/* Log Out[cite: 6] */}
+                  {/* Log out Button[cite: 12] */}
                   <div className="pt-2">
                     <button 
                       onClick={isAdmin ? handleLogoutAdmin : () => setShowAuthModal(true)}
                       className="w-full bg-white border border-slate-100 shadow-sm text-coral font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 active:scale-98 transition"
                     >
                       <span>[→</span>
-                      <span>{isAdmin ? 'ออกจากระบบแอดมิน' : 'เข้าสู่ระบบแอดมิน (Sign in)'}</span>
+                      <span>{isAdmin ? 'Log out' : 'Sign in to Admin'}</span>
                     </button>
                   </div>
                 </div>
@@ -979,12 +1262,12 @@
             </div>
           )}
 
-          {/* ================= 5. CREATE BILL TAB ================= */}
+          {/* ================= 5. CREATE BILL SCREEN ================= */}
           {activeTab === 'new-bill' && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">{editingBillId ? 'แก้ไขบิล' : 'สร้างรายการใหม่'}</h1>
-                <button onClick={() => setActiveTab('overview')} className="text-slate-400 text-xs">✕ ยกเลิก</button>
+                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">{editingBillId ? 'แก้ไขบิล' : 'New Transaction'}</h1>
+                <button onClick={() => setActiveTab('overview')} className="text-slate-400 text-xs">✕ Close</button>
               </div>
 
               <form onSubmit={handleSaveBill} className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 space-y-4">
@@ -1004,17 +1287,17 @@
                 <div className="space-y-2">
                   <input 
                     type="text" 
-                    placeholder="ชื่อรายการ / ร้านอาหาร / เส้นทาง" 
+                    placeholder="Title / Merchant / Route" 
                     value={newBillName} 
                     onChange={e => setNewBillName(e.target.value)} 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-brandPurple"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-brandPurple font-medium"
                     required
                   />
                   <input 
                     type="date" 
                     value={newBillDate} 
                     onChange={e => setNewBillDate(e.target.value)} 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-medium"
                   />
                 </div>
 
@@ -1024,34 +1307,34 @@
                       <option value="">-- เลือกผู้ยืม --</option>
                       {friends.filter(f => !f.isSelf).map(f => <option key={f.id} value={f.name}>{f.name}</option>)}
                     </select>
-                    <input type="text" placeholder="ยอดเงินที่ยืม (RM)" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold font-mono" required />
+                    <input type="text" placeholder="Amount (RM)" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold font-mono" required />
                   </div>
                 ) : billType === 'ride' ? (
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
-                      <input type="text" placeholder="ค่าโดยสาร (RM)" value={rideFare} onChange={e => setRideFare(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono" required />
-                      <input type="text" placeholder="ค่าทางด่วน (RM)" value={tollFee} onChange={e => setTollFee(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono" />
+                      <input type="text" placeholder="Fare (RM)" value={rideFare} onChange={e => setRideFare(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono" required />
+                      <input type="text" placeholder="Toll (RM)" value={tollFee} onChange={e => setTollFee(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono" />
                     </div>
-                    <input type="text" placeholder="เส้นทาง (เช่น Pavilion -> KLCC)" value={rideRoute} onChange={e => setRideRoute(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" />
+                    <input type="text" placeholder="Route (e.g. Pavilion -> KLCC)" value={rideRoute} onChange={e => setRideRoute(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" />
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="grid grid-cols-3 gap-2">
-                      <input type="text" placeholder="ค่าส่ง" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-mono" />
-                      <input type="text" placeholder="ค่ากล่อง" value={packagingCharge} onChange={e => setPackagingCharge(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-mono" />
-                      <input type="text" placeholder="ส่วนลด" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-mono" />
+                      <input type="text" placeholder="Delivery" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-mono" />
+                      <input type="text" placeholder="Packaging" value={packagingCharge} onChange={e => setPackagingCharge(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-mono" />
+                      <input type="text" placeholder="Discount" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-mono" />
                     </div>
 
                     <div className="space-y-2">
                       <div className="flex justify-between items-center text-xs font-bold">
-                        <span>เมนูอาหาร</span>
-                        <button type="button" onClick={() => setBillItems([...billItems, { id: Date.now().toString(), name: '', price: '', qty: 1, sharedWith: [] }])} className="text-brandPurple">+ เพิ่ม</button>
+                        <span>Dishes</span>
+                        <button type="button" onClick={() => setBillItems([...billItems, { id: Date.now().toString(), name: '', price: '', qty: 1, sharedWith: [] }])} className="text-brandPurple">+ Add</button>
                       </div>
                       {billItems.map(item => (
                         <div key={item.id} className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 space-y-1.5">
                           <div className="flex gap-2">
-                            <input type="text" placeholder="ชื่อเมนู" value={item.name} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, name: e.target.value } : b))} className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs" required />
-                            <input type="text" placeholder="ราคา" value={item.price} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, price: e.target.value } : b))} className="w-16 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono" required />
+                            <input type="text" placeholder="Dish name" value={item.name} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, name: e.target.value } : b))} className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs" required />
+                            <input type="text" placeholder="Price" value={item.price} onChange={e => setBillItems(billItems.map(b => b.id === item.id ? { ...b, price: e.target.value } : b))} className="w-16 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono" required />
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {billFriends.map(fName => {
@@ -1071,7 +1354,7 @@
 
                 {billType !== 'loan' && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">คนร่วมหาร ({billFriends.length} คน):</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Split with ({billFriends.length}):</label>
                     <div className="flex flex-wrap gap-1.5">
                       {friends.map(f => {
                         const isSel = billFriends.includes(f.name);
@@ -1091,7 +1374,7 @@
                 )}
 
                 <button type="submit" disabled={isProcessing} className="w-full bg-brandPurple text-white font-bold py-3 rounded-2xl text-xs shadow-lg shadow-brandPurple/30 active:scale-95 transition">
-                  {isProcessing ? 'กำลังบันทึก...' : 'บันทึกรายการบิล'}
+                  {isProcessing ? 'Saving...' : 'Save Transaction'}
                 </button>
               </form>
             </div>
@@ -1130,8 +1413,8 @@
                     html2canvas(friendSlipRef.current, { scale: 2 }).then(cv => {
                       const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `Statement_${selectedFriendForHistory}.png`; a.click();
                     });
-                  }} className="bg-capsuleDark text-white font-bold py-2.5 rounded-xl text-xs">บันทึกรูป PNG</button>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="bg-slate-100 font-bold py-2.5 rounded-xl text-xs text-slate-600">ปิด</button>
+                  }} className="bg-capsuleDark text-white font-bold py-2.5 rounded-xl text-xs">Save Image</button>
+                  <button onClick={() => setSelectedFriendForHistory(null)} className="bg-slate-100 font-bold py-2.5 rounded-xl text-xs text-slate-600">Close</button>
                 </div>
               </div>
             </div>
@@ -1143,30 +1426,30 @@
               <form onSubmit={handleSaveAdjustment} className="bg-white border-t border-slate-200 rounded-t-3xl max-h-[85vh] flex flex-col p-5 space-y-4 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
                 <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto -mt-2 mb-1"></div>
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                  <h3 className="font-extrabold text-slate-900 text-base">ปรับยอดหนี้: {selectedFriendForAdjust}</h3>
+                  <h3 className="font-extrabold text-slate-900 text-base">Adjust: {selectedFriendForAdjust}</h3>
                   <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-slate-400 text-xs">✕</button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-                  <button type="button" onClick={() => setAdjustType('minus')} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-white' : 'text-slate-500'}`}>ชำระแล้ว / หักลบ (-)</button>
-                  <button type="button" onClick={() => setAdjustType('plus')} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'plus' ? 'bg-coral text-white' : 'text-slate-500'}`}>เพิ่มหนี้ (+)</button>
+                  <button type="button" onClick={() => setAdjustType('minus')} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-white' : 'text-slate-500'}`}>Paid / Reduce (-)</button>
+                  <button type="button" onClick={() => setAdjustType('plus')} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'plus' ? 'bg-coral text-white' : 'text-slate-500'}`}>Add Debt (+)</button>
                 </div>
 
-                <input type="text" placeholder="จำนวนเงิน (RM)" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} onBlur={e => setAdjustAmount(evaluateMathExpression(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold outline-none" required />
-                <input type="text" placeholder="หมายเหตุ (เช่น โอนคืนแล้ว)" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none" />
+                <input type="text" placeholder="Amount (RM)" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} onBlur={e => setAdjustAmount(evaluateMathExpression(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold outline-none" required />
+                <input type="text" placeholder="Note (e.g. Bank transfer)" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none" />
 
                 <button type="submit" disabled={isProcessing} className="w-full bg-brandPurple text-white font-bold py-3 rounded-2xl text-xs shadow-lg shadow-brandPurple/30 active:scale-95 transition">
-                  {isProcessing ? 'กำลังบันทึก...' : 'บันทึกรายการปรับยอด'}
+                  {isProcessing ? 'Saving...' : 'Confirm Adjustment'}
                 </button>
               </form>
             </div>
           )}
 
-          {/* ================= FLOATING DYNAMIC CAPSULE NAVBAR[cite: 2, 3, 4, 5] ================= */}
+          {/* ================= FLOATING CAPSULE NAVBAR[cite: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] ================= */}
           <div className="fixed bottom-5 left-0 right-0 z-50 flex justify-center pointer-events-none px-4 pb-safe">
             <nav className="pointer-events-auto bg-capsuleDark/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-full p-1.5 flex items-center gap-1">
               
-              {/* 1. Overview[cite: 2] */}
+              {/* 1. Overview[cite: 8] */}
               <button 
                 onClick={() => setActiveTab('overview')}
                 className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center gap-1.5 ${
@@ -1179,7 +1462,7 @@
                 {activeTab === 'overview' && <span className="text-[11px] tracking-wide">Overview</span>}
               </button>
 
-              {/* 2. Bills[cite: 3] */}
+              {/* 2. Subscriptions / Bills[cite: 10] */}
               <button 
                 onClick={() => setActiveTab('bills')}
                 className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center gap-1.5 ${
@@ -1192,7 +1475,7 @@
                 {activeTab === 'bills' && <span className="text-[11px] tracking-wide">Bills</span>}
               </button>
 
-              {/* 3. Calendar[cite: 4] */}
+              {/* 3. Calendar[cite: 11] */}
               <button 
                 onClick={() => setActiveTab('calendar')}
                 className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center gap-1.5 ${
@@ -1205,7 +1488,7 @@
                 {activeTab === 'calendar' && <span className="text-[11px] tracking-wide">Calendar</span>}
               </button>
 
-              {/* 4. Settings[cite: 5] */}
+              {/* 4. Settings[cite: 12] */}
               <button 
                 onClick={() => { setActiveTab('settings'); setSettingsSubPage(null); }}
                 className={`px-4 py-2 rounded-full transition-all duration-200 flex items-center gap-1.5 ${
@@ -1225,21 +1508,21 @@
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowAuthModal(false)}>
               <div className="bg-white border border-slate-200 rounded-3xl p-6 w-full max-w-xs space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                  <h3 className="font-bold text-sm text-slate-900">🔑 เข้าสู่ระบบแอดมิน</h3>
+                  <h3 className="font-bold text-sm text-slate-900">🔑 Admin Sign-In</h3>
                   <button onClick={() => setShowAuthModal(false)} className="text-slate-400 text-xs">✕</button>
                 </div>
                 <button type="button" onClick={handleGoogleLogin} className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 py-2.5 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-center gap-2 active:scale-95 transition">
                   <span>Google Sign-in</span>
                 </button>
                 <form onSubmit={handleVerifyPin} className="space-y-3 pt-2 border-t border-slate-100">
-                  <input type="password" pattern="[0-9]*" inputMode="numeric" maxLength="6" placeholder="กรอก PIN 4 หลัก (2323)" value={inputPin} onChange={e => setInputPin(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 text-center font-mono text-base tracking-widest outline-none focus:border-brandPurple" autoFocus />
-                  <button type="submit" className="w-full bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-brandPurple/20">ปลดล็อค</button>
+                  <input type="password" pattern="[0-9]*" inputMode="numeric" maxLength="6" placeholder="Enter PIN (2323)" value={inputPin} onChange={e => setInputPin(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 text-center font-mono text-base tracking-widest outline-none focus:border-brandPurple" autoFocus />
+                  <button type="submit" className="w-full bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-brandPurple/20">Unlock</button>
                 </form>
               </div>
             </div>
           )}
 
-          {/* Toast */}
+          {/* Toast Notification */}
           {toast && (
             <div className={`fixed top-4 left-4 right-4 max-w-xs mx-auto z-50 text-center py-2 px-4 rounded-xl text-xs shadow-xl font-bold ${toast.type === 'error' ? 'bg-coral text-white' : 'bg-slate-900 text-white'}`}>
               {toast.message}
