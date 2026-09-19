@@ -9,7 +9,6 @@
   <meta name="theme-color" content="#080C14">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="ใครไม่จ่ายมีเรื่อง">
   <link rel="icon" type="image/jpeg" href="cat.jpg">
   <link rel="apple-touch-icon" href="cat.jpg">
 
@@ -98,6 +97,100 @@
     };
     const DEFAULT_APP_ID = "eat-app-eb3f8";
 
+    // ระบบ 2 ภาษา (i18n Dictionary)
+    const DICTIONARY = {
+      th: {
+        appTitle: "ใครไม่จ่ายมีเรื่อง",
+        overview: "ภาพรวมหนี้กลุ่ม",
+        bills: "รายการบิลที่หาร",
+        logs: "ประวัติปรับยอด (Logs)",
+        calendar: "ปฏิทินรายจ่าย",
+        settings: "การตั้งค่าระบบ",
+        mainMenu: "เมนูหลัก",
+        createBill: "+ สร้างบิลใหม่",
+        totalReceivable: "ยอดที่ต้องตามเก็บเพื่อนสุทธิ",
+        pendingFriends: "รอเพื่อนโอนคืน",
+        weOwe: "เราค้างคนอื่น",
+        myShareToday: "ยอดของฉันวันนี้",
+        myShareNote: "ส่วนแบ่งที่เราต้องออกวันนี้",
+        avgPerBill: "เฉลี่ยต่อบิล",
+        totalSpend: "ยอดใช้จ่ายกลุ่มเดือนนี้",
+        activeDebtors: "เพื่อนที่ค้างชำระ",
+        debtQueue: "คิวทวงหนี้ด่วน (Debt Collection Queue)",
+        tapForLedger: "แตะที่ชื่อเพื่อนเพื่อดูสเตตเมนต์",
+        allCleared: "ทุกคนเคลียร์เงินครบหมดแล้ว 🎉",
+        daysPending: "ค้าง",
+        days: "วัน",
+        adjust: "ปรับยอด",
+        settleAll: "Settle All",
+        searchBill: "ค้นหาบิล...",
+        paidByText: "ออกเงินโดย",
+        participantsCount: "คนหาร",
+        viewDetail: "ดูรายละเอียด >",
+        noLogs: "ยังไม่มีประวัติการปรับยอด",
+        totalGroupSpend: "Total Group Spend",
+        foodAndDelivery: "Food & Delivery",
+        rideGrabBolt: "Ride (Grab/Bolt)",
+        topFriendShare: "Top Friend Share Breakdown (สัดส่วนที่เพื่อนแต่ละคนหาร)",
+        general: "ทั่วไป (General)",
+        language: "ภาษา",
+        membersAndLedger: "สมาชิก & Ledger",
+        addFriend: "+ เพิ่มเพื่อน",
+        ledger: "Ledger",
+        exportJson: "Export All JSON",
+        restoreJson: "Restore JSON",
+        logoutAdmin: "ออกจากโหมดแอดมิน",
+        loginAdmin: "เข้าสู่ระบบแอดมิน",
+        save: "บันทึก",
+        close: "✕ ปิด",
+      },
+      en: {
+        appTitle: "KraiMaiJay",
+        overview: "Overview",
+        bills: "Bills",
+        logs: "Adjustment Logs",
+        calendar: "Calendar",
+        settings: "Settings",
+        mainMenu: "MAIN MENU",
+        createBill: "+ Create Bill",
+        totalReceivable: "Net Receivable Balance",
+        pendingFriends: "Waiting for",
+        weOwe: "We owe others",
+        myShareToday: "My Share Today",
+        myShareNote: "Our share for today",
+        avgPerBill: "Avg Cost / Bill",
+        totalSpend: "Total Group Spend",
+        activeDebtors: "Active Debtors",
+        debtQueue: "Debt Collection Queue",
+        tapForLedger: "Tap friend name to view ledger",
+        allCleared: "All balances cleared! 🎉",
+        daysPending: "Overdue",
+        days: "days",
+        adjust: "Adjust",
+        settleAll: "Settle All",
+        searchBill: "Search bills...",
+        paidByText: "Paid by",
+        participantsCount: "participants",
+        viewDetail: "View Details >",
+        noLogs: "No payment or adjustment logs yet",
+        totalGroupSpend: "Total Group Spend",
+        foodAndDelivery: "Food & Delivery",
+        rideGrabBolt: "Ride (Grab/Bolt)",
+        topFriendShare: "Top Friend Share Breakdown",
+        general: "General",
+        language: "Language",
+        membersAndLedger: "Members & Ledger",
+        addFriend: "+ Add Member",
+        ledger: "Ledger",
+        exportJson: "Export All JSON",
+        restoreJson: "Restore JSON",
+        logoutAdmin: "Lock Admin",
+        loginAdmin: "Admin Sign In",
+        save: "Save",
+        close: "✕ Close",
+      }
+    };
+
     const useIsMobile = () => {
       const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
       useEffect(() => {
@@ -141,7 +234,16 @@
       const [toast, setToast] = useState(null);
       const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'bills' | 'logs' | 'calendar' | 'settings' | 'new-bill'
 
+      // ภาษา
       const [lang, setLang] = useState(() => localStorage.getItem('kraimaijay_lang') || 'th');
+      const t = (key) => DICTIONARY[lang]?.[key] || DICTIONARY['th']?.[key] || key;
+
+      const handleSetLang = (newLang) => {
+        triggerHaptic();
+        setLang(newLang);
+        localStorage.setItem('kraimaijay_lang', newLang);
+      };
+
       const restoreInputRef = useRef(null);
 
       const [friends, setFriends] = useState([]);
@@ -263,7 +365,7 @@
         });
 
         adjustments.forEach(adj => {
-          const fObj = friends.find(f => f.name.toLowerCase() === adj.friendName.toLowerCase());
+          const fObj = friends.find(f => f.name.toLowerCase() === (adj.friendName || '').toLowerCase());
           const realName = fObj ? fObj.name : adj.friendName;
           if (balances[realName] && adj.amount !== undefined && !adj.isSettled) {
             balances[realName].adjustedOwed += adj.amount;
@@ -295,6 +397,7 @@
         return bills.filter(b => b.date === today).reduce((sum, b) => sum + (b.splits?.['Me (Dom)'] || b.splits?.['ตัวฉันเอง'] || 0), 0);
       }, [bills]);
 
+      // สถิติปฏิทิน + ข้อมูล Grid วันที่
       const calendarStats = useMemo(() => {
         const monthly = bills.filter(b => (b.date || '').startsWith(selectedMonth));
         let totalSpend = 0, foodSpend = 0, rideSpend = 0;
@@ -322,6 +425,38 @@
           .map(([name, amount]) => ({ name, amount, pct: totalSpend > 0 ? Math.round((amount / totalSpend) * 100) : 0 }))
           .sort((a, b) => b.amount - a.amount);
 
+        // คำนวณ Matrix วันที่ 1-31 สำหรับปฏิทิน
+        const [year, month] = selectedMonth.split('-').map(Number);
+        const matrix = [];
+        if (year && month) {
+          const firstDayIndex = new Date(year, month - 1, 1).getDay();
+          const daysInMonth = new Date(year, month, 0).getDate();
+          let dayCounter = 1;
+
+          for (let row = 0; row < 6; row++) {
+            const week = [];
+            for (let col = 0; col < 7; col++) {
+              if (row === 0 && col < firstDayIndex) {
+                week.push(null);
+              } else if (dayCounter > daysInMonth) {
+                week.push(null);
+              } else {
+                const dStr = `${selectedMonth}-${String(dayCounter).padStart(2, '0')}`;
+                const dayData = dailyExpenses[dStr] || null;
+                week.push({
+                  day: dayCounter,
+                  dateStr: dStr,
+                  total: dayData ? dayData.total : 0,
+                  items: dayData ? dayData.items : []
+                });
+                dayCounter++;
+              }
+            }
+            matrix.push(week);
+            if (dayCounter > daysInMonth) break;
+          }
+        }
+
         return {
           totalSpend,
           foodSpend,
@@ -329,6 +464,7 @@
           avgCost: monthly.length > 0 ? totalSpend / monthly.length : 0,
           topFriends,
           dailyExpenses,
+          matrix,
           count: monthly.length
         };
       }, [bills, selectedMonth]);
@@ -525,7 +661,7 @@
         }
       };
 
-      // บันทึกบิล (สร้างใหม่ หรือ อัปเดตบิลเดิม)
+      // บันทึกบิล
       const handleSaveBill = async (e) => {
         e.preventDefault();
         triggerHaptic();
@@ -631,7 +767,7 @@
           const keys = Object.keys(b.splits || {});
           return keys.some(k => k.toLowerCase() === friendName.toLowerCase()) || (b.paidBy || '').toLowerCase() === friendName.toLowerCase();
         });
-        const fAdjs = adjustments.filter(a => a.friendName.toLowerCase() === friendName.toLowerCase());
+        const fAdjs = adjustments.filter(a => (a.friendName || '').toLowerCase() === friendName.toLowerCase());
         return { bills: fBills, adjustments: fAdjs };
       };
 
@@ -647,16 +783,16 @@
               <div className="space-y-6">
                 <div className="flex items-center gap-3 px-2">
                   <img src="cat.jpg" className="w-8 h-8 rounded-xl object-cover ring-2 ring-brandPurple/40" onError={e => e.target.style.display='none'} />
-                  <span className="font-extrabold text-base tracking-tight text-white">ใครไม่จ่ายมีเรื่อง</span>
+                  <span className="font-extrabold text-base tracking-tight text-white">{t('appTitle')}</span>
                 </div>
 
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2">เมนูหลัก</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2">{t('mainMenu')}</p>
                   {[
-                    { id: 'overview', label: 'ภาพรวมหนี้กลุ่ม', icon: '📊' },
-                    { id: 'bills', label: 'รายการบิลที่หาร', icon: '🧾', count: bills.length },
-                    { id: 'logs', label: 'ประวัติปรับยอด (Logs)', icon: '📝', count: adjustments.length },
-                    { id: 'calendar', label: 'ปฏิทินรายจ่าย', icon: '📅' },
+                    { id: 'overview', label: t('overview'), icon: '📊' },
+                    { id: 'bills', label: t('bills'), icon: '🧾', count: bills.length },
+                    { id: 'logs', label: t('logs'), icon: '📝', count: adjustments.length },
+                    { id: 'calendar', label: t('calendar'), icon: '📅' },
                   ].map(item => (
                     <button
                       key={item.id}
@@ -682,7 +818,7 @@
               <div className="space-y-3 pt-4 border-t border-[#19243C]">
                 <button onClick={() => { triggerHaptic(); setActiveTab('settings'); }} className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${activeTab === 'settings' ? 'bg-brandPurple/20 text-brandPurple font-bold' : 'text-slate-400 hover:text-white'}`}>
                   <span>⚙️</span>
-                  <span>การตั้งค่าระบบ</span>
+                  <span>{t('settings')}</span>
                 </button>
                 <div className="bg-[#121A2D] border border-[#19243C] p-3 rounded-2xl flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brandPurple to-rose-400 text-white font-bold text-xs flex items-center justify-center">
@@ -700,14 +836,14 @@
             <main className="flex-1 overflow-y-auto custom-scroll p-8 space-y-6">
               <div className="flex justify-between items-center pb-2">
                 <div>
-                  <p className="text-xs text-slate-500 font-medium">วันเสาร์ที่ 19 กันยายน 2026</p>
+                  <p className="text-xs text-slate-500 font-medium">{new Date().toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
                   <h1 className="text-2xl font-black text-white mt-0.5 capitalize">
-                    {activeTab === 'overview' ? 'ภาพรวมการหารเงินกลุ่ม' : activeTab === 'bills' ? 'รายการบิลที่หาร' : activeTab === 'logs' ? 'ประวัติการชำระและปรับยอด' : activeTab === 'calendar' ? 'ปฏิทินรายจ่าย' : 'การตั้งค่าระบบ'}
+                    {activeTab === 'overview' ? t('overview') : activeTab === 'bills' ? t('bills') : activeTab === 'logs' ? t('logs') : activeTab === 'calendar' ? t('calendar') : t('settings')}
                   </h1>
                 </div>
                 {isAdmin && (
                   <button onClick={() => { triggerHaptic(); setEditingBillId(null); setNewBillName(''); setBillFriends(friends.map(f => f.name)); setActiveTab('new-bill'); }} className="bg-white text-slate-900 px-4 py-2 rounded-xl font-bold text-xs shadow-sm hover:bg-slate-100 transition">
-                    + สร้างบิลใหม่
+                    {t('createBill')}
                   </button>
                 )}
               </div>
@@ -718,22 +854,22 @@
                   <div className="col-span-5 space-y-4">
                     <div className="h-48 rounded-3xl p-6 text-white flex flex-col justify-between shadow-xl" style={{ background: 'linear-gradient(135deg, #E65C5C 0%, #EA7E6B 60%, #BA7B9B 100%)' }}>
                       <div>
-                        <p className="text-xs font-bold uppercase tracking-wider text-white/90">ยอดที่ต้องตามเก็บเพื่อนสุทธิ</p>
+                        <p className="text-xs font-bold uppercase tracking-wider text-white/90">{t('totalReceivable')}</p>
                         <p className="text-3xl font-black mt-2 font-mono">MYR {totalReceivable.toFixed(2)}</p>
                       </div>
                       <div className="flex justify-between items-end">
-                        <span className="text-xs text-white/80">รอเพื่อนโอนคืน {debtQueue.length} คน</span>
-                        {totalPayable > 0 && <span className="text-xs bg-black/30 px-2.5 py-1 rounded-xl">เราค้างคนอื่น: MYR {totalPayable.toFixed(2)}</span>}
+                        <span className="text-xs text-white/80">{t('pendingFriends')} {debtQueue.length} {lang === 'th' ? 'คน' : 'people'}</span>
+                        {totalPayable > 0 && <span className="text-xs bg-black/30 px-2.5 py-1 rounded-xl">{t('weOwe')}: MYR {totalPayable.toFixed(2)}</span>}
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-cardDue p-4 rounded-3xl text-white">
-                        <span className="text-[11px] text-white/80 font-medium">ยอดของฉันวันนี้</span>
+                        <span className="text-[11px] text-white/80 font-medium">{t('myShareToday')}</span>
                         <h4 className="text-xl font-black mt-1 font-mono">MYR {todayMyShare.toFixed(2)}</h4>
                       </div>
                       <div className="bg-cardAvg p-4 rounded-3xl text-slate-900">
-                        <span className="text-[11px] text-slate-700 font-medium">เฉลี่ยต่อบิล</span>
+                        <span className="text-[11px] text-slate-700 font-medium">{t('avgPerBill')}</span>
                         <h4 className="text-xl font-black mt-1 font-mono">MYR {calendarStats.avgCost.toFixed(2)}</h4>
                       </div>
                     </div>
@@ -741,13 +877,13 @@
 
                   <div className="col-span-7 bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-4">
                     <div className="flex justify-between items-center text-xs">
-                      <h3 className="font-bold text-white text-sm">คิวทวงหนี้ด่วน (Debt Collection Queue)</h3>
-                      <span className="text-slate-400">แตะที่ชื่อเพื่อนเพื่อดูสเตตเมนต์</span>
+                      <h3 className="font-bold text-white text-sm">{t('debtQueue')}</h3>
+                      <span className="text-slate-400">{t('tapForLedger')}</span>
                     </div>
 
                     <div className="space-y-2.5 max-h-[500px] overflow-y-auto custom-scroll pr-1">
                       {debtQueue.length === 0 ? (
-                        <p className="text-center py-12 text-slate-500 text-xs">🎉 ทุกคนเคลียร์เงินครบหมดแล้ว</p>
+                        <p className="text-center py-12 text-slate-500 text-xs">{t('allCleared')}</p>
                       ) : (
                         debtQueue.map(f => (
                           <div key={f.id} className="bg-[#121A2D] p-3.5 rounded-2xl flex justify-between items-center border border-[#19243C]">
@@ -755,7 +891,7 @@
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-xs text-white hover:text-brandPurple transition">{f.name}</span>
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold font-mono ${f.daysPending > 3 ? 'bg-rose-500/20 text-coral' : 'bg-amber-500/20 text-amber-300'}`}>
-                                  ค้าง {f.daysPending} วัน
+                                  {t('daysPending')} {f.daysPending} {t('days')}
                                 </span>
                               </div>
                               <span className="text-[10px] text-slate-400 block mt-0.5 truncate max-w-[220px]">{f.lastBillName}</span>
@@ -766,10 +902,10 @@
                               {isAdmin && (
                                 <>
                                   <button onClick={() => { triggerHaptic(); setSelectedFriendForAdjust(f.name); setAdjustAmount(''); }} className="bg-[#19243C] hover:bg-slate-700 text-slate-300 text-[10px] font-bold px-2.5 py-1.5 rounded-xl transition">
-                                    ปรับยอด
+                                    {t('adjust')}
                                   </button>
                                   <button onClick={() => handleSettleFullBalance(f.name)} className="bg-mint/20 hover:bg-mint text-mint hover:text-slate-900 text-[10px] font-bold px-2.5 py-1.5 rounded-xl transition">
-                                    Settle All
+                                    {t('settleAll')}
                                   </button>
                                 </>
                               )}
@@ -786,8 +922,8 @@
               {activeTab === 'bills' && (
                 <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-4 animate-in fade-in">
                   <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-white text-base">รายการบิลทั้งหมด ({bills.length} รายการ)</h3>
-                    <input type="text" placeholder="ค้นหาบิล..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="bg-[#121A2D] border border-[#19243C] rounded-xl px-3 py-1.5 text-xs text-white outline-none w-56" />
+                    <h3 className="font-bold text-white text-base">{t('bills')} ({bills.length})</h3>
+                    <input type="text" placeholder={t('searchBill')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="bg-[#121A2D] border border-[#19243C] rounded-xl px-3 py-1.5 text-xs text-white outline-none w-56" />
                   </div>
 
                   <div className="space-y-2.5">
@@ -798,11 +934,11 @@
                             <span className="font-bold text-sm text-white">{b.name}</span>
                             <span className="text-[10px] bg-[#19243C] text-slate-300 px-2 py-0.5 rounded-lg">{b.billType}</span>
                           </div>
-                          <p className="text-xs text-slate-400 mt-1">{b.date} · ออกเงินโดย <span className="text-mint font-bold">{b.paidBy || 'Me'}</span> · {Object.keys(b.splits || {}).length} คนหาร</p>
+                          <p className="text-xs text-slate-400 mt-1">{b.date} · {t('paidByText')} <span className="text-mint font-bold">{b.paidBy || 'Me'}</span> · {Object.keys(b.splits || {}).length} {t('participantsCount')}</p>
                         </div>
                         <div className="text-right">
                           <span className="text-base font-mono font-black text-white block">MYR {(b.total || 0).toFixed(2)}</span>
-                          <span className="text-xs text-brandPurple font-bold">ดูรายละเอียด &gt;</span>
+                          <span className="text-xs text-brandPurple font-bold">{t('viewDetail')}</span>
                         </div>
                       </div>
                     ))}
@@ -813,10 +949,10 @@
               {/* 3. LOGS (DESKTOP) */}
               {activeTab === 'logs' && (
                 <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-4 animate-in fade-in">
-                  <h3 className="font-bold text-white text-base">ประวัติการชำระและปรับยอด (Payment & Adjustment Log)</h3>
+                  <h3 className="font-bold text-white text-base">{t('logs')}</h3>
                   <div className="space-y-2.5">
                     {adjustments.length === 0 ? (
-                      <p className="text-center py-12 text-slate-500 text-xs">ยังไม่มีประวัติการปรับยอด</p>
+                      <p className="text-center py-12 text-slate-500 text-xs">{t('noLogs')}</p>
                     ) : (
                       adjustments.map(adj => (
                         <div key={adj.id} className="bg-[#121A2D] p-3.5 rounded-2xl border border-[#19243C] flex justify-between items-center text-xs">
@@ -837,50 +973,102 @@
                 </div>
               )}
 
-              {/* 4. CALENDAR (DESKTOP) */}
+              {/* 4. CALENDAR (DESKTOP - มีตารางปฏิทิน Grid ชัดเจน) */}
               {activeTab === 'calendar' && (
                 <div className="space-y-6 animate-in fade-in">
                   <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 flex justify-between items-center">
                     <div>
-                      <h3 className="font-bold text-white text-base">สถิติค่าใช้จ่ายประจำเดือน</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">{calendarStats.count} รายการบิลในระบบ</p>
+                      <h3 className="font-bold text-white text-base">{t('calendar')}</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">{calendarStats.count} {lang === 'th' ? 'รายการบิลในเดือนนี้' : 'bills this month'}</p>
                     </div>
-                    <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-[#121A2D] border border-[#19243C] px-3.5 py-1.5 rounded-xl text-white font-bold text-xs outline-none" />
+                    <input type="month" value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setSelectedCalendarDay(null); }} className="bg-[#121A2D] border border-[#19243C] px-3.5 py-1.5 rounded-xl text-white font-bold text-xs outline-none" />
                   </div>
 
                   <div className="grid grid-cols-4 gap-4">
                     <div className="bg-cardDue text-white p-5 rounded-3xl">
-                      <span className="text-xs text-white/80 font-medium">Total Group Spend</span>
+                      <span className="text-xs text-white/80 font-medium">{t('totalGroupSpend')}</span>
                       <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.totalSpend.toFixed(2)}</h4>
                     </div>
                     <div className="bg-cardAvg text-slate-900 p-5 rounded-3xl">
-                      <span className="text-xs text-slate-700 font-medium">Avg Cost / บิล</span>
+                      <span className="text-xs text-slate-700 font-medium">{t('avgPerBill')}</span>
                       <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.avgCost.toFixed(2)}</h4>
                     </div>
                     <div className="bg-cardYear text-slate-900 p-5 rounded-3xl">
-                      <span className="text-xs text-slate-600 font-medium">Food & Delivery</span>
+                      <span className="text-xs text-slate-600 font-medium">{t('foodAndDelivery')}</span>
                       <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.foodSpend.toFixed(2)}</h4>
                     </div>
                     <div className="bg-cardActive text-white p-5 rounded-3xl border border-[#19243C]">
-                      <span className="text-xs text-slate-400 font-medium">Ride (Grab/Bolt)</span>
+                      <span className="text-xs text-slate-400 font-medium">{t('rideGrabBolt')}</span>
                       <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.rideSpend.toFixed(2)}</h4>
                     </div>
                   </div>
 
-                  <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-3">
-                    <h3 className="font-bold text-white text-sm">Top Friend Share Breakdown (สัดส่วนที่เพื่อนแต่ละคนหาร)</h3>
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                      {calendarStats.topFriends.map(f => (
-                        <div key={f.name} className="space-y-1.5 bg-[#121A2D] p-3 rounded-2xl border border-[#19243C]">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-white font-medium">{f.name} ({f.pct}%)</span>
-                            <span className="font-mono font-bold text-brandPurple">MYR {f.amount.toFixed(2)}</span>
-                          </div>
-                          <div className="w-full h-2 bg-[#080C14] rounded-full overflow-hidden">
-                            <div style={{ width: `${f.pct}%` }} className="bg-brandPurple h-full rounded-full"></div>
+                  <div className="grid grid-cols-12 gap-6">
+                    {/* Calendar Grid Desktop */}
+                    <div className="col-span-8 bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-4">
+                      <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-400">
+                        <span>{lang === 'th' ? 'อา' : 'Sun'}</span>
+                        <span>{lang === 'th' ? 'จ' : 'Mon'}</span>
+                        <span>{lang === 'th' ? 'อ' : 'Tue'}</span>
+                        <span>{lang === 'th' ? 'พ' : 'Wed'}</span>
+                        <span>{lang === 'th' ? 'พฤ' : 'Thu'}</span>
+                        <span>{lang === 'th' ? 'ศ' : 'Fri'}</span>
+                        <span>{lang === 'th' ? 'ส' : 'Sat'}</span>
+                      </div>
+                      <div className="grid grid-cols-7 gap-2">
+                        {calendarStats.matrix.flat().map((c, idx) => (
+                          c ? (
+                            <div 
+                              key={idx} 
+                              onClick={() => { triggerHaptic(); c.total > 0 && setSelectedCalendarDay(c); }}
+                              className={`p-2 rounded-2xl min-h-[64px] border flex flex-col justify-between transition cursor-pointer ${
+                                selectedCalendarDay?.dateStr === c.dateStr
+                                  ? 'bg-brandPurple border-brandPurple text-white'
+                                  : c.total > 0
+                                    ? 'bg-[#121A2D] border-brandPurple/40 hover:border-brandPurple'
+                                    : 'border-[#19243C] text-slate-600'
+                              }`}
+                            >
+                              <span className="text-xs font-bold">{c.day}</span>
+                              {c.total > 0 && <span className="text-[10px] font-mono font-bold text-right text-brandPurple group-hover:text-white">MYR {c.total.toFixed(0)}</span>}
+                            </div>
+                          ) : <div key={idx} className="min-h-[64px]"></div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right column details */}
+                    <div className="col-span-4 space-y-4">
+                      {selectedCalendarDay ? (
+                        <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-5 space-y-3">
+                          <h4 className="text-sm font-bold text-white border-b border-[#19243C] pb-2">รายการวันที่ {selectedCalendarDay.dateStr}</h4>
+                          <div className="space-y-2">
+                            {selectedCalendarDay.items.map((it, i) => (
+                              <div key={i} className="flex justify-between text-xs text-slate-300">
+                                <span>{it.name}</span>
+                                <span className="font-mono font-bold text-white">MYR {it.total.toFixed(2)}</span>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
+                      ) : null}
+
+                      <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-5 space-y-3">
+                        <h4 className="text-xs font-bold text-white">{t('topFriendShare')}</h4>
+                        <div className="space-y-2.5">
+                          {calendarStats.topFriends.map(f => (
+                            <div key={f.name} className="space-y-1">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-300 font-medium">{f.name} ({f.pct}%)</span>
+                                <span className="font-mono font-bold text-brandPurple">MYR {f.amount.toFixed(2)}</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-[#080C14] rounded-full overflow-hidden">
+                                <div style={{ width: `${f.pct}%` }} className="bg-brandPurple h-full rounded-full"></div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -890,30 +1078,30 @@
               {activeTab === 'settings' && (
                 <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-6 max-w-2xl animate-in fade-in">
                   <div className="space-y-3">
-                    <h3 className="font-bold text-white text-base">ทั่วไป (General)</h3>
+                    <h3 className="font-bold text-white text-base">{t('general')}</h3>
                     <div className="flex justify-between items-center bg-[#121A2D] p-4 rounded-2xl border border-[#19243C] text-xs">
-                      <span className="text-slate-300">ภาษา</span>
+                      <span className="text-slate-300 font-bold">{t('language')}</span>
                       <div className="bg-[#080C14] p-1 rounded-xl flex text-xs font-bold">
-                        <button onClick={() => { triggerHaptic(); setLang('th'); }} className={`px-3 py-1 rounded-lg ${lang === 'th' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>ไทย</button>
-                        <button onClick={() => { triggerHaptic(); setLang('en'); }} className={`px-3 py-1 rounded-lg ${lang === 'en' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>English</button>
+                        <button onClick={() => handleSetLang('th')} className={`px-4 py-1.5 rounded-lg transition ${lang === 'th' ? 'bg-brandPurple text-white shadow' : 'text-slate-400'}`}>ไทย</button>
+                        <button onClick={() => handleSetLang('en')} className={`px-4 py-1.5 rounded-lg transition ${lang === 'en' ? 'bg-brandPurple text-white shadow' : 'text-slate-400'}`}>English</button>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
-                      <h3 className="font-bold text-white text-base">สมาชิก & Ledger ({friends.length} คน)</h3>
+                      <h3 className="font-bold text-white text-base">{t('membersAndLedger')} ({friends.length})</h3>
                       {isAdmin && (
                         <button onClick={() => {
                           triggerHaptic();
-                          const n = prompt("ระบุชื่อสมาชิกใหม่:");
+                          const n = prompt("ระบุชื่อสมาชิกใหม่ / Add Member:");
                           if (n && n.trim()) {
                             db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add({
                               name: n.trim(), isSelf: false, isArchived: false, createdAt: Date.now()
                             });
                             showToast(`เพิ่ม ${n} สำเร็จ!`);
                           }
-                        }} className="text-xs font-bold text-brandPurple">+ เพิ่มเพื่อน</button>
+                        }} className="text-xs font-bold text-brandPurple">{t('addFriend')}</button>
                       )}
                     </div>
                     <div className="divide-y divide-[#19243C] bg-[#121A2D] rounded-2xl p-2 border border-[#19243C]">
@@ -922,11 +1110,11 @@
                           <span className="font-bold text-white">{f.name}</span>
                           <div className="flex gap-2">
                             <button onClick={() => { triggerHaptic(); setSelectedFriendForHistory(f.name); }} className="bg-[#19243C] hover:bg-slate-700 text-slate-300 px-3 py-1 rounded-lg font-bold">
-                              Ledger
+                              {t('ledger')}
                             </button>
                             {isAdmin && !f.isSelf && (
                               <button onClick={() => { triggerHaptic(); setSelectedFriendForAdjust(f.name); setAdjustAmount(''); }} className="bg-brandPurple/20 hover:bg-brandPurple text-brandPurple hover:text-white px-3 py-1 rounded-lg font-bold transition">
-                                Adjustment
+                                {t('adjust')}
                               </button>
                             )}
                           </div>
@@ -949,7 +1137,7 @@
                         }} 
                         className="bg-[#121A2D] hover:bg-[#19243C] border border-[#19243C] text-white py-2.5 rounded-xl text-xs font-bold transition"
                       >
-                        Export All JSON
+                        {t('exportJson')}
                       </button>
                       <input type="file" accept=".json" ref={restoreInputRef} onChange={(e) => {
                         const file = e.target.files[0];
@@ -971,7 +1159,7 @@
                         reader.readAsText(file);
                       }} className="hidden" />
                       <button onClick={() => { triggerHaptic(); restoreInputRef.current && restoreInputRef.current.click(); }} className="bg-[#121A2D] hover:bg-[#19243C] border border-[#19243C] text-white py-2.5 rounded-xl text-xs font-bold transition">
-                        Restore JSON
+                        {t('restoreJson')}
                       </button>
                     </div>
                   </div>
@@ -981,7 +1169,7 @@
                       onClick={isAdmin ? () => { setIsAdminBySecret(false); setIsAdminByGoogle(false); localStorage.removeItem('kraimaijay_secret_admin'); showToast("ออกจากโหมดแอดมินแล้ว"); } : () => setShowAuthModal(true)}
                       className="w-full bg-[#121A2D] text-coral font-bold py-3 rounded-2xl text-xs border border-[#19243C]"
                     >
-                      {isAdmin ? 'ออกจากโหมดแอดมิน' : 'เข้าสู่ระบบแอดมิน'}
+                      {isAdmin ? t('logoutAdmin') : t('loginAdmin')}
                     </button>
                   </div>
                 </div>
@@ -999,12 +1187,12 @@
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="flex justify-between items-end">
                   <div>
-                    <p className="text-xs text-slate-400 font-medium">วันเสาร์ที่ 19 กันยายน 2026</p>
-                    <h1 className="text-3xl font-extrabold tracking-tight text-white mt-0.5">ภาพรวม</h1>
+                    <p className="text-xs text-slate-400 font-medium">{new Date().toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    <h1 className="text-3xl font-extrabold tracking-tight text-white mt-0.5">{t('overview')}</h1>
                   </div>
                   {isAdmin && (
                     <button onClick={() => { triggerHaptic(); setEditingBillId(null); setNewBillName(''); setBillFriends(friends.map(f => f.name)); setActiveTab('new-bill'); }} className="bg-white text-slate-900 text-xs font-bold px-3.5 py-2 rounded-xl active:scale-95 transition">
-                      + สร้างบิล
+                      {t('createBill')}
                     </button>
                   )}
                 </div>
@@ -1014,11 +1202,11 @@
                      style={{ background: 'linear-gradient(135deg, #E65C5C 0%, #EA7E6B 60%, #BA7B9B 100%)' }}>
                   <div className="flex justify-between items-start z-10">
                     <div>
-                      <p className="text-xs font-bold leading-tight">ยอดที่ต้องตามเก็บเพื่อนสุทธิ</p>
-                      <p className="text-[10px] text-white/80">Net Receivable Balance</p>
+                      <p className="text-xs font-bold leading-tight">{t('totalReceivable')}</p>
+                      <p className="text-[10px] text-white/80">KraiMaiJay Net Balance</p>
                     </div>
                     <span className="bg-white/20 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/30">
-                      รอ {debtQueue.length} คน
+                      {t('pendingFriends')} {debtQueue.length} {lang === 'th' ? 'คน' : 'p'}
                     </span>
                   </div>
 
@@ -1028,7 +1216,7 @@
                       <p className="text-3xl font-black tracking-tight leading-none">MYR {totalReceivable.toFixed(2)}</p>
                       {totalPayable > 0 && (
                         <span className="text-[10px] text-white/95 font-medium bg-black/30 backdrop-blur-sm px-2 py-0.5 rounded-lg border border-white/10">
-                          เราค้าง: MYR {totalPayable.toFixed(2)}
+                          {t('weOwe')}: MYR {totalPayable.toFixed(2)}
                         </span>
                       )}
                     </div>
@@ -1038,31 +1226,31 @@
                 {/* 4 Bento Metrics */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-cardDue text-white rounded-3xl p-4 flex flex-col justify-between h-32 shadow-md">
-                    <span className="text-xs font-medium text-white/80">ยอดของฉันวันนี้</span>
+                    <span className="text-xs font-medium text-white/80">{t('myShareToday')}</span>
                     <div>
                       <h3 className="text-xl font-black font-mono">MYR {todayMyShare.toFixed(2)}</h3>
-                      <p className="text-[9px] text-white/70 mt-1">ส่วนแบ่งที่เราต้องออกวันนี้</p>
+                      <p className="text-[9px] text-white/70 mt-1">{t('myShareNote')}</p>
                     </div>
                   </div>
                   <div className="bg-cardAvg text-slate-900 rounded-3xl p-4 flex flex-col justify-between h-32 shadow-md">
-                    <span className="text-xs font-medium text-slate-700">เฉลี่ยต่อบิล</span>
+                    <span className="text-xs font-medium text-slate-700">{t('avgPerBill')}</span>
                     <div>
                       <h3 className="text-xl font-black font-mono">MYR {calendarStats.avgCost.toFixed(2)}</h3>
-                      <p className="text-[9px] text-slate-700/80 mt-1">{calendarStats.count} บิลในเดือนนี้</p>
+                      <p className="text-[9px] text-slate-700/80 mt-1">{calendarStats.count} {lang === 'th' ? 'บิลในเดือนนี้' : 'bills'}</p>
                     </div>
                   </div>
                   <div className="bg-cardYear text-slate-900 rounded-3xl p-4 flex flex-col justify-between h-32">
-                    <span className="text-xs font-medium text-slate-600">ยอดใช้จ่ายกลุ่มเดือนนี้</span>
+                    <span className="text-xs font-medium text-slate-600">{t('totalSpend')}</span>
                     <div>
                       <h3 className="text-xl font-black font-mono">MYR {calendarStats.totalSpend.toFixed(2)}</h3>
-                      <p className="text-[9px] text-slate-600 mt-1">ยอดบิลทั้งหมดที่หาร</p>
+                      <p className="text-[9px] text-slate-600 mt-1">{lang === 'th' ? 'ยอดบิลทั้งหมดที่หาร' : 'Total shared'}</p>
                     </div>
                   </div>
                   <div className="bg-cardActive text-white rounded-3xl p-4 flex flex-col justify-between h-32 border border-[#19243C]">
-                    <span className="text-xs font-medium text-slate-400">เพื่อนที่ค้างชำระ</span>
+                    <span className="text-xs font-medium text-slate-400">{t('activeDebtors')}</span>
                     <div>
                       <h3 className="text-3xl font-black font-mono">{debtQueue.length}</h3>
-                      <p className="text-[9px] text-slate-400 mt-1">คนที่ยังโอนเงินไม่ครบ</p>
+                      <p className="text-[9px] text-slate-400 mt-1">{lang === 'th' ? 'คนที่ยังโอนเงินไม่ครบ' : 'Unsettled'}</p>
                     </div>
                   </div>
                 </div>
@@ -1071,15 +1259,15 @@
                 <div className="space-y-2 pt-1">
                   <div className="flex justify-between items-center text-xs">
                     <span className="font-bold text-white text-sm flex items-center gap-1.5">
-                      <span>⏳</span> คิวทวงหนี้ด่วน
+                      <span>⏳</span> {t('debtQueue')}
                     </span>
-                    <span className="text-brandPurple font-semibold">แตะชื่อเพื่อดูประวัติ</span>
+                    <span className="text-brandPurple font-semibold">{t('tapForLedger')}</span>
                   </div>
 
                   <div className="space-y-2">
                     {debtQueue.length === 0 ? (
                       <div className="bg-[#121A2D] p-5 rounded-2xl border border-[#19243C] text-center text-xs text-slate-400">
-                        🎉 เคลียร์ครบทุกคนแล้ว ไม่มีใครค้างชำระ
+                        {t('allCleared')}
                       </div>
                     ) : (
                       debtQueue.map(f => (
@@ -1088,7 +1276,7 @@
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-white hover:text-brandPurple transition">{f.name}</h4>
                               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${f.daysPending > 3 ? 'bg-rose-500/20 text-coral' : 'bg-amber-500/20 text-amber-300'}`}>
-                                ค้าง {f.daysPending} วัน
+                                {t('daysPending')} {f.daysPending} {t('days')}
                               </span>
                             </div>
                             <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[170px]">{f.lastBillName}</p>
@@ -1099,7 +1287,7 @@
                             {isAdmin && (
                               <>
                                 <button onClick={() => { triggerHaptic(); setSelectedFriendForAdjust(f.name); setAdjustAmount(''); }} className="bg-[#19243C] hover:bg-slate-700 text-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-lg active:scale-95 transition">
-                                  ปรับ
+                                  {t('adjust')}
                                 </button>
                                 <button onClick={() => handleSettleFullBalance(f.name)} className="bg-mint/20 hover:bg-mint text-mint hover:text-slate-900 text-[10px] font-bold px-2 py-1.5 rounded-lg active:scale-95 transition">
                                   Settle
@@ -1118,7 +1306,15 @@
             {/* 2. BILLS VIEW */}
             {activeTab === 'bills' && (
               <div className="space-y-4 animate-in fade-in">
-                <h1 className="text-3xl font-extrabold text-white">รายการบิล</h1>
+                <div className="flex justify-between items-center">
+                  <h1 className="text-3xl font-extrabold text-white">{t('bills')}</h1>
+                  {isAdmin && (
+                    <button onClick={() => { triggerHaptic(); setEditingBillId(null); setNewBillName(''); setBillFriends(friends.map(f => f.name)); setActiveTab('new-bill'); }} className="bg-white text-slate-900 px-3.5 py-1.5 rounded-xl font-bold text-xs">
+                      {t('createBill')}
+                    </button>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   {bills.map(b => (
                     <div 
@@ -1128,11 +1324,11 @@
                     >
                       <div>
                         <h4 className="text-xs font-bold text-white">{b.name}</h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{b.date} · จ่ายโดย {b.paidBy || 'Me'}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{b.date} · {t('paidByText')} {b.paidBy || 'Me'}</p>
                       </div>
                       <div className="text-right">
                         <span className="text-xs font-black text-white font-mono block">MYR {(b.total || 0).toFixed(2)}</span>
-                        <span className="text-[10px] text-brandPurple font-bold">ดูรายละเอียด &gt;</span>
+                        <span className="text-[10px] text-brandPurple font-bold">{t('viewDetail')}</span>
                       </div>
                     </div>
                   ))}
@@ -1140,16 +1336,16 @@
               </div>
             )}
 
-            {/* 3. PAYMENT & ADJUSTMENT LOG VIEW */}
+            {/* 3. PAYMENT & ADJUSTMENT LOG VIEW (MOBILE) */}
             {activeTab === 'logs' && (
               <div className="space-y-4 animate-in fade-in">
                 <div>
-                  <h1 className="text-3xl font-extrabold text-white">ประวัติปรับยอด</h1>
-                  <p className="text-xs text-slate-400 mt-0.5">Payment & Adjustment Log ({adjustments.length} รายการ)</p>
+                  <h1 className="text-3xl font-extrabold text-white">{t('logs')}</h1>
+                  <p className="text-xs text-slate-400 mt-0.5">{adjustments.length} {lang === 'th' ? 'รายการทั้งหมด' : 'records'}</p>
                 </div>
                 <div className="space-y-2">
                   {adjustments.length === 0 ? (
-                    <p className="text-center py-10 text-xs text-slate-500">ยังไม่มีประวัติการปรับยอด</p>
+                    <p className="text-center py-10 text-xs text-slate-500">{t('noLogs')}</p>
                   ) : (
                     adjustments.map(adj => (
                       <div key={adj.id} className="bg-[#121A2D] p-3.5 rounded-2xl border border-[#19243C] flex justify-between items-center text-xs">
@@ -1170,87 +1366,107 @@
               </div>
             )}
 
-            {/* 4. CALENDAR VIEW */}
+            {/* 4. CALENDAR VIEW (MOBILE - ตารางวันที่ + สถิติ) */}
             {activeTab === 'calendar' && (
               <div className="space-y-4 animate-in fade-in">
-                <div>
-                  <h1 className="text-3xl font-extrabold text-white">ปฏิทินรายจ่าย</h1>
-                  <p className="text-xs text-slate-400 mt-0.5">สถิติและรอบจ่ายในเดือนนี้</p>
-                </div>
-
-                <div className="bg-[#121A2D] rounded-2xl p-3 border border-[#19243C] flex justify-between items-center text-xs font-bold">
-                  <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-transparent text-white outline-none font-bold" />
-                  <span className="text-slate-400">{calendarStats.count} บิล</span>
+                <div className="flex justify-between items-center">
+                  <h1 className="text-3xl font-extrabold text-white">{t('calendar')}</h1>
+                  <input type="month" value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setSelectedCalendarDay(null); }} className="bg-[#121A2D] border border-[#19243C] px-3 py-1.5 rounded-xl text-white font-bold text-xs outline-none" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-cardDue text-white p-3 rounded-2xl">
-                    <span className="text-[10px] text-white/80">Total Group Spend</span>
+                    <span className="text-[10px] text-white/80">{t('totalGroupSpend')}</span>
                     <h4 className="text-base font-black font-mono mt-0.5">MYR {calendarStats.totalSpend.toFixed(2)}</h4>
                   </div>
                   <div className="bg-cardAvg text-slate-900 p-3 rounded-2xl">
-                    <span className="text-[10px] text-slate-700">Avg Cost / บิล</span>
+                    <span className="text-[10px] text-slate-700">{t('avgPerBill')}</span>
                     <h4 className="text-base font-black font-mono mt-0.5">MYR {calendarStats.avgCost.toFixed(2)}</h4>
-                  </div>
-                  <div className="bg-cardYear text-slate-900 p-3 rounded-2xl">
-                    <span className="text-[10px] text-slate-600">Food & Delivery</span>
-                    <h4 className="text-base font-black font-mono mt-0.5">MYR {calendarStats.foodSpend.toFixed(2)}</h4>
-                  </div>
-                  <div className="bg-cardActive text-white p-3 rounded-2xl border border-[#19243C]">
-                    <span className="text-[10px] text-slate-400">Ride (Grab/Bolt)</span>
-                    <h4 className="text-base font-black font-mono mt-0.5">MYR {calendarStats.rideSpend.toFixed(2)}</h4>
                   </div>
                 </div>
 
-                <div className="bg-[#121A2D] rounded-3xl p-4 border border-[#19243C] space-y-2.5">
-                  <h3 className="text-xs font-bold text-white">Top Friend Share Breakdown (สัดส่วนที่เพื่อนแต่ละคนหาร)</h3>
-                  <div className="space-y-2">
-                    {calendarStats.topFriends.map(f => (
-                      <div key={f.name} className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-slate-300 font-medium">{f.name} ({f.pct}%)</span>
-                          <span className="font-mono font-bold text-white">MYR {f.amount.toFixed(2)}</span>
+                {/* Calendar Grid Mobile */}
+                <div className="bg-[#121A2D] rounded-3xl p-4 border border-[#19243C] space-y-3">
+                  <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400">
+                    <span>{lang === 'th' ? 'อา' : 'S'}</span>
+                    <span>{lang === 'th' ? 'จ' : 'M'}</span>
+                    <span>{lang === 'th' ? 'อ' : 'T'}</span>
+                    <span>{lang === 'th' ? 'พ' : 'W'}</span>
+                    <span>{lang === 'th' ? 'พฤ' : 'T'}</span>
+                    <span>{lang === 'th' ? 'ศ' : 'F'}</span>
+                    <span>{lang === 'th' ? 'ส' : 'S'}</span>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 text-center">
+                    {calendarStats.matrix.flat().map((c, i) => (
+                      c ? (
+                        <div 
+                          key={i}
+                          onClick={() => { triggerHaptic(); c.total > 0 && setSelectedCalendarDay(c); }}
+                          className={`p-1.5 rounded-xl min-h-[44px] flex flex-col justify-between border cursor-pointer ${
+                            selectedCalendarDay?.dateStr === c.dateStr
+                              ? 'bg-brandPurple border-brandPurple text-white'
+                              : c.total > 0
+                                ? 'bg-[#19243C] border-brandPurple/40 text-white'
+                                : 'border-transparent text-slate-600'
+                          }`}
+                        >
+                          <span className="text-xs font-bold">{c.day}</span>
+                          {c.total > 0 && <span className="text-[8px] font-mono font-bold text-brandPurple group-hover:text-white">{c.total.toFixed(0)}</span>}
                         </div>
-                        <div className="w-full h-1.5 bg-[#080C14] rounded-full overflow-hidden">
-                          <div style={{ width: `${f.pct}%` }} className="bg-brandPurple h-full rounded-full"></div>
-                        </div>
-                      </div>
+                      ) : <div key={i} className="min-h-[44px]"></div>
                     ))}
                   </div>
                 </div>
+
+                {selectedCalendarDay && (
+                  <div className="bg-[#121A2D] p-3.5 rounded-2xl border border-[#19243C] text-xs space-y-2">
+                    <div className="flex justify-between font-bold text-white pb-1 border-b border-[#19243C]">
+                      <span>รายการวันที่ {selectedCalendarDay.dateStr}</span>
+                      <span className="text-brandPurple font-mono">MYR {selectedCalendarDay.total.toFixed(2)}</span>
+                    </div>
+                    {selectedCalendarDay.items.map((it, i) => (
+                      <div key={i} className="flex justify-between text-slate-300">
+                        <span>{it.name}</span>
+                        <span className="font-mono font-bold text-white">MYR {it.total.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* 5. SETTINGS VIEW */}
+            {/* 5. SETTINGS VIEW (MOBILE) */}
             {activeTab === 'settings' && (
               <div className="space-y-4 animate-in fade-in">
-                <h1 className="text-3xl font-extrabold text-white">ตั้งค่า</h1>
+                <h1 className="text-3xl font-extrabold text-white">{t('settings')}</h1>
 
+                {/* General */}
                 <div className="bg-[#121A2D] p-4 rounded-3xl border border-[#19243C] space-y-3">
-                  <h3 className="text-xs font-bold text-white">ทั่วไป</h3>
+                  <h3 className="text-xs font-bold text-white">{t('general')}</h3>
                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400">ภาษา</span>
+                    <span className="text-slate-400">{t('language')}</span>
                     <div className="bg-[#080C14] p-1 rounded-xl flex text-xs font-bold">
-                      <button onClick={() => { triggerHaptic(); setLang('th'); }} className={`px-3 py-1 rounded-lg ${lang === 'th' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>ไทย</button>
-                      <button onClick={() => { triggerHaptic(); setLang('en'); }} className={`px-3 py-1 rounded-lg ${lang === 'en' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>English</button>
+                      <button onClick={() => handleSetLang('th')} className={`px-4 py-1.5 rounded-lg ${lang === 'th' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>ไทย</button>
+                      <button onClick={() => handleSetLang('en')} className={`px-4 py-1.5 rounded-lg ${lang === 'en' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>English</button>
                     </div>
                   </div>
                 </div>
 
+                {/* Members & Statement */}
                 <div className="bg-[#121A2D] p-4 rounded-3xl border border-[#19243C] space-y-3">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-xs font-bold text-white">สมาชิก & Ledger</h3>
+                    <h3 className="text-xs font-bold text-white">{t('membersAndLedger')}</h3>
                     {isAdmin && (
                       <button onClick={() => {
                         triggerHaptic();
-                        const n = prompt("ระบุชื่อสมาชิกใหม่:");
+                        const n = prompt("ระบุชื่อสมาชิกใหม่ / Add Member:");
                         if (n && n.trim()) {
                           db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add({
                             name: n.trim(), isSelf: false, isArchived: false, createdAt: Date.now()
                           });
                           showToast(`เพิ่ม ${n} สำเร็จ!`);
                         }
-                      }} className="text-xs font-bold text-brandPurple">+ เพิ่มเพื่อน</button>
+                      }} className="text-xs font-bold text-brandPurple">{t('addFriend')}</button>
                     )}
                   </div>
                   <div className="divide-y divide-[#19243C]">
@@ -1259,11 +1475,11 @@
                         <span className="font-bold text-white">{f.name}</span>
                         <div className="flex gap-2">
                           <button onClick={() => { triggerHaptic(); setSelectedFriendForHistory(f.name); }} className="bg-[#19243C] text-slate-300 px-2.5 py-1 rounded-lg font-bold">
-                            Ledger
+                            {t('ledger')}
                           </button>
                           {isAdmin && !f.isSelf && (
                             <button onClick={() => { triggerHaptic(); setSelectedFriendForAdjust(f.name); setAdjustAmount(''); }} className="bg-brandPurple/20 text-brandPurple px-2.5 py-1 rounded-lg font-bold">
-                              Adjustment
+                              {t('adjust')}
                             </button>
                           )}
                         </div>
@@ -1272,6 +1488,7 @@
                   </div>
                 </div>
 
+                {/* Data Backup */}
                 <div className="bg-[#121A2D] p-4 rounded-3xl border border-[#19243C] space-y-3">
                   <h3 className="text-xs font-bold text-white">Data Backup</h3>
                   <div className="grid grid-cols-2 gap-2">
@@ -1286,7 +1503,7 @@
                       }} 
                       className="bg-[#19243C] text-white py-2 rounded-xl text-xs font-bold"
                     >
-                      Export All JSON
+                      {t('exportJson')}
                     </button>
                     <input type="file" accept=".json" ref={restoreInputRef} onChange={(e) => {
                       const file = e.target.files[0];
@@ -1308,17 +1525,18 @@
                       reader.readAsText(file);
                     }} className="hidden" />
                     <button onClick={() => { triggerHaptic(); restoreInputRef.current && restoreInputRef.current.click(); }} className="bg-[#19243C] text-white py-2 rounded-xl text-xs font-bold">
-                      Restore JSON
+                      {t('restoreJson')}
                     </button>
                   </div>
                 </div>
 
+                {/* Admin Auth */}
                 <div className="pt-2">
                   <button 
                     onClick={isAdmin ? () => { setIsAdminBySecret(false); setIsAdminByGoogle(false); localStorage.removeItem('kraimaijay_secret_admin'); showToast("ออกจากโหมดแอดมินแล้ว"); } : () => setShowAuthModal(true)}
                     className="w-full bg-[#121A2D] text-coral font-bold py-3 rounded-2xl text-xs border border-[#19243C]"
                   >
-                    {isAdmin ? 'ออกจากโหมดแอดมิน' : 'เข้าสู่ระบบแอดมิน'}
+                    {isAdmin ? t('logoutAdmin') : t('loginAdmin')}
                   </button>
                 </div>
               </div>
@@ -1328,11 +1546,11 @@
             <div className="fixed bottom-6 left-0 right-0 z-50 flex justify-center pointer-events-none px-4 pb-safe">
               <nav className="pointer-events-auto bg-[#0E1322] shadow-[0_16px_40px_rgba(0,0,0,0.6)] rounded-full p-1.5 flex items-center justify-between w-full max-w-[370px]">
                 {[
-                  { id: 'overview', label: 'Overview', icon: '📊' },
-                  { id: 'bills', label: 'Bills', icon: '🧾' },
-                  { id: 'logs', label: 'Logs', icon: '📝' },
-                  { id: 'calendar', label: 'Calendar', icon: '📅' },
-                  { id: 'settings', label: 'Settings', icon: '⚙️' },
+                  { id: 'overview', label: t('overview'), icon: '📊' },
+                  { id: 'bills', label: t('bills'), icon: '🧾' },
+                  { id: 'logs', label: t('logs'), icon: '📝' },
+                  { id: 'calendar', label: t('calendar'), icon: '📅' },
+                  { id: 'settings', label: t('settings'), icon: '⚙️' },
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -1351,14 +1569,14 @@
           </div>
 
           {/* =========================================================================
-              MODAL: ฟอร์มสร้าง/แก้ไขบิล (Paid By, OCR, Paste, Fees ครบ)
+              MODAL: ฟอร์มสร้าง/แก้ไขบิล
              ========================================================================= */}
           {activeTab === 'new-bill' && (
             <div className="fixed inset-0 bg-[#080C14] z-50 overflow-y-auto p-4 md:p-8 animate-in fade-in">
               <div className="max-w-xl mx-auto space-y-4 pb-20">
                 <div className="flex justify-between items-center pb-2 border-b border-[#19243C]">
                   <h2 className="text-xl font-black text-white">{editingBillId ? 'แก้ไขบิล' : 'สร้างรายการหารบิลใหม่'}</h2>
-                  <button onClick={() => { triggerHaptic(); setActiveTab('bills'); }} className="text-slate-400 text-xs">✕ ปิด</button>
+                  <button onClick={() => { triggerHaptic(); setActiveTab('bills'); }} className="text-slate-400 text-xs">{t('close')}</button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -1475,7 +1693,7 @@
               <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center pb-2 border-b border-[#19243C]">
                   <h3 className="font-bold text-white text-sm">📋 วางข้อความบิลจาก Grab/ใบเสร็จ</h3>
-                  <button onClick={() => setShowPasteModal(false)} className="text-slate-500 text-xs">✕</button>
+                  <button onClick={() => setShowPasteModal(false)} className="text-slate-500 text-xs">{t('close')}</button>
                 </div>
                 <textarea 
                   rows="8" 
@@ -1502,7 +1720,7 @@
                     <h3 className="font-extrabold text-white text-base">{selectedBillForDetail.name}</h3>
                     <p className="text-[10px] text-slate-400 mt-0.5">{selectedBillForDetail.date} · จ่ายโดย {selectedBillForDetail.paidBy}</p>
                   </div>
-                  <button onClick={() => setSelectedBillForDetail(null)} className="text-slate-500 text-xs">✕</button>
+                  <button onClick={() => setSelectedBillForDetail(null)} className="text-slate-500 text-xs">{t('close')}</button>
                 </div>
 
                 <div className="space-y-2 max-h-60 overflow-y-auto custom-scroll text-xs">
@@ -1551,7 +1769,7 @@
                     <h3 className="font-bold text-white text-sm">ปรับยอด: {selectedFriendForAdjust}</h3>
                     <p className="text-[10px] text-slate-400">ยอดค้างปัจจุบัน: MYR {(friendBalances[selectedFriendForAdjust]?.totalOwed || 0).toFixed(2)}</p>
                   </div>
-                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-slate-500 text-xs">✕</button>
+                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-slate-500 text-xs">{t('close')}</button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 bg-[#080C14] p-1 rounded-xl">
@@ -1586,7 +1804,7 @@
               <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center pb-2 border-b border-[#19243C]">
                   <h3 className="font-black text-white text-base">Ledger Statement: {selectedFriendForHistory}</h3>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-slate-400 text-xs">✕</button>
+                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-slate-400 text-xs">{t('close')}</button>
                 </div>
 
                 <div ref={friendSlipRef} className="bg-[#080C14] p-4 rounded-2xl border border-[#19243C] space-y-3 font-mono text-xs">
@@ -1604,6 +1822,12 @@
                         <span className="font-bold text-white">MYR {(b.splits[selectedFriendForHistory] || 0).toFixed(2)}</span>
                       </div>
                     ))}
+                    {getFriendHistory(selectedFriendForHistory).adjustments.map(a => (
+                      <div key={a.id} className="flex justify-between text-[11px] text-mint">
+                        <span className="truncate pr-2">{a.note} ({a.date})</span>
+                        <span className="font-bold">MYR {a.amount.toFixed(2)}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -1614,21 +1838,21 @@
                       const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `Statement_${selectedFriendForHistory}.png`; a.click();
                     });
                   }} className="bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs">บันทึกรูป PNG</button>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="bg-[#19243C] font-bold py-2.5 rounded-xl text-xs text-slate-300">ปิด</button>
+                  <button onClick={() => setSelectedFriendForHistory(null)} className="bg-[#19243C] font-bold py-2.5 rounded-xl text-xs text-slate-300">{t('close')}</button>
                 </div>
               </div>
             </div>
           )}
 
           {/* =========================================================================
-              MODAL: เข้าสู่ระบบแอดมิน (ลบตัวเลข 2323 ออกแล้ว)
+              MODAL: เข้าสู่ระบบแอดมิน
              ========================================================================= */}
           {showAuthModal && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAuthModal(false)}>
               <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 w-full max-w-xs space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center pb-2 border-b border-[#19243C]">
                   <h3 className="font-bold text-sm text-white">🔑 เข้าสู่ระบบแอดมิน</h3>
-                  <button onClick={() => setShowAuthModal(false)} className="text-slate-500 text-xs">✕</button>
+                  <button onClick={() => setShowAuthModal(false)} className="text-slate-500 text-xs">{t('close')}</button>
                 </div>
                 <form onSubmit={async (e) => {
                   e.preventDefault();
