@@ -13,7 +13,7 @@
   <link rel="icon" type="image/jpeg" href="cat.jpg">
   <link rel="apple-touch-icon" href="cat.jpg">
 
-  <!-- Google Fonts: Modern Thai Font (Prompt) & Plus Jakarta Sans -->
+  <!-- Google Fonts: Prompt & Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -227,7 +227,7 @@
         } catch (e) { console.warn(e); }
       }, []);
 
-      // คำนวณหนี้คงค้างจริงแบบเรียลไทม์
+      // คำนวณหนี้คงค้างจริง
       const friendBalances = useMemo(() => {
         const balances = {};
         friends.forEach(f => {
@@ -639,7 +639,7 @@
         <div className="w-full h-full min-h-screen">
           
           {/* =========================================================================
-              1. DESKTOP VIEW (>= 768px): Sidebar ซ้ายถาวร + แดชบอร์ดกว้าง 3 คอลัมน์
+              1. DESKTOP VIEW (>= 768px): ครบทั้ง 5 แท็บ แสดงผลเต็มหน้าจอ
              ========================================================================= */}
           <div className="hidden md:flex w-full h-screen overflow-hidden">
             {/* Left Sidebar */}
@@ -702,7 +702,7 @@
                 <div>
                   <p className="text-xs text-slate-500 font-medium">วันเสาร์ที่ 19 กันยายน 2026</p>
                   <h1 className="text-2xl font-black text-white mt-0.5 capitalize">
-                    {activeTab === 'overview' ? 'ภาพรวมการหารเงินกลุ่ม' : activeTab === 'bills' ? 'รายการบิล' : activeTab === 'logs' ? 'ประวัติการชำระและปรับยอด' : activeTab === 'calendar' ? 'ปฏิทินรายจ่าย' : 'การตั้งค่าระบบ'}
+                    {activeTab === 'overview' ? 'ภาพรวมการหารเงินกลุ่ม' : activeTab === 'bills' ? 'รายการบิลที่หาร' : activeTab === 'logs' ? 'ประวัติการชำระและปรับยอด' : activeTab === 'calendar' ? 'ปฏิทินรายจ่าย' : 'การตั้งค่าระบบ'}
                   </h1>
                 </div>
                 {isAdmin && (
@@ -712,11 +712,10 @@
                 )}
               </div>
 
-              {/* OVERVIEW (DESKTOP) */}
+              {/* 1. OVERVIEW (DESKTOP) */}
               {activeTab === 'overview' && (
                 <div className="grid grid-cols-12 gap-6 animate-in fade-in">
                   <div className="col-span-5 space-y-4">
-                    {/* Sunset Card */}
                     <div className="h-48 rounded-3xl p-6 text-white flex flex-col justify-between shadow-xl" style={{ background: 'linear-gradient(135deg, #E65C5C 0%, #EA7E6B 60%, #BA7B9B 100%)' }}>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wider text-white/90">ยอดที่ต้องตามเก็บเพื่อนสุทธิ</p>
@@ -740,7 +739,6 @@
                     </div>
                   </div>
 
-                  {/* Desktop Debt Collection Queue */}
                   <div className="col-span-7 bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-4">
                     <div className="flex justify-between items-center text-xs">
                       <h3 className="font-bold text-white text-sm">คิวทวงหนี้ด่วน (Debt Collection Queue)</h3>
@@ -780,6 +778,211 @@
                         ))
                       )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. BILLS (DESKTOP) */}
+              {activeTab === 'bills' && (
+                <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-4 animate-in fade-in">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-white text-base">รายการบิลทั้งหมด ({bills.length} รายการ)</h3>
+                    <input type="text" placeholder="ค้นหาบิล..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="bg-[#121A2D] border border-[#19243C] rounded-xl px-3 py-1.5 text-xs text-white outline-none w-56" />
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {bills.filter(b => (b.name || '').toLowerCase().includes(searchQuery.toLowerCase())).map(b => (
+                      <div key={b.id} onClick={() => { triggerHaptic(); setSelectedBillForDetail(b); }} className="bg-[#121A2D] hover:border-brandPurple p-4 rounded-2xl border border-[#19243C] flex justify-between items-center cursor-pointer transition">
+                        <div>
+                          <div className="flex items-center gap-2.5">
+                            <span className="font-bold text-sm text-white">{b.name}</span>
+                            <span className="text-[10px] bg-[#19243C] text-slate-300 px-2 py-0.5 rounded-lg">{b.billType}</span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">{b.date} · ออกเงินโดย <span className="text-mint font-bold">{b.paidBy || 'Me'}</span> · {Object.keys(b.splits || {}).length} คนหาร</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-base font-mono font-black text-white block">MYR {(b.total || 0).toFixed(2)}</span>
+                          <span className="text-xs text-brandPurple font-bold">ดูรายละเอียด &gt;</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. LOGS (DESKTOP) */}
+              {activeTab === 'logs' && (
+                <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-4 animate-in fade-in">
+                  <h3 className="font-bold text-white text-base">ประวัติการชำระและปรับยอด (Payment & Adjustment Log)</h3>
+                  <div className="space-y-2.5">
+                    {adjustments.length === 0 ? (
+                      <p className="text-center py-12 text-slate-500 text-xs">ยังไม่มีประวัติการปรับยอด</p>
+                    ) : (
+                      adjustments.map(adj => (
+                        <div key={adj.id} className="bg-[#121A2D] p-3.5 rounded-2xl border border-[#19243C] flex justify-between items-center text-xs">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-sm">{adj.friendName}</span>
+                              <span className="text-slate-500">{adj.date}</span>
+                            </div>
+                            <p className="text-slate-400 mt-0.5">{adj.note}</p>
+                          </div>
+                          <span className={`font-mono font-black text-sm ${adj.amount < 0 ? 'text-mint' : 'text-coral'}`}>
+                            {adj.amount < 0 ? `- MYR ${Math.abs(adj.amount).toFixed(2)}` : `+ MYR ${adj.amount.toFixed(2)}`}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. CALENDAR (DESKTOP) */}
+              {activeTab === 'calendar' && (
+                <div className="space-y-6 animate-in fade-in">
+                  <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 flex justify-between items-center">
+                    <div>
+                      <h3 className="font-bold text-white text-base">สถิติค่าใช้จ่ายประจำเดือน</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">{calendarStats.count} รายการบิลในระบบ</p>
+                    </div>
+                    <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-[#121A2D] border border-[#19243C] px-3.5 py-1.5 rounded-xl text-white font-bold text-xs outline-none" />
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-cardDue text-white p-5 rounded-3xl">
+                      <span className="text-xs text-white/80 font-medium">Total Group Spend</span>
+                      <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.totalSpend.toFixed(2)}</h4>
+                    </div>
+                    <div className="bg-cardAvg text-slate-900 p-5 rounded-3xl">
+                      <span className="text-xs text-slate-700 font-medium">Avg Cost / บิล</span>
+                      <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.avgCost.toFixed(2)}</h4>
+                    </div>
+                    <div className="bg-cardYear text-slate-900 p-5 rounded-3xl">
+                      <span className="text-xs text-slate-600 font-medium">Food & Delivery</span>
+                      <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.foodSpend.toFixed(2)}</h4>
+                    </div>
+                    <div className="bg-cardActive text-white p-5 rounded-3xl border border-[#19243C]">
+                      <span className="text-xs text-slate-400 font-medium">Ride (Grab/Bolt)</span>
+                      <h4 className="text-2xl font-black font-mono mt-1">MYR {calendarStats.rideSpend.toFixed(2)}</h4>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-3">
+                    <h3 className="font-bold text-white text-sm">Top Friend Share Breakdown (สัดส่วนที่เพื่อนแต่ละคนหาร)</h3>
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      {calendarStats.topFriends.map(f => (
+                        <div key={f.name} className="space-y-1.5 bg-[#121A2D] p-3 rounded-2xl border border-[#19243C]">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-white font-medium">{f.name} ({f.pct}%)</span>
+                            <span className="font-mono font-bold text-brandPurple">MYR {f.amount.toFixed(2)}</span>
+                          </div>
+                          <div className="w-full h-2 bg-[#080C14] rounded-full overflow-hidden">
+                            <div style={{ width: `${f.pct}%` }} className="bg-brandPurple h-full rounded-full"></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. SETTINGS (DESKTOP) */}
+              {activeTab === 'settings' && (
+                <div className="bg-[#0D1322] border border-[#19243C] rounded-3xl p-6 space-y-6 max-w-2xl animate-in fade-in">
+                  <div className="space-y-3">
+                    <h3 className="font-bold text-white text-base">ทั่วไป (General)</h3>
+                    <div className="flex justify-between items-center bg-[#121A2D] p-4 rounded-2xl border border-[#19243C] text-xs">
+                      <span className="text-slate-300">ภาษา</span>
+                      <div className="bg-[#080C14] p-1 rounded-xl flex text-xs font-bold">
+                        <button onClick={() => { triggerHaptic(); setLang('th'); }} className={`px-3 py-1 rounded-lg ${lang === 'th' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>ไทย</button>
+                        <button onClick={() => { triggerHaptic(); setLang('en'); }} className={`px-3 py-1 rounded-lg ${lang === 'en' ? 'bg-brandPurple text-white' : 'text-slate-400'}`}>English</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-bold text-white text-base">สมาชิก & Ledger ({friends.length} คน)</h3>
+                      {isAdmin && (
+                        <button onClick={() => {
+                          triggerHaptic();
+                          const n = prompt("ระบุชื่อสมาชิกใหม่:");
+                          if (n && n.trim()) {
+                            db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add({
+                              name: n.trim(), isSelf: false, isArchived: false, createdAt: Date.now()
+                            });
+                            showToast(`เพิ่ม ${n} สำเร็จ!`);
+                          }
+                        }} className="text-xs font-bold text-brandPurple">+ เพิ่มเพื่อน</button>
+                      )}
+                    </div>
+                    <div className="divide-y divide-[#19243C] bg-[#121A2D] rounded-2xl p-2 border border-[#19243C]">
+                      {friends.map(f => (
+                        <div key={f.id} className="py-2.5 px-3 flex justify-between items-center text-xs">
+                          <span className="font-bold text-white">{f.name}</span>
+                          <div className="flex gap-2">
+                            <button onClick={() => { triggerHaptic(); setSelectedFriendForHistory(f.name); }} className="bg-[#19243C] hover:bg-slate-700 text-slate-300 px-3 py-1 rounded-lg font-bold">
+                              Ledger
+                            </button>
+                            {isAdmin && !f.isSelf && (
+                              <button onClick={() => { triggerHaptic(); setSelectedFriendForAdjust(f.name); setAdjustAmount(''); }} className="bg-brandPurple/20 hover:bg-brandPurple text-brandPurple hover:text-white px-3 py-1 rounded-lg font-bold transition">
+                                Adjustment
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="font-bold text-white text-base">Data Backup</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        onClick={() => {
+                          triggerHaptic();
+                          const full = { version: "1.0", friends, bills, adjustments };
+                          const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
+                          const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                          a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
+                          showToast("Export all data JSON สำเร็จ!");
+                        }} 
+                        className="bg-[#121A2D] hover:bg-[#19243C] border border-[#19243C] text-white py-2.5 rounded-xl text-xs font-bold transition"
+                      >
+                        Export All JSON
+                      </button>
+                      <input type="file" accept=".json" ref={restoreInputRef} onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = async (ev) => {
+                          try {
+                            const d = JSON.parse(ev.target.result);
+                            if (d.bills && d.friends) {
+                              const batch = db.batch();
+                              const base = db.collection('artifacts').doc(appId).collection('public').doc('data');
+                              d.friends.forEach(f => batch.set(base.collection('friends').doc(f.id || undefined), f));
+                              d.bills.forEach(b => batch.set(base.collection('bills').doc(b.id || undefined), b));
+                              await batch.commit();
+                              showToast("Restore data from JSON สำเร็จ! 🎉");
+                            }
+                          } catch (err) { showToast("ไฟล์ไม่ถูกต้อง", "error"); }
+                        };
+                        reader.readAsText(file);
+                      }} className="hidden" />
+                      <button onClick={() => { triggerHaptic(); restoreInputRef.current && restoreInputRef.current.click(); }} className="bg-[#121A2D] hover:bg-[#19243C] border border-[#19243C] text-white py-2.5 rounded-xl text-xs font-bold transition">
+                        Restore JSON
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button 
+                      onClick={isAdmin ? () => { setIsAdminBySecret(false); setIsAdminByGoogle(false); localStorage.removeItem('kraimaijay_secret_admin'); showToast("ออกจากโหมดแอดมินแล้ว"); } : () => setShowAuthModal(true)}
+                      className="w-full bg-[#121A2D] text-coral font-bold py-3 rounded-2xl text-xs border border-[#19243C]"
+                    >
+                      {isAdmin ? 'ออกจากโหมดแอดมิน' : 'เข้าสู่ระบบแอดมิน'}
+                    </button>
                   </div>
                 </div>
               )}
@@ -912,7 +1115,7 @@
               </div>
             )}
 
-            {/* 2. BILLS VIEW (ดูรายละเอียด + แก้ไขบิลได้) */}
+            {/* 2. BILLS VIEW */}
             {activeTab === 'bills' && (
               <div className="space-y-4 animate-in fade-in">
                 <h1 className="text-3xl font-extrabold text-white">รายการบิล</h1>
@@ -967,7 +1170,7 @@
               </div>
             )}
 
-            {/* 4. CALENDAR VIEW (ครบทั้ง 5 สถิติใหม่) */}
+            {/* 4. CALENDAR VIEW */}
             {activeTab === 'calendar' && (
               <div className="space-y-4 animate-in fade-in">
                 <div>
@@ -980,7 +1183,6 @@
                   <span className="text-slate-400">{calendarStats.count} บิล</span>
                 </div>
 
-                {/* 4 สถิติสรุปด้านบน */}
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-cardDue text-white p-3 rounded-2xl">
                     <span className="text-[10px] text-white/80">Total Group Spend</span>
@@ -1000,7 +1202,6 @@
                   </div>
                 </div>
 
-                {/* Top Friend Share Breakdown */}
                 <div className="bg-[#121A2D] rounded-3xl p-4 border border-[#19243C] space-y-2.5">
                   <h3 className="text-xs font-bold text-white">Top Friend Share Breakdown (สัดส่วนที่เพื่อนแต่ละคนหาร)</h3>
                   <div className="space-y-2">
@@ -1017,22 +1218,6 @@
                     ))}
                   </div>
                 </div>
-
-                {/* Daily Item Popup of Selected Day */}
-                {selectedCalendarDay && (
-                  <div className="bg-[#121A2D] p-3 rounded-2xl border border-[#19243C] text-xs space-y-2">
-                    <div className="flex justify-between font-bold text-white pb-1 border-b border-[#19243C]">
-                      <span>🗓️ รายจ่าย {selectedCalendarDay.dateStr}</span>
-                      <span className="text-brandPurple font-mono">MYR {selectedCalendarDay.total.toFixed(2)}</span>
-                    </div>
-                    {selectedCalendarDay.items.map((it, i) => (
-                      <div key={i} className="flex justify-between text-slate-300">
-                        <span>{it.name} (โดย {it.paidBy})</span>
-                        <span className="font-mono">MYR {it.total.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
 
@@ -1041,7 +1226,6 @@
               <div className="space-y-4 animate-in fade-in">
                 <h1 className="text-3xl font-extrabold text-white">ตั้งค่า</h1>
 
-                {/* General */}
                 <div className="bg-[#121A2D] p-4 rounded-3xl border border-[#19243C] space-y-3">
                   <h3 className="text-xs font-bold text-white">ทั่วไป</h3>
                   <div className="flex justify-between items-center text-xs">
@@ -1053,7 +1237,6 @@
                   </div>
                 </div>
 
-                {/* Members & Statement */}
                 <div className="bg-[#121A2D] p-4 rounded-3xl border border-[#19243C] space-y-3">
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-white">สมาชิก & Ledger</h3>
@@ -1089,7 +1272,6 @@
                   </div>
                 </div>
 
-                {/* Data Backup */}
                 <div className="bg-[#121A2D] p-4 rounded-3xl border border-[#19243C] space-y-3">
                   <h3 className="text-xs font-bold text-white">Data Backup</h3>
                   <div className="grid grid-cols-2 gap-2">
@@ -1131,7 +1313,6 @@
                   </div>
                 </div>
 
-                {/* Admin Auth */}
                 <div className="pt-2">
                   <button 
                     onClick={isAdmin ? () => { setIsAdminBySecret(false); setIsAdminByGoogle(false); localStorage.removeItem('kraimaijay_secret_admin'); showToast("ออกจากโหมดแอดมินแล้ว"); } : () => setShowAuthModal(true)}
@@ -1180,7 +1361,6 @@
                   <button onClick={() => { triggerHaptic(); setActiveTab('bills'); }} className="text-slate-400 text-xs">✕ ปิด</button>
                 </div>
 
-                {/* ปุ่ม Smart Input: สแกนบิล OCR & วางข้อความบิล */}
                 <div className="grid grid-cols-2 gap-2">
                   <input type="file" accept="image/*" ref={ocrInputRef} onChange={handleOcrImageUpload} className="hidden" />
                   <button type="button" onClick={() => { triggerHaptic(); ocrInputRef.current && ocrInputRef.current.click(); }} className="bg-[#121A2D] hover:bg-[#19243C] border border-[#19243C] p-2.5 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-2">
@@ -1192,7 +1372,6 @@
                 </div>
 
                 <form onSubmit={handleSaveBill} className="bg-[#0D1322] border border-[#19243C] p-5 rounded-3xl space-y-4 text-xs">
-                  {/* Paid By & ชื่อบิล */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-slate-400 font-bold mb-1">Paid By (คนจ่ายเงินหลัก):</label>
@@ -1208,7 +1387,6 @@
 
                   <input type="text" placeholder="ชื่อร้าน / รายการบิล" value={newBillName} onChange={e => setNewBillName(e.target.value)} className="w-full bg-[#121A2D] border border-[#19243C] rounded-xl px-3.5 py-2.5 text-white outline-none font-medium" required />
 
-                  {/* กล่องใส่ค่าธรรมเนียมบิลครบเซ็ต */}
                   <div className="space-y-1.5 bg-[#080C14] p-3 rounded-2xl border border-[#19243C]">
                     <span className="font-bold text-slate-400 block mb-1">ค่าธรรมเนียม & ส่วนลดเพิ่มเติม:</span>
                     <div className="grid grid-cols-3 gap-2">
@@ -1222,7 +1400,6 @@
                     </div>
                   </div>
 
-                  {/* เลือกผู้ร่วมหารหลัก (Participants) */}
                   <div className="space-y-1">
                     <label className="block text-slate-400 font-bold">ผู้ร่วมหารบิลนี้ ({billFriends.length} คน):</label>
                     <div className="flex flex-wrap gap-1.5">
@@ -1245,7 +1422,6 @@
                     </div>
                   </div>
 
-                  {/* รายการเมนูและคนกิน */}
                   <div className="space-y-2 pt-2 border-t border-[#19243C]">
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-white">รายการเมนูอาหาร & คนกิน ({billItems.length})</span>
@@ -1258,7 +1434,6 @@
                           <input type="text" placeholder="ชื่อเมนู" value={it.name} onChange={e => setBillItems(billItems.map(b => b.id === it.id ? { ...b, name: e.target.value } : b))} className="flex-1 bg-[#080C14] border border-[#19243C] rounded-xl px-2.5 py-1.5 text-white outline-none" required />
                           <input type="text" placeholder="ราคา (RM)" value={it.price} onChange={e => setBillItems(billItems.map(b => b.id === it.id ? { ...b, price: e.target.value } : b))} className="w-24 bg-[#080C14] border border-[#19243C] rounded-xl px-2.5 py-1.5 font-mono text-white outline-none" required />
                         </div>
-                        {/* คนที่กินเมนูนี้ */}
                         <div className="flex flex-wrap gap-1">
                           {billFriends.map(fName => {
                             const isShared = (it.sharedWith || []).includes(fName);
