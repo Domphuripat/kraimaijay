@@ -99,7 +99,7 @@
     const { useState, useEffect, useRef, useMemo } = React;
 
     const ADMIN_EMAILS = ["phuripat26dom@gmail.com"];
-    // รหัสผ่านเข้ารหัสแบบ SHA-256 เพื่อไม่ให้โชว์รหัสตัวเลขตรงๆ ในโค้ด (รหัสเดิม: 2323)
+    // เข้ารหัส PIN 4 หลักด้วย SHA-256 เพื่อความปลอดภัยไม่โชว์เลขตรงๆ ในโค้ด
     const ADMIN_PIN_HASH = "d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f";
 
     const verifyPinHash = async (input) => {
@@ -121,7 +121,7 @@
     };
     const DEFAULT_APP_ID = "eat-app-eb3f8";
 
-    // เคลียร์วงเล็บออกทั้งหมดทั้งภาษาไทยและอังกฤษ
+    // เอาวงเล็บออกทั้งหมดทั้งภาษาไทยและอังกฤษ
     const TRANSLATIONS = {
       th: {
         overview: "ภาพรวม",
@@ -301,7 +301,7 @@
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
       const restoreInputRef = useRef(null);
 
-      // ฟอร์มบิล & รายละเอียดครบถ้วนจาก Desktop
+      // ฟอร์มบิล
       const [editingBillId, setEditingBillId] = useState(null);
       const [newBillName, setNewBillName] = useState('');
       const [billType, setBillType] = useState('delivery');
@@ -313,15 +313,12 @@
       const [rideRoute, setRideRoute] = useState('');
       const [loanAmount, setLoanAmount] = useState('');
       const [loanBorrower, setLoanBorrower] = useState('');
-      const [taxMode, setTaxMode] = useState('inclusive');
-      const [serviceChargeRate, setServiceChargeRate] = useState(0);
       const [deliveryFee, setDeliveryFee] = useState(0);
       const [packagingCharge, setPackagingCharge] = useState(0);
       const [discountAmount, setDiscountAmount] = useState(0);
-      const [roundingAdj, setRoundingAdj] = useState(0);
       const [billItems, setBillItems] = useState([{ id: '1', name: '', price: '', qty: 1, sharedWith: [] }]);
 
-      // OCR & Paste Text State บน Mobile
+      // OCR & Paste Text State
       const [ocrProcessing, setOcrProcessing] = useState(false);
       const [ocrProgress, setOcrProgress] = useState(0);
       const [showPasteText, setShowPasteText] = useState(false);
@@ -439,7 +436,7 @@
         }
       };
 
-      // OCR & Paste Text Helpers
+      // OCR & Text Parser
       const parseOrderText = (text) => {
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
         const extracted = [];
@@ -1792,7 +1789,7 @@
             </div>
           )}
 
-          {/* ================= 5. CREATE BILL SCREEN (พร้อม OCR และ Paste Text) ================= */}
+          {/* ================= 5. CREATE BILL SCREEN ================= */}
           {activeTab === 'new-bill' && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex justify-between items-center">
@@ -1800,7 +1797,7 @@
                 <button onClick={() => { triggerHaptic(); setActiveTab('overview'); }} className="text-slate-400 text-xs">✕ ปิด</button>
               </div>
 
-              {/* Smart OCR Scanner Bar บนมือถือ */}
+              {/* Smart OCR Scanner Bar */}
               <div className="bg-white dark:bg-surfaceDark p-3 rounded-2xl border border-slate-100 dark:border-lineDark flex justify-between items-center text-xs">
                 <div>
                   <span className="font-bold text-slate-900 dark:text-white block">สแกนใบเสร็จอัตโนมัติ</span>
@@ -1944,14 +1941,20 @@
             </div>
           )}
 
-          {/* ================= STATEMENT BOTTOM SHEET (พร้อมปุ่ม PDF และ Social) ================= */}
+          {/* ================= STATEMENT BOTTOM SHEET (z-[60] และ pb-10 ป้องกันการโดนบัง) ================= */}
           {selectedFriendForHistory && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col justify-end" onClick={() => setSelectedFriendForHistory(null)}>
-              <div className="bg-white dark:bg-surfaceDark border-t border-slate-200 dark:border-lineDark rounded-t-3xl max-h-[85vh] flex flex-col p-5 space-y-4 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex flex-col justify-end" 
+              onClick={() => setSelectedFriendForHistory(null)}
+            >
+              <div 
+                className="bg-white dark:bg-surfaceDark border-t border-slate-200 dark:border-lineDark rounded-t-3xl max-h-[90vh] flex flex-col p-5 space-y-4 animate-in slide-in-from-bottom pb-10" 
+                onClick={e => e.stopPropagation()}
+              >
                 <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto -mt-2 mb-1"></div>
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-lineDark">
                   <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Statement {selectedFriendForHistory}</h3>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-slate-400 text-xs">✕</button>
+                  <button onClick={() => setSelectedFriendForHistory(null)} className="text-slate-400 text-sm font-bold p-1">✕</button>
                 </div>
 
                 <div ref={friendSlipRef} className="bg-slate-50 dark:bg-subtleDark p-4 rounded-2xl border border-slate-200 dark:border-lineDark space-y-3 font-mono text-xs">
@@ -1972,13 +1975,15 @@
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button onClick={() => {
                     triggerHaptic();
                     html2canvas(friendSlipRef.current, { scale: 2 }).then(cv => {
                       const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `Statement_${selectedFriendForHistory}.png`; a.click();
                     });
-                  }} className="bg-capsuleDark text-white font-bold py-2.5 rounded-xl text-xs">บันทึกรูป PNG</button>
+                  }} className="bg-capsuleDark text-white font-bold py-3 rounded-xl text-xs active:scale-95 transition shadow-sm">
+                    บันทึกรูป PNG
+                  </button>
                   <button onClick={() => {
                     triggerHaptic();
                     html2canvas(friendSlipRef.current, { scale: 2 }).then(cv => {
@@ -1988,25 +1993,38 @@
                       pdf.addImage(imgData, 'PNG', 10, 10, 190, 0);
                       pdf.save(`Statement_${selectedFriendForHistory}.pdf`);
                     });
-                  }} className="bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs">ดาวน์โหลด PDF</button>
+                  }} className="bg-brandPurple text-white font-bold py-3 rounded-xl text-xs active:scale-95 transition shadow-sm">
+                    ดาวน์โหลด PDF
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => shareToSocial(`ยอดค้างชำระของ ${selectedFriendForHistory} ทั้งหมด MYR ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}`, 'whatsapp')} className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs">ส่ง WhatsApp</button>
-                  <button onClick={() => shareToSocial(`ยอดค้างชำระของ ${selectedFriendForHistory} ทั้งหมด MYR ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}`, 'ig')} className="bg-rose-600 text-white font-bold py-2 rounded-xl text-xs">ส่ง Instagram</button>
+                  <button onClick={() => shareToSocial(`ยอดค้างชำระของ ${selectedFriendForHistory} ทั้งหมด MYR ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}`, 'whatsapp')} className="bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition">
+                    ส่ง WhatsApp
+                  </button>
+                  <button onClick={() => shareToSocial(`ยอดค้างชำระของ ${selectedFriendForHistory} ทั้งหมด MYR ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}`, 'ig')} className="bg-rose-600 text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition">
+                    ส่ง Instagram
+                  </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ================= ADJUST BOTTOM SHEET ================= */}
+          {/* ================= ADJUST BOTTOM SHEET (z-[60] และ pb-10 ป้องกันการโดนบัง) ================= */}
           {selectedFriendForAdjust && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col justify-end" onClick={() => setSelectedFriendForAdjust(null)}>
-              <form onSubmit={handleSaveAdjustment} className="bg-white dark:bg-surfaceDark border-t border-slate-200 dark:border-lineDark rounded-t-3xl max-h-[85vh] flex flex-col p-5 space-y-4 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex flex-col justify-end" 
+              onClick={() => setSelectedFriendForAdjust(null)}
+            >
+              <form 
+                onSubmit={handleSaveAdjustment} 
+                className="bg-white dark:bg-surfaceDark border-t border-slate-200 dark:border-lineDark rounded-t-3xl max-h-[85vh] flex flex-col p-5 space-y-4 animate-in slide-in-from-bottom pb-10" 
+                onClick={e => e.stopPropagation()}
+              >
                 <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto -mt-2 mb-1"></div>
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-lineDark">
                   <h3 className="font-extrabold text-slate-900 dark:text-white text-base">ปรับยอดหนี้: {selectedFriendForAdjust}</h3>
-                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-slate-400 text-xs">✕</button>
+                  <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="text-slate-400 text-xs font-bold p-1">✕</button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-subtleDark p-1 rounded-xl">
@@ -2129,13 +2147,19 @@
             </nav>
           </div>
 
-          {/* ================= AUTH POPUP MODAL ================= */}
+          {/* ================= AUTH POPUP MODAL (z-[60] ป้องกันการโดนบัง) ================= */}
           {showAuthModal && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowAuthModal(false)}>
-              <div className="bg-white dark:bg-surfaceDark border border-slate-200 dark:border-lineDark rounded-3xl p-6 w-full max-w-xs space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div 
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in" 
+              onClick={() => setShowAuthModal(false)}
+            >
+              <div 
+                className="bg-white dark:bg-surfaceDark border border-slate-200 dark:border-lineDark rounded-3xl p-6 w-full max-w-xs space-y-4 shadow-2xl" 
+                onClick={e => e.stopPropagation()}
+              >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-lineDark">
                   <h3 className="font-bold text-sm text-slate-900 dark:text-white">เข้าสู่ระบบแอดมิน</h3>
-                  <button onClick={() => setShowAuthModal(false)} className="text-slate-400 text-xs">✕</button>
+                  <button onClick={() => setShowAuthModal(false)} className="text-slate-400 text-xs font-bold p-1">✕</button>
                 </div>
                 <button type="button" onClick={handleGoogleLogin} className="w-full bg-slate-50 dark:bg-subtleDark hover:bg-slate-100 border border-slate-200 dark:border-lineDark py-2.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white flex items-center justify-center gap-2 active:scale-95 transition">
                   <span>Google Sign-in</span>
@@ -2150,7 +2174,7 @@
 
           {/* Toast Notification */}
           {toast && (
-            <div className={`fixed top-4 left-4 right-4 max-w-xs mx-auto z-50 text-center py-2 px-4 rounded-xl text-xs shadow-xl font-bold ${toast.type === 'error' ? 'bg-coral text-white' : 'bg-slate-900 text-white'}`}>
+            <div className={`fixed top-4 left-4 right-4 max-w-xs mx-auto z-[70] text-center py-2 px-4 rounded-xl text-xs shadow-xl font-bold ${toast.type === 'error' ? 'bg-coral text-white' : 'bg-slate-900 text-white'}`}>
               {toast.message}
             </div>
           )}
