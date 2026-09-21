@@ -1,7 +1,7 @@
 {
   "name": "KraiMaiJayMeeReung",
   "short_name": "KraiMaiJay",
-  "start_url": "./test.html",
+  "start_url": "./mobile.html",
   "display": "standalone",
   "background_color": "#0B0F17",
   "theme_color": "#0B0F17",
