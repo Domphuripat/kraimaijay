@@ -57,6 +57,8 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Firebase Compat -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -97,7 +99,17 @@
     const { useState, useEffect, useRef, useMemo } = React;
 
     const ADMIN_EMAILS = ["phuripat26dom@gmail.com"];
-    const ADMIN_PIN = "2323";
+    // รหัสผ่านเข้ารหัสแบบ SHA-256 เพื่อไม่ให้โชว์รหัสตัวเลขตรงๆ ในโค้ด (รหัสเดิม: 2323)
+    const ADMIN_PIN_HASH = "d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f";
+
+    const verifyPinHash = async (input) => {
+      const buffer = new TextEncoder().encode(input);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      return hashHex.startsWith(ADMIN_PIN_HASH);
+    };
+
     const DEFAULT_FIREBASE_CONFIG = {
       apiKey: "AIzaSyC4RNzFy2wi7S4ZKN2_DWfHY_hUldwzmRQ",
       authDomain: "eat-app-eb3f8.firebaseapp.com",
@@ -109,6 +121,7 @@
     };
     const DEFAULT_APP_ID = "eat-app-eb3f8";
 
+    // เคลียร์วงเล็บออกทั้งหมดทั้งภาษาไทยและอังกฤษ
     const TRANSLATIONS = {
       th: {
         overview: "ภาพรวม",
@@ -123,21 +136,21 @@
         totalSpend: "ยอดใช้จ่ายกลุ่มเดือนนี้",
         activeDebtors: "เพื่อนที่ค้างชำระ",
         unsettledFriends: "รายการที่รอเพื่อนโอนคืน",
-        byCategory: "สัดส่วนค่าใช้จ่ายกลุ่ม (By category)",
+        byCategory: "สัดส่วนค่าใช้จ่ายกลุ่ม",
         addBill: "สร้างบิล",
         addFriend: "เพิ่มเพื่อน",
-        adminLock: "แอดมิน (🔒 ล็อค)",
-        signIn: "เข้าสู่ระบบ 🔑",
+        adminLock: "แอดมิน ล็อค",
+        signIn: "เข้าสู่ระบบ",
         logOut: "ออกจากระบบแอดมิน",
-        general: "ทั่วไป (General)",
-        categories: "หมวดหมู่ (Categories)",
-        notifications: "การแจ้งเตือน (Notifications)",
-        data: "สำรองและกู้คืนข้อมูล (Data)",
-        account: "บัญชีผู้ใช้ (Account)",
-        language: "ภาษา (Language)",
-        theme: "ธีมหน้าจอ (Theme)",
+        general: "ทั่วไป",
+        categories: "หมวดหมู่",
+        notifications: "การแจ้งเตือน",
+        data: "สำรองและกู้คืนข้อมูล",
+        account: "บัญชีผู้ใช้",
+        language: "ภาษา",
+        theme: "ธีมหน้าจอ",
         baseCurrency: "สกุลเงินหลัก",
-        members: "จัดการเพื่อน & สเตตเมนต์",
+        members: "จัดการเพื่อนและสเตตเมนต์",
       },
       en: {
         overview: "Overview",
@@ -148,15 +161,15 @@
         totalOutstanding: "Total Receivable",
         pendingFromFriends: "Pending from friends",
         myExpenseToday: "My Share Today",
-        monthlyAvg: "Monthly Avg / Bill",
+        monthlyAvg: "Monthly Avg Per Bill",
         totalSpend: "Total Group Spend",
         activeDebtors: "Active Debtors",
         unsettledFriends: "Unsettled Friends",
         byCategory: "By category",
         addBill: "Add Bill",
         addFriend: "Add Friend",
-        adminLock: "Admin (🔒 Lock)",
-        signIn: "Sign-In 🔑",
+        adminLock: "Admin Lock",
+        signIn: "Sign-In",
         logOut: "Log out",
         general: "General",
         categories: "Categories",
@@ -166,7 +179,7 @@
         language: "Language",
         theme: "Theme",
         baseCurrency: "Base currency",
-        members: "Members & Statements",
+        members: "Members and Statements",
       }
     };
 
@@ -197,7 +210,7 @@
         document.documentElement.lang = newLang;
       };
 
-      // Theme State (Light / Dark / System)
+      // Theme State
       const [selectedTheme, setSelectedTheme] = useState(() => localStorage.getItem('kraimaijay_theme') || 'system');
 
       useEffect(() => {
@@ -217,18 +230,18 @@
         localStorage.setItem('kraimaijay_theme', selectedTheme);
       }, [selectedTheme]);
 
-      // Categories State
+      // Categories
       const [categories, setCategories] = useState([
-        { id: 'food', name: 'อาหาร & เครื่องดื่ม', icon: '🛵', color: 'bg-rose-500/20 text-rose-400' },
-        { id: 'rides', name: 'การเดินทาง (Grab / Bolt)', icon: '🚗', color: 'bg-emerald-500/20 text-emerald-400' },
-        { id: 'dinein', name: 'ทานที่ร้าน (Dine-in)', icon: '🍽️', color: 'bg-indigo-500/20 text-indigo-400' },
-        { id: 'loan', name: 'ยืมเงิน (Loan)', icon: '💸', color: 'bg-amber-500/20 text-amber-400' },
+        { id: 'food', name: 'อาหารและเครื่องดื่ม', icon: '🛵', color: 'bg-rose-500/20 text-rose-400' },
+        { id: 'rides', name: 'การเดินทาง Grab Bolt', icon: '🚗', color: 'bg-emerald-500/20 text-emerald-400' },
+        { id: 'dinein', name: 'ทานที่ร้าน Dine-in', icon: '🍽️', color: 'bg-indigo-500/20 text-indigo-400' },
+        { id: 'loan', name: 'ยืมเงิน Loan', icon: '💸', color: 'bg-amber-500/20 text-amber-400' },
       ]);
       const [editingCatId, setEditingCatId] = useState(null);
       const [editCatName, setEditCatName] = useState('');
       const [editCatIcon, setEditCatIcon] = useState('');
 
-      // Notifications State
+      // Notifications
       const [remindTiming, setRemindTiming] = useState(() => localStorage.getItem('kraimaijay_noti_timing') || '3');
       const [deviceNotiEnabled, setDeviceNotiEnabled] = useState(() => "Notification" in window && Notification.permission === 'granted');
 
@@ -245,25 +258,12 @@
           const perm = await Notification.requestPermission();
           if (perm === 'granted') {
             setDeviceNotiEnabled(true);
-            new Notification("ใครไม่จ่ายมีเรื่อง 🎉", { body: "เปิดใช้งานระบบแจ้งเตือนสำเร็จ!", icon: "cat.jpg" });
-            showToast("เปิดการแจ้งเตือนเรียบร้อย!");
+            new Notification("ใครไม่จ่ายมีเรื่อง", { body: "เปิดใช้งานระบบแจ้งเตือนสำเร็จ", icon: "cat.jpg" });
+            showToast("เปิดการแจ้งเตือนเรียบร้อย");
           } else {
             setDeviceNotiEnabled(false);
             showToast("คุณปฏิเสธการอนุญาตแจ้งเตือน", "error");
           }
-        }
-      };
-
-      const handleTestPushNotification = () => {
-        triggerHaptic();
-        if (Notification.permission === 'granted') {
-          new Notification("🔔 แจ้งเตือนยอดค้างชำระ", {
-            body: "มีเพื่อนยังค้างชำระบิลกลุ่ม อย่าลืมตรวจสอบยอดคงค้าง",
-            icon: "cat.jpg"
-          });
-          showToast("ส่งการแจ้งเตือนทดสอบแล้ว!");
-        } else {
-          showToast("กรุณาเปิดสิทธิ์แจ้งเตือนก่อน", "error");
         }
       };
 
@@ -274,14 +274,17 @@
       const [currentUser, setCurrentUser] = useState(null);
       const [isAdminByGoogle, setIsAdminByGoogle] = useState(false);
       const [isAdminBySecret, setIsAdminBySecret] = useState(() => {
-        const p = new URLSearchParams(window.location.search);
-        return p.get('admin') === 'true' || p.get('dom') === '2323' || localStorage.getItem('kraimaijay_secret_admin') === 'true';
+        return localStorage.getItem('kraimaijay_secret_admin') === 'true';
       });
       const isAdmin = isAdminByGoogle || isAdminBySecret;
 
       const [isProcessing, setIsProcessing] = useState(false);
       const [showAuthModal, setShowAuthModal] = useState(false);
       const [inputPin, setInputPin] = useState('');
+
+      // Floating Calculator State
+      const [showCalc, setShowCalc] = useState(false);
+      const [calcInput, setCalcInput] = useState('0');
 
       const [db, setDb] = useState(null);
       const [toast, setToast] = useState(null);
@@ -298,7 +301,7 @@
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
       const restoreInputRef = useRef(null);
 
-      // ฟอร์มบิล
+      // ฟอร์มบิล & รายละเอียดครบถ้วนจาก Desktop
       const [editingBillId, setEditingBillId] = useState(null);
       const [newBillName, setNewBillName] = useState('');
       const [billType, setBillType] = useState('delivery');
@@ -310,10 +313,20 @@
       const [rideRoute, setRideRoute] = useState('');
       const [loanAmount, setLoanAmount] = useState('');
       const [loanBorrower, setLoanBorrower] = useState('');
+      const [taxMode, setTaxMode] = useState('inclusive');
+      const [serviceChargeRate, setServiceChargeRate] = useState(0);
       const [deliveryFee, setDeliveryFee] = useState(0);
       const [packagingCharge, setPackagingCharge] = useState(0);
       const [discountAmount, setDiscountAmount] = useState(0);
+      const [roundingAdj, setRoundingAdj] = useState(0);
       const [billItems, setBillItems] = useState([{ id: '1', name: '', price: '', qty: 1, sharedWith: [] }]);
+
+      // OCR & Paste Text State บน Mobile
+      const [ocrProcessing, setOcrProcessing] = useState(false);
+      const [ocrProgress, setOcrProgress] = useState(0);
+      const [showPasteText, setShowPasteText] = useState(false);
+      const [rawOrderText, setRawOrderText] = useState('');
+      const mobileOcrInputRef = useRef(null);
 
       // ปรับยอด & สเตตเมนต์
       const [selectedFriendForAdjust, setSelectedFriendForAdjust] = useState(null);
@@ -375,7 +388,7 @@
             const hasAdminRole = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
             setIsAdminByGoogle(hasAdminRole);
             setShowAuthModal(false);
-            showToast(hasAdminRole ? "👑 เข้าสู่ระบบแอดมินแล้ว!" : `เข้าสู่ระบบเป็น ${userEmail}`);
+            showToast(hasAdminRole ? "เข้าสู่ระบบแอดมินแล้ว" : `เข้าสู่ระบบเป็น ${userEmail}`);
           }
         } catch (err) {
           showToast("เข้าสู่ระบบไม่สำเร็จ", "error");
@@ -384,13 +397,14 @@
 
       const handleVerifyPin = async (e) => {
         e.preventDefault();
-        if (inputPin === ADMIN_PIN) {
+        const isValid = await verifyPinHash(inputPin);
+        if (isValid) {
           setIsAdminBySecret(true);
           localStorage.setItem('kraimaijay_secret_admin', 'true');
           try { await firebase.auth().signInAnonymously(); } catch (err) {}
           setShowAuthModal(false);
           setInputPin('');
-          showToast("👑 ปลดล็อกโหมดแอดมินเรียบร้อย!");
+          showToast("ปลดล็อกโหมดแอดมินเรียบร้อย");
         } else {
           showToast("PIN ไม่ถูกต้อง", "error");
           setInputPin('');
@@ -404,6 +418,88 @@
         localStorage.removeItem('kraimaijay_secret_admin');
         try { await firebase.auth().signOut(); } catch (e) {}
         showToast("เปลี่ยนเป็นโหมดผู้ชมแล้ว");
+      };
+
+      // เครื่องคิดเลข
+      const handleCalcBtn = (val) => {
+        if (val === 'C') {
+          setCalcInput('0');
+        } else if (val === 'DEL') {
+          setCalcInput(prev => prev.length > 1 ? prev.slice(0, -1) : '0');
+        } else if (val === '=') {
+          try {
+            const clean = calcInput.replace(/[^0-9+\-*/.]/g, '');
+            const res = Function(`'use strict'; return (${clean})`)();
+            setCalcInput((Math.round(res * 100) / 100).toString());
+          } catch (e) {
+            setCalcInput('Error');
+          }
+        } else {
+          setCalcInput(prev => prev === '0' || prev === 'Error' ? val : prev + val);
+        }
+      };
+
+      // OCR & Paste Text Helpers
+      const parseOrderText = (text) => {
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const extracted = [];
+        let dFee = 0, pCharge = 0, dDisc = 0;
+
+        lines.forEach(l => {
+          if (/delivery\s*fee|rider\s*fee/i.test(l)) {
+            const m = l.match(/([0-9]+[.,][0-9]{2})/);
+            if (m) dFee = parseFloat(m[1].replace(',', '.'));
+          } else if (/packaging|takeaway\s*box/i.test(l)) {
+            const m = l.match(/([0-9]+[.,][0-9]{2})/);
+            if (m) pCharge = parseFloat(m[1].replace(',', '.'));
+          } else if (/discount|promo/i.test(l)) {
+            const m = l.match(/([0-9]+[.,][0-9]{2})/);
+            if (m) dDisc = parseFloat(m[1].replace(',', '.'));
+          } else {
+            const m = l.match(/^(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i);
+            if (m) {
+              extracted.push({
+                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
+                name: m[2].trim(),
+                price: parseFloat(m[3].replace(',', '.')).toFixed(2),
+                qty: parseInt(m[1]) || 1,
+                sharedWith: [...billFriends]
+              });
+            }
+          }
+        });
+        return { extracted, dFee, pCharge, dDisc };
+      };
+
+      const handleScanMobileImage = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setOcrProcessing(true);
+        setOcrProgress(0);
+        showToast("กำลังประมวลผล OCR");
+
+        try {
+          const { data: { text } } = await Tesseract.recognize(file, 'eng+tha', {
+            logger: m => {
+              if (m.status === 'recognizing text') setOcrProgress(Math.round((m.progress || 0) * 100));
+            }
+          });
+          const parsed = parseOrderText(text);
+          if (parsed.extracted.length > 0 || parsed.dFee || parsed.pCharge) {
+            if (parsed.extracted.length > 0) setBillItems(parsed.extracted);
+            if (parsed.dFee) setDeliveryFee(parsed.dFee);
+            if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
+            if (parsed.dDisc) setDiscountAmount(parsed.dDisc);
+            showToast(`สแกนสำเร็จ ${parsed.extracted.length} รายการ`);
+          } else {
+            showToast("OCR อ่านไม่ชัดเจน แนะนำให้ลองวางข้อความ", "error");
+          }
+        } catch (err) {
+          showToast("สแกนภาพไม่สำเร็จ", "error");
+        } finally {
+          setOcrProcessing(false);
+          if (mobileOcrInputRef.current) mobileOcrInputRef.current.value = '';
+        }
       };
 
       // ยอดหนี้
@@ -575,8 +671,19 @@
 
       const copyRemindText = (name, amount, billName) => {
         triggerHaptic();
-        const text = `แจ้งเตือนยอดหารบิล "${billName || 'ค่าใช้จ่ายกลุ่ม'}" ของ ${name} ยอดคงค้าง MYR ${amount.toFixed(2)} รบกวนโอนคืนเมื่อสะดวกด้วยนะครับ 🙏`;
-        navigator.clipboard.writeText(text).then(() => showToast(`คัดลอกข้อความทวงของ ${name} แล้ว!`));
+        const text = `แจ้งเตือนยอดหารบิล ${billName || 'ค่าใช้จ่ายกลุ่ม'} ของ ${name} ยอดคงค้าง MYR ${amount.toFixed(2)} รบกวนโอนคืนเมื่อสะดวกด้วยนะครับ`;
+        navigator.clipboard.writeText(text).then(() => showToast(`คัดลอกข้อความทวงของ ${name} แล้ว`));
+      };
+
+      const shareToSocial = (text, platform) => {
+        if (platform === 'whatsapp') {
+          window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+        } else if (platform === 'ig') {
+          navigator.clipboard.writeText(text).then(() => {
+            showToast("คัดลอกข้อความแล้ว กำลังเปิด Instagram");
+            window.open('https://instagram.com/direct/inbox/', '_blank');
+          });
+        }
       };
 
       const handleSaveAdjustment = async (e) => {
@@ -592,7 +699,7 @@
           displayAmount: amount,
           isPaymentRecord: adjustType === 'minus',
           isSettled: adjustType === 'minus',
-          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (+)' : `ชำระแล้ว (- ${amount.toFixed(2)} RM)`),
+          note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้' : `ชำระแล้ว ${amount.toFixed(2)} RM`),
           date: new Date().toISOString().split('T')[0],
           createdAt: Date.now()
         };
@@ -601,7 +708,7 @@
         if (db) {
           try {
             await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('adjustments').add(newAdj);
-            showToast(`ปรับยอด ${amount.toFixed(2)} RM เรียบร้อย!`);
+            showToast(`ปรับยอด ${amount.toFixed(2)} RM เรียบร้อย`);
             setSelectedFriendForAdjust(null);
             setAdjustAmount('');
             setAdjustNote('');
@@ -613,7 +720,7 @@
         }
       };
 
-      // บันทึกบิล + คำนวณเศษสตางค์ (Penny Rounding) + FIFO Auto Net-off
+      // บันทึกบิล พร้อมระบบกระจายเศษสตางค์และ FIFO Auto Net-off
       const handleSaveBill = async (e) => {
         e.preventDefault();
         if (!isAdmin || isProcessing) return;
@@ -708,7 +815,7 @@
             const billDocRef = base.collection('bills').doc();
             batch.set(billDocRef, billPayload);
 
-            // ⚡ FIFO AUTO NET-OFF: เมื่อเพื่อนจ่ายแล้วเรามีส่วนออกในบิล
+            // FIFO Auto Net-off
             const isDomPayer = /me|dom/i.test(paidBy);
             const myShare = splits['Me (Dom)'] || splits['ตัวฉันเอง'] || 0;
 
@@ -749,7 +856,7 @@
                       displayAmount: remDebt,
                       isPaymentRecord: false,
                       isSettled: false,
-                      note: `⚙️ ยอดคงเหลือบิล: ${oldBill.name} (หักล้างอัตโนมัติด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM)`,
+                      note: `ยอดคงเหลือบิล ${oldBill.name} หักล้างอัตโนมัติด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM`,
                       date: newBillDate,
                       createdAt: Date.now()
                     });
@@ -773,7 +880,7 @@
                   isPaymentRecord: true,
                   isSettled: true,
                   relatedBillIds: autoSettledBillIds,
-                  note: `⚡ Auto Net-off: ${friendPayerName} ออกค่า ${newBillName} ให้ (${myShare.toFixed(2)} RM) -> ล้างบิลเก่าอัตโนมัติ ${settledCount} บิล`,
+                  note: `Auto Net-off ${friendPayerName} ออกค่า ${newBillName} ให้ ${myShare.toFixed(2)} RM ล้างบิลเก่าอัตโนมัติ ${settledCount} บิล`,
                   date: newBillDate,
                   createdAt: Date.now() + 1
                 });
@@ -781,7 +888,7 @@
             }
 
             await batch.commit();
-            showToast("บันทึกบิลสำเร็จ! 🎉");
+            showToast("บันทึกบิลสำเร็จ");
             setNewBillName('');
             setActiveTab('bills');
           } catch (err) {
@@ -834,6 +941,7 @@
                 </div>
 
                 <div className="z-10">
+                  <p className="text-xs tracking-widest text-white/80 font-mono">•••• •••• •••• 2323</p>
                   <div className="flex justify-between items-end mt-1">
                     <div>
                       <p className="text-[9px] text-white/80">{t('pendingFromFriends')}</p>
@@ -899,7 +1007,7 @@
                 <div className="space-y-2">
                   {unpaidDebtors.length === 0 ? (
                     <div className="bg-white dark:bg-surfaceDark p-5 rounded-2xl border border-slate-100 dark:border-lineDark text-center text-xs text-slate-400">
-                      🎉 เคลียร์ครบทุกคนแล้ว ไม่มีใครค้างชำระ
+                      เคลียร์ครบทุกคนแล้ว ไม่มีใครค้างชำระ
                     </div>
                   ) : (
                     unpaidDebtors.map(friend => {
@@ -958,7 +1066,7 @@
                 <div className="space-y-2 pt-1 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                      <span className="w-2 h-2 rounded-full bg-mint"></span> อาหาร & เครื่องดื่ม
+                      <span className="w-2 h-2 rounded-full bg-mint"></span> อาหารและเครื่องดื่ม
                     </span>
                     <div className="flex items-center gap-4">
                       <span className="text-slate-400 font-medium">{monthlyStats.foodPct}%</span>
@@ -967,7 +1075,7 @@
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                      <span className="w-2 h-2 rounded-full bg-brandPurple"></span> ค่าเดินทาง (Grab / Bolt)
+                      <span className="w-2 h-2 rounded-full bg-brandPurple"></span> การเดินทาง Grab Bolt
                     </span>
                     <div className="flex items-center gap-4">
                       <span className="text-slate-400 font-medium">{monthlyStats.ridePct}%</span>
@@ -1054,7 +1162,7 @@
                         <div className="text-right">
                           <span className="text-xs font-black text-slate-900 dark:text-white font-mono">MYR {(bill.total || 0).toFixed(2)}</span>
                           <span className={`block text-[9px] font-bold mt-0.5 ${unpaidCount === 0 ? 'text-mint' : 'text-coral'}`}>
-                            {unpaidCount === 0 ? '✓ เคลียร์ครบ' : `รอ ${unpaidCount} คน`}
+                            {unpaidCount === 0 ? 'เคลียร์ครบ' : `รอ ${unpaidCount} คน`}
                           </span>
                         </div>
                       </div>
@@ -1063,7 +1171,7 @@
                         <div className="pt-2 border-t border-slate-100 dark:border-lineDark space-y-2 text-xs" onClick={e => e.stopPropagation()}>
                           {Object.keys(bill.splits || {}).map(fName => (
                             <div key={fName} className="flex justify-between items-center text-[11px]">
-                              <span className="text-slate-600 dark:text-slate-300">{fName} (MYR {(bill.splits[fName] || 0).toFixed(2)})</span>
+                              <span className="text-slate-600 dark:text-slate-300">{fName} MYR {(bill.splits[fName] || 0).toFixed(2)}</span>
                               {isAdmin ? (
                                 <button
                                   onClick={async () => {
@@ -1073,7 +1181,7 @@
                                   }}
                                   className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${bill.paidStatus?.[fName] ? 'bg-mint text-white' : 'bg-coral text-white'}`}
                                 >
-                                  {bill.paidStatus?.[fName] ? '✓ จ่ายแล้ว' : '⌛ ยังไม่จ่าย'}
+                                  {bill.paidStatus?.[fName] ? 'จ่ายแล้ว' : 'ยังไม่จ่าย'}
                                 </button>
                               ) : (
                                 <span className={`font-bold ${bill.paidStatus?.[fName] ? 'text-mint' : 'text-coral'}`}>
@@ -1083,27 +1191,33 @@
                             </div>
                           ))}
 
-                          {isAdmin && (
-                            <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-lineDark text-xs font-semibold">
-                              <button onClick={() => {
-                                triggerHaptic();
-                                setEditingBillId(bill.id);
-                                setNewBillName(bill.name || '');
-                                setBillType(bill.billType || 'delivery');
-                                setPaidBy(bill.paidBy || 'Me (Dom)');
-                                setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
-                                setBillFriends(Object.keys(bill.splits || {}));
-                                setActiveTab('new-bill');
-                              }} className="text-brandPurple">✏️ แก้ไขบิล</button>
-                              <button onClick={async () => {
-                                triggerHaptic();
-                                if (confirm("ต้องการลบบิลนี้ใช่หรือไม่?")) {
-                                  await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).delete();
-                                  showToast("ลบบิลเรียบร้อย!");
-                                }
-                              }} className="text-coral">🗑️ ลบบิล</button>
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-lineDark text-xs font-semibold">
+                            <div className="flex gap-2">
+                              <button onClick={() => shareToSocial(`บิล ${bill.name} ยอดรวม MYR ${(bill.total || 0).toFixed(2)}`, 'whatsapp')} className="text-emerald-500">WhatsApp</button>
+                              <button onClick={() => shareToSocial(`บิล ${bill.name} ยอดรวม MYR ${(bill.total || 0).toFixed(2)}`, 'ig')} className="text-rose-500">Instagram</button>
                             </div>
-                          )}
+                            {isAdmin && (
+                              <div className="flex gap-3">
+                                <button onClick={() => {
+                                  triggerHaptic();
+                                  setEditingBillId(bill.id);
+                                  setNewBillName(bill.name || '');
+                                  setBillType(bill.billType || 'delivery');
+                                  setPaidBy(bill.paidBy || 'Me (Dom)');
+                                  setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
+                                  setBillFriends(Object.keys(bill.splits || {}));
+                                  setActiveTab('new-bill');
+                                }} className="text-brandPurple">แก้ไขบิล</button>
+                                <button onClick={async () => {
+                                  triggerHaptic();
+                                  if (confirm("ต้องการลบบิลนี้ใช่หรือไม่")) {
+                                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bills').doc(bill.id).delete();
+                                    showToast("ลบบิลเรียบร้อย");
+                                  }
+                                }} className="text-coral">ลบบิล</button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1191,7 +1305,7 @@
                 {selectedCalendarDay && (
                   <div className="bg-slate-50 dark:bg-subtleDark p-3.5 rounded-2xl border border-slate-200 dark:border-lineDark text-xs space-y-2 mt-2 font-mono animate-in fade-in">
                     <div className="flex justify-between font-bold text-slate-900 dark:text-white pb-1.5 border-b border-slate-200 dark:border-lineDark">
-                      <span>🗓️ รายจ่ายวันที่ {selectedCalendarDay.dateStr}</span>
+                      <span>รายจ่ายวันที่ {selectedCalendarDay.dateStr}</span>
                       <span className="text-brandPurple font-black">MYR {selectedCalendarDay.total.toFixed(2)}</span>
                     </div>
                     {selectedCalendarDay.items.map((it, idx) => (
@@ -1220,7 +1334,7 @@
                   </div>
                   <div className="bg-white dark:bg-surfaceDark rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-lineDark space-y-5">
                     <div>
-                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">General (ทั่วไป)</h2>
+                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">General ทั่วไป</h2>
                       <p className="text-[11px] text-slate-400 mt-1">ภาษา ธีม และสกุลเงินสำหรับคำนวณบิล</p>
                     </div>
 
@@ -1289,23 +1403,23 @@
                   <div className="bg-white dark:bg-surfaceDark rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-lineDark space-y-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Categories (หมวดหมู่)</h2>
+                        <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Categories หมวดหมู่</h2>
                         <p className="text-[11px] text-slate-400 mt-1">ใช้แยกประเภทบิลและกราฟวิเคราะห์</p>
                       </div>
                       {isAdmin && (
                         <button 
                           onClick={() => {
                             triggerHaptic();
-                            const n = prompt("ระบุชื่อหมวดหมู่ใหม่:");
+                            const n = prompt("ระบุชื่อหมวดหมู่ใหม่");
                             if (n && n.trim()) {
-                              const icon = prompt("ใส่อีโมจิไอคอน (เช่น ☕):", "🏷️") || "🏷️";
+                              const icon = prompt("ใส่อีโมจิไอคอน เช่น ☕", "🏷️") || "🏷️";
                               setCategories([...categories, {
                                 id: Date.now().toString(),
                                 name: n.trim(),
                                 icon,
                                 color: 'bg-indigo-500/20 text-indigo-400'
                               }]);
-                              showToast(`เพิ่มหมวดหมู่ ${n} เรียบร้อย!`);
+                              showToast(`เพิ่มหมวดหมู่ ${n} เรียบร้อย`);
                             }
                           }}
                           className="bg-brandPurple text-white text-xs font-bold px-3 py-1.5 rounded-xl active:scale-95 transition"
@@ -1352,7 +1466,7 @@
                               <button 
                                 onClick={() => {
                                   triggerHaptic();
-                                  if (confirm(`ต้องการลบหมวดหมู่ "${cat.name}"?`)) {
+                                  if (confirm(`ต้องการลบหมวดหมู่ ${cat.name}`)) {
                                     setCategories(categories.filter(c => c.id !== cat.id));
                                     showToast("ลบหมวดหมู่แล้ว");
                                   }
@@ -1370,7 +1484,7 @@
                 </div>
               )}
 
-              {/* หน้าย่อย: Members & Statements */}
+              {/* หน้าย่อย: Members */}
               {settingsSubPage === 'members' && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-1.5">
@@ -1380,12 +1494,12 @@
                   </div>
                   <div className="bg-white dark:bg-surfaceDark rounded-3xl p-4 shadow-sm border border-slate-100 dark:border-lineDark space-y-3">
                     <div className="flex justify-between items-center">
-                      <h2 className="font-bold text-slate-900 dark:text-white text-sm">สมาชิกในกลุ่ม ({friends.length} คน)</h2>
+                      <h2 className="font-bold text-slate-900 dark:text-white text-sm">สมาชิกในกลุ่ม {friends.length} คน</h2>
                       {isAdmin && (
                         <button 
                           onClick={() => {
                             triggerHaptic();
-                            const n = prompt("ระบุชื่อสมาชิกใหม่:");
+                            const n = prompt("ระบุชื่อสมาชิกใหม่");
                             if (n && n.trim()) {
                               const norm = n.trim().toLowerCase();
                               if (/^(me|dom|me\s*\(dom\)|ตัวฉันเอง)$/i.test(norm)) {
@@ -1399,7 +1513,7 @@
                               db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').add({
                                 name: n.trim(), isSelf: false, isArchived: false, createdAt: Date.now()
                               });
-                              showToast(`เพิ่ม ${n} สำเร็จ!`);
+                              showToast(`เพิ่ม ${n} สำเร็จ`);
                             }
                           }}
                           className="text-brandPurple text-xs font-bold"
@@ -1411,12 +1525,27 @@
                     <div className="divide-y divide-slate-100 dark:divide-lineDark">
                       {friends.map(friend => (
                         <div key={friend.id} className="py-2.5 flex justify-between items-center text-xs">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">{friend.name}</span>
-                          {!friend.isSelf && (
-                            <button onClick={() => { triggerHaptic(); setSelectedFriendForHistory(friend.name); }} className="bg-slate-100 dark:bg-subtleDark px-3 py-1 rounded-xl text-slate-700 dark:text-slate-300 font-semibold">
-                              สเตตเมนต์
-                            </button>
-                          )}
+                          <div>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{friend.name}</span>
+                            {friend.isArchived && <span className="ml-1 text-[10px] text-slate-400">ซ่อน</span>}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {!friend.isSelf && (
+                              <button onClick={() => { triggerHaptic(); setSelectedFriendForHistory(friend.name); }} className="bg-slate-100 dark:bg-subtleDark px-3 py-1 rounded-xl text-slate-700 dark:text-slate-300 font-semibold">
+                                สเตตเมนต์
+                              </button>
+                            )}
+                            {isAdmin && !friend.isSelf && (
+                              <button onClick={async () => {
+                                triggerHaptic();
+                                const newName = prompt("แก้ไขชื่อเพื่อน", friend.name);
+                                if (newName && newName.trim() && newName !== friend.name) {
+                                  await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('friends').doc(friend.id).update({ name: newName.trim() });
+                                  showToast("เปลี่ยนชื่อสำเร็จ");
+                                }
+                              }} className="text-slate-400 px-1">✏️</button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1434,7 +1563,7 @@
                   </div>
                   <div className="bg-white dark:bg-surfaceDark rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-lineDark space-y-5">
                     <div>
-                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Notifications (การแจ้งเตือน)</h2>
+                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Notifications การแจ้งเตือน</h2>
                       <p className="text-[11px] text-slate-400 mt-1">เตือนทวงหนี้ผ่าน Push และปฏิทิน</p>
                     </div>
 
@@ -1448,14 +1577,9 @@
                           onClick={handleToggleDeviceNoti}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${deviceNotiEnabled ? 'bg-mint text-white' : 'bg-capsuleDark text-white'}`}
                         >
-                          {deviceNotiEnabled ? '✓ เปิดแล้ว' : 'เปิดใช้งาน'}
+                          {deviceNotiEnabled ? 'เปิดแล้ว' : 'เปิดใช้งาน'}
                         </button>
                       </div>
-                      {deviceNotiEnabled && (
-                        <button onClick={handleTestPushNotification} className="text-[10px] text-brandPurple font-bold underline block mt-1">
-                          ส่งการแจ้งเตือนทดสอบ (Test Push)
-                        </button>
-                      )}
                     </div>
 
                     <div className="space-y-2 pt-1">
@@ -1477,15 +1601,6 @@
                         ))}
                       </div>
                     </div>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-lineDark">
-                      <h3 className="text-xs font-bold text-slate-900 dark:text-white">ลิงก์ปฏิทินค่าใช้จ่าย (Billing Calendar)</h3>
-                      <p className="text-[10px] text-slate-400">ซิงค์รอบบิลเข้า Google Calendar หรือ Apple Calendar</p>
-                      <div className="flex gap-2">
-                        <input type="text" readOnly value="webcal://kraimaijay.app/calendar/feed.ics" className="flex-1 bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-2.5 py-1.5 text-xs font-mono text-slate-600 dark:text-slate-300" />
-                        <button onClick={() => { triggerHaptic(); navigator.clipboard.writeText("webcal://kraimaijay.app/calendar/feed.ics"); showToast("คัดลอกลิงก์เรียบร้อย!"); }} className="bg-slate-100 dark:bg-subtleDark font-bold px-3 py-1.5 rounded-xl text-xs">คัดลอก</button>
-                      </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -1500,13 +1615,13 @@
                   </div>
                   <div className="bg-white dark:bg-surfaceDark rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-lineDark space-y-5">
                     <div>
-                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Data (สำรองข้อมูล)</h2>
+                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Data สำรองข้อมูล</h2>
                       <p className="text-[11px] text-slate-400 mt-1">ส่งออกและนำเข้าข้อมูล JSON ทั้งระบบ</p>
                     </div>
 
                     <div className="flex justify-between items-center pt-2">
                       <div>
-                        <h3 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">ส่งออกข้อมูล (Export)</h3>
+                        <h3 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">ส่งออกข้อมูล JSON</h3>
                         <p className="text-[10px] text-slate-400">บันทึกบิลและสมาชิกเป็นไฟล์ JSON</p>
                       </div>
                       <button 
@@ -1516,7 +1631,7 @@
                           const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
                           const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
                           a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
-                          showToast("ส่งออกข้อมูลสำเร็จ! 📦");
+                          showToast("ส่งออกข้อมูลสำเร็จ");
                         }}
                         className="bg-slate-100 dark:bg-subtleDark hover:bg-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 dark:text-white transition"
                       >
@@ -1526,8 +1641,30 @@
 
                     <div className="flex justify-between items-center pt-2">
                       <div>
-                        <h3 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">นำเข้าข้อมูล (Import)</h3>
-                        <p className="text-[10px] text-slate-400">กู้คืนข้อมูลจากไฟล์ JSON เดิม</p>
+                        <h3 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">ส่งออกสรุปบิล CSV</h3>
+                        <p className="text-[10px] text-slate-400">นำไปเปิดดูใน Excel</p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          triggerHaptic();
+                          let csvContent = "data:text/csv;charset=utf-8,\uFEFFDate,Type,Title,Route,PaidBy,Total\n";
+                          bills.forEach(b => {
+                            csvContent += `${b.date},${b.billType},"${(b.name || '').replace(/"/g, '""')}","${(b.rideRoute || '').replace(/"/g, '""')}",${b.paidBy},${(b.total || 0).toFixed(2)}\n`;
+                          });
+                          const a = document.createElement("a"); a.href = encodeURI(csvContent);
+                          a.download = `KraiMaiJay_Summary_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+                          showToast("ส่งออก CSV สำเร็จ");
+                        }}
+                        className="bg-slate-100 dark:bg-subtleDark hover:bg-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 dark:text-white transition"
+                      >
+                        ส่งออก CSV
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">นำเข้าข้อมูล JSON</h3>
+                        <p className="text-[10px] text-slate-400">กู้คืนข้อมูลจากไฟล์เดิม</p>
                       </div>
                       <div>
                         <input type="file" accept=".json" ref={restoreInputRef} onChange={(e) => {
@@ -1543,7 +1680,7 @@
                                 d.friends.forEach(f => batch.set(base.collection('friends').doc(f.id || undefined), f));
                                 d.bills.forEach(b => batch.set(base.collection('bills').doc(b.id || undefined), b));
                                 await batch.commit();
-                                showToast("กู้คืนข้อมูลสำเร็จ! 🎉");
+                                showToast("กู้คืนข้อมูลสำเร็จ");
                               }
                             } catch (err) { showToast("ไฟล์ไม่ถูกต้อง", "error"); }
                           };
@@ -1568,32 +1705,28 @@
                   </div>
                   <div className="bg-white dark:bg-surfaceDark rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-lineDark space-y-4">
                     <div>
-                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Account (บัญชี)</h2>
+                      <h2 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">Account บัญชี</h2>
                       <p className="text-[11px] text-slate-400 mt-1">ข้อมูลบัญชีที่ใช้ซิงค์กับฐานข้อมูลคลาวด์</p>
                     </div>
 
                     <div className="p-3.5 bg-slate-50 dark:bg-subtleDark rounded-2xl space-y-2 text-xs">
                       <div className="flex justify-between">
                         <span className="text-slate-400">สถานะ:</span>
-                        <span className="font-bold text-mint">{isAdmin ? '👑 แอดมิน (Admin)' : '👀 ผู้ชม (Viewer)'}</span>
+                        <span className="font-bold text-mint">{isAdmin ? 'แอดมิน' : 'ผู้ชม'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">อีเมล:</span>
                         <span className="font-bold text-slate-800 dark:text-slate-200">{currentUser?.email || (isAdmin ? 'phuripat26dom@gmail.com' : 'Guest')}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">คลาวด์:</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">Firebase Firestore (Synced)</span>
-                      </div>
                     </div>
 
                     {!isAdmin ? (
                       <button onClick={() => { triggerHaptic(); setShowAuthModal(true); }} className="w-full bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs shadow-md">
-                        เข้าสู่ระบบแอดมินด้วย Google / PIN
+                        เข้าสู่ระบบแอดมินด้วย Google หรือ PIN
                       </button>
                     ) : (
                       <button onClick={handleLogoutAdmin} className="w-full bg-slate-100 dark:bg-subtleDark text-coral font-bold py-2.5 rounded-xl text-xs">
-                        ออกจากโหมดแอดมิน (Log out)
+                        ออกจากโหมดแอดมิน
                       </button>
                     )}
                   </div>
@@ -1619,12 +1752,12 @@
 
                   <div className="bg-white dark:bg-surfaceDark rounded-3xl p-2 shadow-sm border border-slate-100 dark:border-lineDark divide-y divide-slate-100 dark:divide-lineDark">
                     {[
-                      { id: 'general', label: 'General (ทั่วไป)', desc: 'ภาษา ธีม และสกุลเงินสำหรับคำนวณบิล', icon: '⚙️' },
-                      { id: 'categories', label: 'Categories (หมวดหมู่)', desc: 'เพิ่ม แก้ชื่อ และเลือกไอคอนหมวดหมู่', icon: '🏷️' },
-                      { id: 'members', label: 'Members & Statements (สมาชิก)', desc: 'จัดการเพื่อน ตรวจสอบสเตตเมนต์รายบุคคล', icon: '👥' },
-                      { id: 'notifications', label: 'Notifications (การแจ้งเตือน)', desc: 'เปิดการแจ้งเตือนเตือนทวงหนี้และซิงค์ปฏิทิน', icon: '🔔' },
-                      { id: 'data', label: 'Data (สำรองข้อมูล)', desc: 'ส่งออกและนำเข้าข้อมูล JSON ทั้งระบบ', icon: '🗄️' },
-                      { id: 'account', label: 'Account (บัญชีแอดมิน)', desc: 'การเชื่อมต่อคลาวด์และสิทธิ์การเข้าถึง', icon: '👤' },
+                      { id: 'general', label: 'General ทั่วไป', desc: 'ภาษา ธีม และสกุลเงินสำหรับคำนวณบิล', icon: '⚙️' },
+                      { id: 'categories', label: 'Categories หมวดหมู่', desc: 'เพิ่ม แก้ชื่อ และเลือกไอคอนหมวดหมู่', icon: '🏷️' },
+                      { id: 'members', label: 'Members and Statements สมาชิก', desc: 'จัดการเพื่อน ตรวจสอบสเตตเมนต์รายบุคคล', icon: '👥' },
+                      { id: 'notifications', label: 'Notifications การแจ้งเตือน', desc: 'เปิดการแจ้งเตือนเตือนทวงหนี้และซิงค์ปฏิทิน', icon: '🔔' },
+                      { id: 'data', label: 'Data สำรองข้อมูล', desc: 'ส่งออกและนำเข้าข้อมูล JSON ทั้งระบบ', icon: '🗄️' },
+                      { id: 'account', label: 'Account บัญชีแอดมิน', desc: 'การเชื่อมต่อคลาวด์และสิทธิ์การเข้าถึง', icon: '👤' },
                     ].map((item) => (
                       <div 
                         key={item.id}
@@ -1659,13 +1792,47 @@
             </div>
           )}
 
-          {/* ================= 5. CREATE BILL SCREEN ================= */}
+          {/* ================= 5. CREATE BILL SCREEN (พร้อม OCR และ Paste Text) ================= */}
           {activeTab === 'new-bill' && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">{editingBillId ? 'แก้ไขบิล' : 'สร้างรายการหารบิลใหม่'}</h1>
                 <button onClick={() => { triggerHaptic(); setActiveTab('overview'); }} className="text-slate-400 text-xs">✕ ปิด</button>
               </div>
+
+              {/* Smart OCR Scanner Bar บนมือถือ */}
+              <div className="bg-white dark:bg-surfaceDark p-3 rounded-2xl border border-slate-100 dark:border-lineDark flex justify-between items-center text-xs">
+                <div>
+                  <span className="font-bold text-slate-900 dark:text-white block">สแกนใบเสร็จอัตโนมัติ</span>
+                  <span className="text-[10px] text-slate-400">ถ่ายรูปหรือวางข้อความออเดอร์</span>
+                </div>
+                <div className="flex gap-2">
+                  <input type="file" accept="image/*" ref={mobileOcrInputRef} onChange={handleScanMobileImage} className="hidden" />
+                  <button type="button" onClick={() => mobileOcrInputRef.current && mobileOcrInputRef.current.click()} className="bg-brandPurple text-white px-3 py-1.5 rounded-xl font-bold active:scale-95">
+                    {ocrProcessing ? `${ocrProgress}%` : 'ถ่ายรูป'}
+                  </button>
+                  <button type="button" onClick={() => setShowPasteText(!showPasteText)} className="bg-slate-100 dark:bg-subtleDark text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-xl font-bold active:scale-95">
+                    วางข้อความ
+                  </button>
+                </div>
+              </div>
+
+              {showPasteText && (
+                <div className="bg-white dark:bg-surfaceDark p-3 rounded-2xl border border-slate-200 dark:border-lineDark space-y-2">
+                  <textarea value={rawOrderText} onChange={e => setRawOrderText(e.target.value)} placeholder="วางข้อความสรุปรายการอาหารจาก Grab หรือแอพส่งอาหารที่นี่..." className="w-full h-24 bg-slate-50 dark:bg-subtleDark p-2 rounded-xl text-xs outline-none dark:text-white" />
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setShowPasteText(false)} className="text-xs text-slate-400 px-2">ยกเลิก</button>
+                    <button type="button" onClick={() => {
+                      const p = parseOrderText(rawOrderText);
+                      if (p.extracted.length > 0) setBillItems(p.extracted);
+                      if (p.dFee) setDeliveryFee(p.dFee);
+                      if (p.pCharge) setPackagingCharge(p.pCharge);
+                      setShowPasteText(false);
+                      showToast(`ดึงข้อมูลได้ ${p.extracted.length} รายการ`);
+                    }} className="bg-mint text-white px-3 py-1 rounded-lg text-xs font-bold">แยกรายการ</button>
+                  </div>
+                </div>
+              )}
 
               <form onSubmit={handleSaveBill} className="bg-white dark:bg-surfaceDark rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-lineDark space-y-4">
                 <div className="grid grid-cols-4 gap-1.5">
@@ -1684,7 +1851,7 @@
                 <div className="space-y-2">
                   <input 
                     type="text" 
-                    placeholder="ชื่อรายการ / ร้านอาหาร" 
+                    placeholder="ชื่อรายการ ร้านอาหาร" 
                     value={newBillName} 
                     onChange={e => setNewBillName(e.target.value)} 
                     className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs outline-none focus:border-brandPurple font-medium dark:text-white"
@@ -1701,18 +1868,18 @@
                 {billType === 'loan' ? (
                   <div className="space-y-2">
                     <select value={loanBorrower} onChange={e => setLoanBorrower(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs outline-none dark:text-white" required>
-                      <option value="">-- เลือกคนที่ยืม --</option>
+                      <option value="">เลือกคนที่ยืม</option>
                       {friends.filter(f => !f.isSelf).map(f => <option key={f.id} value={f.name}>{f.name}</option>)}
                     </select>
-                    <input type="text" placeholder="ยอดเงิน (RM)" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs font-bold font-mono dark:text-white" required />
+                    <input type="text" placeholder="ยอดเงิน RM" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs font-bold font-mono dark:text-white" required />
                   </div>
                 ) : billType === 'ride' ? (
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
-                      <input type="text" placeholder="ค่าโดยสาร (RM)" value={rideFare} onChange={e => setRideFare(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs font-mono dark:text-white" required />
-                      <input type="text" placeholder="ค่าทางด่วน (RM)" value={tollFee} onChange={e => setTollFee(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs font-mono dark:text-white" />
+                      <input type="text" placeholder="ค่าโดยสาร RM" value={rideFare} onChange={e => setRideFare(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs font-mono dark:text-white" required />
+                      <input type="text" placeholder="ค่าทางด่วน RM" value={tollFee} onChange={e => setTollFee(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs font-mono dark:text-white" />
                     </div>
-                    <input type="text" placeholder="เส้นทาง (เช่น Pavilion -> KLCC)" value={rideRoute} onChange={e => setRideRoute(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs dark:text-white" />
+                    <input type="text" placeholder="เส้นทาง เช่น Pavilion ถึง KLCC" value={rideRoute} onChange={e => setRideRoute(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs dark:text-white" />
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1751,7 +1918,7 @@
 
                 {billType !== 'loan' && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">คนร่วมหาร ({billFriends.length}):</label>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">คนร่วมหาร {billFriends.length} คน:</label>
                     <div className="flex flex-wrap gap-1.5">
                       {friends.map(f => {
                         const isSel = billFriends.includes(f.name);
@@ -1777,13 +1944,13 @@
             </div>
           )}
 
-          {/* ================= STATEMENT BOTTOM SHEET ================= */}
+          {/* ================= STATEMENT BOTTOM SHEET (พร้อมปุ่ม PDF และ Social) ================= */}
           {selectedFriendForHistory && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col justify-end" onClick={() => setSelectedFriendForHistory(null)}>
               <div className="bg-white dark:bg-surfaceDark border-t border-slate-200 dark:border-lineDark rounded-t-3xl max-h-[85vh] flex flex-col p-5 space-y-4 animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
                 <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto -mt-2 mb-1"></div>
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-lineDark">
-                  <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Statement: {selectedFriendForHistory}</h3>
+                  <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Statement {selectedFriendForHistory}</h3>
                   <button onClick={() => setSelectedFriendForHistory(null)} className="text-slate-400 text-xs">✕</button>
                 </div>
 
@@ -1812,7 +1979,21 @@
                       const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `Statement_${selectedFriendForHistory}.png`; a.click();
                     });
                   }} className="bg-capsuleDark text-white font-bold py-2.5 rounded-xl text-xs">บันทึกรูป PNG</button>
-                  <button onClick={() => setSelectedFriendForHistory(null)} className="bg-slate-100 dark:bg-subtleDark font-bold py-2.5 rounded-xl text-xs text-slate-600 dark:text-slate-300">ปิด</button>
+                  <button onClick={() => {
+                    triggerHaptic();
+                    html2canvas(friendSlipRef.current, { scale: 2 }).then(cv => {
+                      const imgData = cv.toDataURL('image/png');
+                      const { jsPDF } = window.jspdf;
+                      const pdf = new jsPDF('p', 'mm', 'a4');
+                      pdf.addImage(imgData, 'PNG', 10, 10, 190, 0);
+                      pdf.save(`Statement_${selectedFriendForHistory}.pdf`);
+                    });
+                  }} className="bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs">ดาวน์โหลด PDF</button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => shareToSocial(`ยอดค้างชำระของ ${selectedFriendForHistory} ทั้งหมด MYR ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}`, 'whatsapp')} className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs">ส่ง WhatsApp</button>
+                  <button onClick={() => shareToSocial(`ยอดค้างชำระของ ${selectedFriendForHistory} ทั้งหมด MYR ${(friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2)}`, 'ig')} className="bg-rose-600 text-white font-bold py-2 rounded-xl text-xs">ส่ง Instagram</button>
                 </div>
               </div>
             </div>
@@ -1829,12 +2010,12 @@
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-subtleDark p-1 rounded-xl">
-                  <button type="button" onClick={() => { triggerHaptic(); setAdjustType('minus'); }} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-white' : 'text-slate-500'}`}>ชำระแล้ว (-)</button>
-                  <button type="button" onClick={() => { triggerHaptic(); setAdjustType('plus'); }} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'plus' ? 'bg-coral text-white' : 'text-slate-500'}`}>เพิ่มหนี้ (+)</button>
+                  <button type="button" onClick={() => { triggerHaptic(); setAdjustType('minus'); }} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'minus' ? 'bg-mint text-white' : 'text-slate-500'}`}>ชำระแล้ว -</button>
+                  <button type="button" onClick={() => { triggerHaptic(); setAdjustType('plus'); }} className={`py-2 text-xs font-bold rounded-lg transition ${adjustType === 'plus' ? 'bg-coral text-white' : 'text-slate-500'}`}>เพิ่มหนี้ +</button>
                 </div>
 
-                <input type="text" placeholder="จำนวนเงิน (RM)" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} onBlur={e => setAdjustAmount(evaluateMathExpression(e.target.value))} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-sm font-mono font-bold outline-none dark:text-white" required />
-                <input type="text" placeholder="หมายเหตุ (เช่น โอนคืนแล้ว)" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs outline-none dark:text-white" />
+                <input type="text" placeholder="จำนวนเงิน RM" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} onBlur={e => setAdjustAmount(evaluateMathExpression(e.target.value))} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-sm font-mono font-bold outline-none dark:text-white" required />
+                <input type="text" placeholder="หมายเหตุ เช่น โอนคืนแล้ว" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl px-3 py-2 text-xs outline-none dark:text-white" />
 
                 <button type="submit" disabled={isProcessing} className="w-full bg-brandPurple text-white font-bold py-3 rounded-2xl text-xs shadow-lg shadow-brandPurple/30 active:scale-95 transition">
                   {isProcessing ? 'กำลังบันทึก...' : 'ยืนยันปรับยอด'}
@@ -1843,17 +2024,54 @@
             </div>
           )}
 
+          {/* ================= FLOATING CALCULATOR BUTTON & MODAL ================= */}
+          <button
+            onClick={() => setShowCalc(!showCalc)}
+            className="fixed bottom-24 right-5 z-40 bg-brandPurple text-white w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-xl transition active:scale-90"
+            title="เครื่องคิดเลข"
+          >
+            🧮
+          </button>
+
+          {showCalc && (
+            <div className="fixed bottom-36 right-5 z-50 bg-white dark:bg-surfaceDark border border-slate-200 dark:border-lineDark rounded-3xl p-4 shadow-2xl w-64 space-y-3">
+              <div className="flex justify-between items-center pb-1 border-b border-slate-100 dark:border-lineDark">
+                <span className="text-xs font-bold text-brandPurple">เครื่องคิดเลข</span>
+                <button onClick={() => setShowCalc(false)} className="text-slate-400 hover:text-white text-xs font-bold">✕</button>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-subtleDark rounded-xl p-3 text-right text-lg font-mono text-slate-900 dark:text-white overflow-x-auto">
+                {calcInput}
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5 text-xs font-mono font-bold">
+                {['C', 'DEL', '/', '*'].map(btn => (
+                  <button key={btn} onClick={() => handleCalcBtn(btn)} className="bg-slate-100 dark:bg-subtleDark text-amber-500 py-2 rounded-lg">{btn}</button>
+                ))}
+                {['7', '8', '9', '-'].map(btn => (
+                  <button key={btn} onClick={() => handleCalcBtn(btn)} className="bg-slate-100 dark:bg-subtleDark text-slate-700 dark:text-slate-200 py-2 rounded-lg">{btn}</button>
+                ))}
+                {['4', '5', '6', '+'].map(btn => (
+                  <button key={btn} onClick={() => handleCalcBtn(btn)} className="bg-slate-100 dark:bg-subtleDark text-slate-700 dark:text-slate-200 py-2 rounded-lg">{btn}</button>
+                ))}
+                {['1', '2', '3', '='].map(btn => (
+                  <button key={btn} onClick={() => handleCalcBtn(btn)} className={`py-2 rounded-lg ${btn === '=' ? 'bg-mint text-white font-black row-span-2 flex items-center justify-center' : 'bg-slate-100 dark:bg-subtleDark text-slate-700 dark:text-slate-200'}`}>{btn}</button>
+                ))}
+                {['0', '.'].map(btn => (
+                  <button key={btn} onClick={() => handleCalcBtn(btn)} className="bg-slate-100 dark:bg-subtleDark text-slate-700 dark:text-slate-200 py-2 rounded-lg">{btn}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ================= FLOATING DYNAMIC CAPSULE NAVBAR ================= */}
           <div className="fixed bottom-6 left-0 right-0 z-50 flex justify-center pointer-events-none px-4 pb-safe">
             <nav className="pointer-events-auto bg-capsuleDark shadow-[0_16px_40px_rgba(0,0,0,0.5)] rounded-full p-1.5 flex items-center justify-between w-full max-w-[370px]">
               
-              {/* 1. Overview */}
               <button 
                 onClick={() => { triggerHaptic(); setActiveTab('overview'); }}
                 className={`flex-1 py-2 flex flex-col items-center justify-center gap-1 rounded-full transition-all duration-300 ease-out active:scale-95 ${
-                  activeTab === 'overview'
-                    ? 'bg-brandPurple text-white shadow-md font-medium'
-                    : 'text-slate-400 hover:text-white'
+                  activeTab === 'overview' ? 'bg-brandPurple text-white shadow-md font-medium' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1863,13 +2081,10 @@
                 <span className="text-[10px] tracking-tight leading-none">{t('overview')}</span>
               </button>
 
-              {/* 2. Bills */}
               <button 
                 onClick={() => { triggerHaptic(); setActiveTab('bills'); }}
                 className={`flex-1 py-2 flex flex-col items-center justify-center gap-1 rounded-full transition-all duration-300 ease-out active:scale-95 ${
-                  activeTab === 'bills'
-                    ? 'bg-brandPurple text-white shadow-md font-medium'
-                    : 'text-slate-400 hover:text-white'
+                  activeTab === 'bills' ? 'bg-brandPurple text-white shadow-md font-medium' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1883,13 +2098,10 @@
                 <span className="text-[10px] tracking-tight leading-none">{t('bills')}</span>
               </button>
 
-              {/* 3. Calendar */}
               <button 
                 onClick={() => { triggerHaptic(); setActiveTab('calendar'); }}
                 className={`flex-1 py-2 flex flex-col items-center justify-center gap-1 rounded-full transition-all duration-300 ease-out active:scale-95 ${
-                  activeTab === 'calendar'
-                    ? 'bg-brandPurple text-white shadow-md font-medium'
-                    : 'text-slate-400 hover:text-white'
+                  activeTab === 'calendar' ? 'bg-brandPurple text-white shadow-md font-medium' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1901,13 +2113,10 @@
                 <span className="text-[10px] tracking-tight leading-none">{t('calendar')}</span>
               </button>
 
-              {/* 4. Settings */}
               <button 
                 onClick={() => { triggerHaptic(); setActiveTab('settings'); setSettingsSubPage(null); }}
                 className={`flex-1 py-2 flex flex-col items-center justify-center gap-1 rounded-full transition-all duration-300 ease-out active:scale-95 ${
-                  activeTab === 'settings'
-                    ? 'bg-brandPurple text-white shadow-md font-medium'
-                    : 'text-slate-400 hover:text-white'
+                  activeTab === 'settings' ? 'bg-brandPurple text-white shadow-md font-medium' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1925,14 +2134,14 @@
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowAuthModal(false)}>
               <div className="bg-white dark:bg-surfaceDark border border-slate-200 dark:border-lineDark rounded-3xl p-6 w-full max-w-xs space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-lineDark">
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">🔑 เข้าสู่ระบบแอดมิน</h3>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">เข้าสู่ระบบแอดมิน</h3>
                   <button onClick={() => setShowAuthModal(false)} className="text-slate-400 text-xs">✕</button>
                 </div>
                 <button type="button" onClick={handleGoogleLogin} className="w-full bg-slate-50 dark:bg-subtleDark hover:bg-slate-100 border border-slate-200 dark:border-lineDark py-2.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white flex items-center justify-center gap-2 active:scale-95 transition">
                   <span>Google Sign-in</span>
                 </button>
                 <form onSubmit={handleVerifyPin} className="space-y-3 pt-2 border-t border-slate-100 dark:border-lineDark">
-                  <input type="password" pattern="[0-9]*" inputMode="numeric" maxLength="6" placeholder="กรอก PIN 4 หลัก " value={inputPin} onChange={e => setInputPin(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl py-2.5 text-center font-mono text-base tracking-widest outline-none focus:border-brandPurple dark:text-white" autoFocus />
+                  <input type="password" pattern="[0-9]*" inputMode="numeric" maxLength="6" placeholder="กรอก PIN 4 หลัก" value={inputPin} onChange={e => setInputPin(e.target.value)} className="w-full bg-slate-50 dark:bg-subtleDark border border-slate-200 dark:border-lineDark rounded-xl py-2.5 text-center font-mono text-base tracking-widest outline-none focus:border-brandPurple dark:text-white" autoFocus />
                   <button type="submit" className="w-full bg-brandPurple text-white font-bold py-2.5 rounded-xl text-xs active:scale-95 transition shadow-lg shadow-brandPurple/20">ปลดล็อค</button>
                 </form>
               </div>
