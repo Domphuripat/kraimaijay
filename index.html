@@ -980,7 +980,7 @@
                 amount: -remainingCredit,
                 displayAmount: remainingCredit,
                 isPaymentRecord: true,
-                isSettled: true,
+                isSettled: false,
                 note: `🤝 เครดิตคงเหลือหลังล้างหนี้ครบทุกบิล: ${remainingCredit.toFixed(2)} RM`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Date.now() + 2
@@ -1112,7 +1112,7 @@
           amount: finalAmount,
           displayAmount: amount,
           isPaymentRecord: adjustType === 'minus',
-          isSettled: adjustType === 'minus' ? true : false,
+          isSettled: false,
           note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
           date: new Date().toISOString().split('T')[0],
           createdAt: Date.now()
@@ -1832,6 +1832,23 @@
                   date: newBillDate,
                   createdAt: Date.now() + 1
                 });
+
+                // ⚠️ ถ้าเครดิตที่เพื่อนออกให้ (myShareInThisBill) มากกว่ายอดบิลเก่าที่เพื่อนติดรวมกัน
+                // ส่วนเกินนี้คือยอดที่ Dom ยังติดเพื่อนอยู่จริง ต้องบันทึกเป็นหนี้ไว้ ไม่ใช่ปล่อยหาย
+                if (remainingCredit > 0.009) {
+                  const excessOweRef = basePath.collection('adjustments').doc();
+                  batch.set(excessOweRef, {
+                    friendName: friendPayerName,
+                    amount: -remainingCredit,
+                    displayAmount: remainingCredit,
+                    sourceBillId: billDocRef.id,
+                    isPaymentRecord: false,
+                    isSettled: false,
+                    note: `⚙️ ยอดคงเหลือที่ Dom ยังติด ${friendPayerName} หลังหักกลบบิลเก่าหมดแล้ว: ${remainingCredit.toFixed(2)} RM`,
+                    date: newBillDate,
+                    createdAt: Date.now() + 2
+                  });
+                }
               }
             }
 
