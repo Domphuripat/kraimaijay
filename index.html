@@ -375,12 +375,9 @@
       const [isAdminByGoogle, setIsAdminByGoogle] = useState(false);
       
       const [isAdminBySecret, setIsAdminBySecret] = useState(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const hasSecretKey = urlParams.get('admin') === 'true' || urlParams.get('dom') === '2323';
-        if (hasSecretKey) {
-          localStorage.setItem('kraimaijay_secret_admin', 'true');
-          return true;
-        }
+        // หมายเหตุ: ตัดทางลัดเข้า admin ผ่าน URL query (?admin=true / ?dom=2323) ออกแล้ว
+        // เพราะ PIN จะถูกแชร์ไปพร้อมลิงก์โดยไม่ตั้งใจได้ง่าย (เช่น screenshot, history, log)
+        // ต้องกรอก PIN ผ่านหน้าต่าง Sign-In เท่านั้น
         return localStorage.getItem('kraimaijay_secret_admin') === 'true';
       });
 
@@ -623,7 +620,10 @@
           setDb(firestoreInstance);
 
           if (localStorage.getItem('kraimaijay_secret_admin') === 'true' && !authInstance.currentUser) {
-            authInstance.signInAnonymously().catch(() => {});
+            authInstance.signInAnonymously().catch(err => {
+              console.warn("Anonymous sign-in on load failed:", err);
+              showToast("เข้าสู่ระบบอัตโนมัติไม่สำเร็จ ลองลงชื่อเข้าใช้ใหม่อีกครั้ง", "error");
+            });
           }
 
           const unsubAuth = authInstance.onAuthStateChanged(user => {
@@ -723,7 +723,9 @@
         localStorage.removeItem('kraimaijay_secret_admin');
         try {
           await firebase.auth().signOut();
-        } catch (e) {}
+        } catch (e) {
+          console.warn("Sign-out failed:", e);
+        }
         showToast("Logged out. Returned to View-Only mode");
       };
 
