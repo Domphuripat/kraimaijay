@@ -1,20 +1,25 @@
 {
-  "name": "KraiMaiJayMeeReung",
+  "name": "KraiMaiJayMeeReung (ใครไม่จ่ายมีเรื่อง)",
   "short_name": "KraiMaiJay",
-  "start_url": "./mobile.html",
+  "description": "แอปหารบิล บันทึกหนี้ และเคลียร์ยอดเงินกับเพื่อน",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#080C14",
-  "theme_color": "#080C14",
+  "orientation": "portrait-primary",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17",
   "icons": [
     {
       "src": "cat.jpg",
-      "sizes": "192x192",
-      "type": "image/jpeg"
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "any"
     },
     {
       "src": "cat.jpg",
-      "sizes": "512x512",
-      "type": "image/jpeg"
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "maskable"
     }
   ]
 }
