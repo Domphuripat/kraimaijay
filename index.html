@@ -3678,25 +3678,33 @@
 
           </main>
 
-          {/* --- BOTTOM NAV (มือถือเท่านั้น, จอ sm ขึ้นไปใช้แถบแท็บด้านบนตามเดิม) --- */}
+          {/* --- BOTTOM NAV สไตล์ Instagram: ลอยเป็นแคปซูล ไอคอนล้วนไม่มีตัวหนังสือ (มือถือเท่านั้น) --- */}
           <nav
-            className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface/95 backdrop-blur-md border-t border-line flex"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            className="sm:hidden fixed left-4 right-4 z-40 bg-[#111318]/90 backdrop-blur-xl rounded-full shadow-2xl shadow-black/40 border border-white/10 flex items-center justify-between px-2"
+            style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))', height: '60px' }}
           >
             {[
-              { id: 'dashboard', icon: '🏠', label: t('dashboard') },
-              { id: 'bills', icon: '📜', label: t('history') },
-              { id: 'friends', icon: '👥', label: t('friends') },
-              { id: 'adjustments', icon: '⚖️', label: t('adjustments') },
-              { id: 'analytics', icon: '📊', label: t('analytics') }
+              { id: 'dashboard', icon: '🏠' },
+              { id: 'bills', icon: '📜' },
+              { id: 'friends', icon: '👥' },
+              { id: 'adjustments', icon: '⚖️', badge: adjustments.filter(a => !a.isSettled).length },
+              { id: 'analytics', icon: '📊' }
             ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] transition ${activeTab === tab.id ? 'text-accent' : 'text-textMuted'}`}
+                className="relative flex-1 flex items-center justify-center h-full"
               >
-                <span className="text-xl leading-none">{tab.icon}</span>
-                <span className={`text-[10px] leading-none ${activeTab === tab.id ? 'font-bold' : 'font-medium'}`}>{tab.label}</span>
+                <span
+                  className={`w-11 h-11 rounded-full flex items-center justify-center text-xl leading-none transition ${activeTab === tab.id ? 'bg-white text-black scale-100' : 'text-white/60 scale-95'}`}
+                >
+                  {tab.icon}
+                </span>
+                {tab.badge > 0 && (
+                  <span className="absolute top-1.5 right-[22%] min-w-[18px] h-[18px] px-1 rounded-full bg-coral text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {tab.badge > 9 ? '9+' : tab.badge}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
