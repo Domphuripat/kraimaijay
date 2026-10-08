@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>KraiMaiJayMeeReung - Split, Loan & Settle</title>
   
   <!-- Web App & Home Screen Icons -->
@@ -2338,10 +2338,10 @@
             </div>
           </header>
 
-          <main className="max-w-4xl mx-auto px-4 mt-6">
-            
-            {/* Tabs */}
-            <div className="flex bg-surface p-1 rounded-2xl gap-1 mb-6 border border-line overflow-x-auto">
+          <main className="max-w-4xl mx-auto px-4 mt-6 pb-24 sm:pb-6">
+
+            {/* Tabs — บนจอใหญ่ (sm ขึ้นไป) แสดงแบบแถบด้านบนเหมือนเดิม บนมือถือซ่อนไว้ ใช้ Bottom Nav แทน */}
+            <div className="hidden sm:flex bg-surface p-1 rounded-2xl gap-1 mb-6 border border-line overflow-x-auto">
               {[
                 { id: 'dashboard', label: t('dashboard') },
                 { id: 'bills', label: `${t('history')} (${bills.length})` },
@@ -3678,10 +3678,33 @@
 
           </main>
 
+          {/* --- BOTTOM NAV (มือถือเท่านั้น, จอ sm ขึ้นไปใช้แถบแท็บด้านบนตามเดิม) --- */}
+          <nav
+            className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface/95 backdrop-blur-md border-t border-line flex"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          >
+            {[
+              { id: 'dashboard', icon: '🏠', label: t('dashboard') },
+              { id: 'bills', icon: '📜', label: t('history') },
+              { id: 'friends', icon: '👥', label: t('friends') },
+              { id: 'adjustments', icon: '⚖️', label: t('adjustments') },
+              { id: 'analytics', icon: '📊', label: t('analytics') }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] transition ${activeTab === tab.id ? 'text-accent' : 'text-textMuted'}`}
+              >
+                <span className="text-xl leading-none">{tab.icon}</span>
+                <span className={`text-[10px] leading-none ${activeTab === tab.id ? 'font-bold' : 'font-medium'}`}>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+
           {/* --- FLOATING CALCULATOR BUTTON --- */}
           <button
             onClick={() => setShowCalc(!showCalc)}
-            className="fixed bottom-5 right-5 z-40 bg-accent hover:bg-accent-hover text-white w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-xl transition active:scale-90"
+            className="fixed bottom-24 right-5 sm:bottom-5 z-40 bg-accent hover:bg-accent-hover text-white w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-xl transition active:scale-90"
             title={t('calculator')}
           >
             🧮
@@ -3689,7 +3712,7 @@
 
           {/* --- FLOATING CALCULATOR MODAL --- */}
           {showCalc && (
-            <div className="fixed bottom-20 right-5 z-50 bg-surface border border-line rounded-3xl p-4 shadow-2xl w-64 space-y-3">
+            <div className="fixed bottom-40 right-5 sm:bottom-20 z-50 bg-surface border border-line rounded-3xl p-4 shadow-2xl w-64 space-y-3">
               <div className="flex justify-between items-center pb-1 border-b border-line">
                 <span className="text-xs font-bold text-accent">{t('calculator')}</span>
                 <div className="flex gap-2">
@@ -4302,14 +4325,14 @@
 
           {/* OCR / Sanity Check Warning */}
           {isMismatch && (
-            <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto bg-amber-950/90 border border-amber-500 text-amber-200 p-3 rounded-xl text-xs font-bold shadow-2xl flex items-center justify-between z-50 backdrop-blur-md">
+            <div className="fixed bottom-40 left-4 right-4 sm:bottom-20 max-w-md mx-auto bg-amber-950/90 border border-amber-500 text-amber-200 p-3 rounded-xl text-xs font-bold shadow-2xl flex items-center justify-between z-50 backdrop-blur-md">
               <span>⚠️ ยอดรวมสินค้า ({itemsSum.toFixed(2)}) ไม่ตรงกับ Net Total ({calculatedNetTotal.toFixed(2)})</span>
             </div>
           )}
 
           {/* Toast Notification */}
           {toast && (
-            <div className={`fixed bottom-5 right-5 z-50 bg-surface border px-4 py-3 rounded-xl text-sm shadow-xl ${toast.type === 'error' ? 'border-coral/40 text-coral bg-coral-subtle/80' : 'border-mint/40 text-mint bg-mint-subtle/80'}`}>
+            <div className={`fixed bottom-24 right-5 sm:bottom-5 z-50 bg-surface border px-4 py-3 rounded-xl text-sm shadow-xl ${toast.type === 'error' ? 'border-coral/40 text-coral bg-coral-subtle/80' : 'border-mint/40 text-mint bg-mint-subtle/80'}`}>
               {toast.message}
             </div>
           )}
@@ -4319,6 +4342,18 @@
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
+  </script>
+
+  <script>
+    // ลงทะเบียน Service Worker เพื่อให้ติดตั้งเป็น PWA ลงหน้าจอมือถือได้ และเปิดได้เร็วขึ้นครั้งถัดไป
+    // (ไม่เกี่ยวกับ Firestore/ข้อมูล แคชแค่ไฟล์หน้าตาแอปเท่านั้น ข้อมูลยังดึงสดจาก Firebase เหมือนเดิมทุกครั้ง)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => {
+          console.warn('Service worker registration failed:', err);
+        });
+      });
+    }
   </script>
 </body>
 </html>
