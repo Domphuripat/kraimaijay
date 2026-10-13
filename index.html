@@ -124,7 +124,17 @@
       "phuripat26dom@gmail.com"
     ];
 
-    const ADMIN_PIN = "2323";
+    // ชื่อที่หมายถึง "ตัวเอง" ต้องตรงทั้งคำเท่านั้น (เดิมใช้ /me|dom/ ซึ่งไป match ชื่อเพื่อนอย่าง James, Ahmed, Mei)
+    const SELF_NAMES = ['me (dom)', 'ตัวฉันเอง', 'me', 'dom'];
+    const isSelfName = (name) => SELF_NAMES.includes((name || '').trim().toLowerCase());
+
+    // วันที่ตามเวลาเครื่อง (MYT) รูปแบบ YYYY-MM-DD — เดิมใช้ toISOString() ซึ่งเป็น UTC ทำให้ช่วง 00:00-08:00 กลายเป็นเมื่อวาน
+    const localDateStr = (d = new Date()) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
 
     const DEFAULT_FIREBASE_CONFIG = {
       apiKey: "AIzaSyC4RNzFy2wi7S4ZKN2_DWfHY_hUldwzmRQ",
@@ -407,19 +417,12 @@
 
       const [currentUser, setCurrentUser] = useState(null);
       const [isAdminByGoogle, setIsAdminByGoogle] = useState(false);
-      
-      const [isAdminBySecret, setIsAdminBySecret] = useState(() => {
-        // หมายเหตุ: ตัดทางลัดเข้า admin ผ่าน URL query (?admin=true / ?dom=2323) ออกแล้ว
-        // เพราะ PIN จะถูกแชร์ไปพร้อมลิงก์โดยไม่ตั้งใจได้ง่าย (เช่น screenshot, history, log)
-        // ต้องกรอก PIN ผ่านหน้าต่าง Sign-In เท่านั้น
-        return localStorage.getItem('kraimaijay_secret_admin') === 'true';
-      });
 
-      const isAdmin = isAdminByGoogle || isAdminBySecret;
+      // Admin ได้เฉพาะการล็อกอิน Google ด้วยอีเมลใน ADMIN_EMAILS (ตรงกับ Firestore Rules)
+      const isAdmin = isAdminByGoogle;
       const [isProcessing, setIsProcessing] = useState(false);
 
       const [showAuthModal, setShowAuthModal] = useState(false);
-      const [inputPin, setInputPin] = useState('');
 
       // Floating Calculator State
       const [showCalc, setShowCalc] = useState(false);
@@ -439,7 +442,7 @@
       // Search, Filters & Analytics Month Selection
       const [searchQuery, setSearchQuery] = useState('');
       const [statusFilter, setStatusFilter] = useState('all');
-      const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
+      const [selectedMonth, setSelectedMonth] = useState(() => localDateStr().substring(0, 7));
       const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
       const restoreInputRef = useRef(null);
 
@@ -447,7 +450,7 @@
       const [editingBillId, setEditingBillId] = useState(null);
       const [newBillName, setNewBillName] = useState('');
       const [billType, setBillType] = useState('delivery');
-      const [newBillDate, setNewBillDate] = useState(new Date().toISOString().split('T')[0]);
+      const [newBillDate, setNewBillDate] = useState(localDateStr());
       const [billFriends, setBillFriends] = useState([]);
       const [paidBy, setPaidBy] = useState('Me (Dom)');
       const [remainderMode, setRemainderMode] = useState('distribute');
@@ -510,7 +513,7 @@
         setPaidBy(bill.paidBy || 'Me (Dom)');
         setRemainderMode(bill.remainderMode || 'distribute');
         setTaxMode(bill.taxMode || 'inclusive');
-        setNewBillDate(bill.date || new Date().toISOString().split('T')[0]);
+        setNewBillDate(bill.date || localDateStr());
         setDeliveryFee(bill.deliveryFee || 0);
         setPackagingCharge(bill.packagingCharge || 0);
         setDiscountAmount(bill.discountAmount || 0);
@@ -653,12 +656,8 @@
           const firestoreInstance = firebase.firestore(firebaseApp);
           setDb(firestoreInstance);
 
-          if (localStorage.getItem('kraimaijay_secret_admin') === 'true' && !authInstance.currentUser) {
-            authInstance.signInAnonymously().catch(err => {
-              console.warn("Anonymous sign-in on load failed:", err);
-              showToast("เข้าสู่ระบบอัตโนมัติไม่สำเร็จ ลองลงชื่อเข้าใช้ใหม่อีกครั้ง", "error");
-            });
-          }
+          // ล้างค่าจากระบบ PIN เดิม
+          localStorage.removeItem('kraimaijay_secret_admin');
 
           const unsubAuth = authInstance.onAuthStateChanged(user => {
             setCurrentUser(user);
@@ -728,33 +727,12 @@
             }
           }
         } catch (err) {
-          showToast("Google sign-in failed. Please use PIN below!", "error");
-        }
-      };
-
-      const handleVerifyPin = async (e) => {
-        e.preventDefault();
-        if (inputPin === ADMIN_PIN) {
-          setIsAdminBySecret(true);
-          localStorage.setItem('kraimaijay_secret_admin', 'true');
-          try {
-            await firebase.auth().signInAnonymously();
-          } catch (err) {
-            console.warn("Anonymous auth failed", err);
-          }
-          setShowAuthModal(false);
-          setInputPin('');
-          showToast("👑 PIN Correct: Admin mode unlocked!");
-        } else {
-          showToast("รหัส PIN ไม่ถูกต้อง", "error");
-          setInputPin('');
+          showToast("เข้าสู่ระบบด้วย Google ไม่สำเร็จ ลองใหม่อีกครั้ง", "error");
         }
       };
 
       const handleLogoutAdmin = async () => {
-        setIsAdminBySecret(false);
         setIsAdminByGoogle(false);
-        localStorage.removeItem('kraimaijay_secret_admin');
         try {
           await firebase.auth().signOut();
         } catch (e) {
@@ -772,13 +750,13 @@
 
         bills.forEach(bill => {
           const billPayer = bill.paidBy || 'Me (Dom)';
-          const isDomPayer = /me|dom/i.test(billPayer);
+          const isDomPayer = isSelfName(billPayer);
 
           if (isDomPayer) {
             Object.keys(bill.splits || {}).forEach(name => {
               const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
               const realName = fObj ? fObj.name : name;
-              const isSelf = fObj?.isSelf || /me|dom/i.test(realName);
+              const isSelf = fObj?.isSelf || isSelfName(realName);
               if (balances[realName] && !isSelf && !bill.paidStatus?.[name]) {
                 balances[realName].billsOwed += bill.splits[name];
               }
@@ -813,7 +791,7 @@
 
       const friendBalances = getFriendBalances();
 
-      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayDateStr = localDateStr();
       const todayMyExpense = bills
         .filter(b => b.date === todayDateStr)
         .reduce((sum, b) => {
@@ -885,7 +863,7 @@
               isSettled: true,
               relatedBillIds: settledBillIds,
               note: `⚡ เคลียร์ยอดบิลทั้งหมด (${unpaidBills.length} รายการ)`,
-              date: new Date().toISOString().split('T')[0],
+              date: localDateStr(),
               createdAt: Date.now() + 1
             });
             operationsCount++;
@@ -917,7 +895,7 @@
 
         const unpaidBills = bills
           .filter(b => {
-            const isDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
+            const isDomPayer = isSelfName(b.paidBy || 'Me (Dom)');
             const splitsKeys = Object.keys(b.splits || {});
             const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendName.toLowerCase());
             const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
@@ -968,10 +946,11 @@
                   friendName,
                   amount: remainingDebtOnThisBill,
                   displayAmount: remainingDebtOnThisBill,
+                  sourceBillId: sourceBillId || null,
                   isPaymentRecord: false,
                   isSettled: false,
                   note: `⚙️ ยอดค้างส่วนต่างบิล: ${bill.name} (ตัดด้วยบิล ${sourceBillName || 'ล่าสุด'} ไป ${remainingCredit.toFixed(2)} RM)`,
-                  date: new Date().toISOString().split('T')[0],
+                  date: localDateStr(),
                   createdAt: Date.now()
                 });
 
@@ -988,7 +967,7 @@
               if (srcBill) {
                 const nextStatus = { ...(srcBill.paidStatus || {}) };
                 Object.keys(srcBill.splits || {}).forEach(k => {
-                  if (/me|dom|ตัวฉันเอง/i.test(k)) nextStatus[k] = true;
+                  if (isSelfName(k)) nextStatus[k] = true;
                 });
                 batch.update(basePath.collection('bills').doc(sourceBillId), { paidStatus: nextStatus });
                 autoSettledBillIds.push(sourceBillId);
@@ -1005,7 +984,7 @@
               isSettled: true,
               relatedBillIds: autoSettledBillIds,
               note: `⚡ Smart Net-off: ตัดล้างหนี้บิลเก่าด้วยบิล ${sourceBillName || 'ล่าสุด'} (${parsedCredit.toFixed(2)} RM)`,
-              date: new Date().toISOString().split('T')[0],
+              date: localDateStr(),
               createdAt: Date.now() + 1
             });
 
@@ -1015,10 +994,11 @@
                 friendName,
                 amount: -remainingCredit,
                 displayAmount: remainingCredit,
+                sourceBillId: sourceBillId || null,
                 isPaymentRecord: true,
                 isSettled: false,
                 note: `🤝 เครดิตคงเหลือหลังล้างหนี้ครบทุกบิล: ${remainingCredit.toFixed(2)} RM`,
-                date: new Date().toISOString().split('T')[0],
+                date: localDateStr(),
                 createdAt: Date.now() + 2
               });
             }
@@ -1066,7 +1046,7 @@
                 if (billObj) {
                   const nextStatus = { ...(billObj.paidStatus || {}) };
                   Object.keys(nextStatus).forEach(k => {
-                    if (k.toLowerCase() === adj.friendName.toLowerCase() || /me|dom|ตัวฉันเอง/i.test(k)) {
+                    if (k.toLowerCase() === adj.friendName.toLowerCase() || isSelfName(k)) {
                       nextStatus[k] = false;
                     }
                   });
@@ -1150,7 +1130,7 @@
           isPaymentRecord: adjustType === 'minus',
           isSettled: false,
           note: adjustNote.trim() || (adjustType === 'plus' ? 'เพิ่มยอดหนี้ (Add Debt)' : `ชำระบางส่วน (Partial Pay: ${amount.toFixed(2)} RM)`),
-          date: new Date().toISOString().split('T')[0],
+          date: localDateStr(),
           createdAt: Date.now()
         };
 
@@ -1725,10 +1705,51 @@
         );
 
         let initialPaidStatus = {};
+        // 🔁 ตอนแก้ไขบิล: ย้อนการหักกลบ (net-off) ที่บิลนี้เคยทำไว้ก่อน แล้วค่อยคำนวณใหม่จากยอดล่าสุด
+        // ไม่งั้น FIFO จะรันซ้อนทุกครั้งที่กดบันทึก และไปตัดบิลเก่าเพิ่ม/สร้าง log ซ้ำ
+        const statusOverrides = {}; // billId -> paidStatus ใหม่ที่จะเขียนลงบิลเก่า (รวบรวมแล้วเขียนครั้งเดียว)
+        let adjsToRollback = [];
         if (editingBillId) {
           const oldBill = bills.find(b => b.id === editingBillId);
-          initialPaidStatus = oldBill?.paidStatus || {};
+          initialPaidStatus = { ...(oldBill?.paidStatus || {}) };
+
+          // เปลี่ยนคนจ่าย: คนจ่ายเดิมถูกตั้ง Paid ไว้อัตโนมัติ ต้องล้างออกให้คำนวณใหม่
+          const oldPayer = oldBill?.paidBy || 'Me (Dom)';
+          if (oldPayer.toLowerCase() !== paidBy.toLowerCase()) {
+            Object.keys(initialPaidStatus).forEach(k => {
+              if (k.toLowerCase() === oldPayer.toLowerCase()) delete initialPaidStatus[k];
+            });
+          }
+
+          adjsToRollback = adjustments.filter(a =>
+            a.sourceBillId === editingBillId ||
+            // ข้อมูลเก่า: adjustment ยอดคงเหลือบางส่วนไม่ได้เก็บ sourceBillId ไว้ ต้องจับคู่จากข้อความ + วันที่
+            (oldBill && !a.sourceBillId && a.date === oldBill.date &&
+              (a.friendName || '').toLowerCase() === (oldBill.paidBy || '').toLowerCase() &&
+              (a.note || '').includes(`หักล้างอัตโนมัติด้วยบิล ${oldBill.name} ไป`))
+          );
+
+          adjsToRollback.forEach(adj => {
+            (adj.relatedBillIds || []).forEach(bId => {
+              if (bId === editingBillId) return;
+              const b = bills.find(x => x.id === bId);
+              if (!b) return;
+              const next = statusOverrides[bId] || { ...(b.paidStatus || {}) };
+              Object.keys(next).forEach(k => {
+                if (k.toLowerCase() === (adj.friendName || '').toLowerCase()) next[k] = false;
+              });
+              statusOverrides[bId] = next;
+            });
+          });
+
+          // ถ้าเคยหักกลบไว้ ส่วนของ Dom ในบิลนี้ถูกตั้งเป็น Paid ให้คืนค่าเพื่อคำนวณใหม่
+          if (adjsToRollback.some(a => Array.isArray(a.relatedBillIds))) {
+            Object.keys(initialPaidStatus).forEach(k => {
+              if (isSelfName(k)) delete initialPaidStatus[k];
+            });
+          }
         }
+        const effectiveStatus = (b) => statusOverrides[b.id] || b.paidStatus || {};
 
         const participantsToProcess = billType === 'loan' ? (loanBorrower ? [loanBorrower] : []) : billFriends;
 
@@ -1791,21 +1812,25 @@
               batch.set(billDocRef, billPayload);
             }
 
+            adjsToRollback.forEach(adj => {
+              batch.delete(basePath.collection('adjustments').doc(adj.id));
+            });
+
             // ⚡ SMART FIFO AUTO-NETOFF: ถ้าเพื่อนจ่าย และ Dom มีส่วนต้องออก ให้วิ่งไปตัดบิลเก่าที่เพื่อนค้างเราทันที
-            const isDomPayer = /me|dom/i.test(paidBy);
+            const isDomPayer = isSelfName(paidBy);
             const myShareInThisBill = calculated.splits?.['Me (Dom)'] || calculated.splits?.['ตัวฉันเอง'] || 0;
 
             if (!isDomPayer && myShareInThisBill > 0) {
               const friendPayerName = paidBy;
               const unpaidBills = bills
                 .filter(b => {
-                  const bDomPayer = /me|dom/i.test(b.paidBy || 'Me (Dom)');
+                  const bDomPayer = isSelfName(b.paidBy || 'Me (Dom)');
                   const splitsKeys = Object.keys(b.splits || {});
                   const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase());
-                  const isUnpaid = matchedKey && !b.paidStatus?.[matchedKey] && (b.splits[matchedKey] || 0) > 0;
-                  return bDomPayer && isUnpaid;
+                  const isUnpaid = matchedKey && !effectiveStatus(b)[matchedKey] && (b.splits[matchedKey] || 0) > 0;
+                  return b.id !== billDocRef.id && bDomPayer && isUnpaid;
                 })
-                .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+                .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0) || (a.createdAt || 0) - (b.createdAt || 0));
 
               if (unpaidBills.length > 0) {
                 let remainingCredit = myShareInThisBill;
@@ -1818,24 +1843,22 @@
                   const splitsKeys = Object.keys(oldBill.splits || {});
                   const matchedKey = splitsKeys.find(k => k.toLowerCase() === friendPayerName.toLowerCase()) || friendPayerName;
                   const billDebt = oldBill.splits[matchedKey] || 0;
-                  const oldBDoc = basePath.collection('bills').doc(oldBill.id);
 
                   if (remainingCredit >= billDebt) {
-                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
-                    batch.update(oldBDoc, { paidStatus: nextStatus });
+                    statusOverrides[oldBill.id] = { ...effectiveStatus(oldBill), [matchedKey]: true };
                     remainingCredit = Math.round((remainingCredit - billDebt) * 100) / 100;
                     autoSettledBillIds.push(oldBill.id);
                     settledCount++;
                   } else {
                     const remainingDebt = Math.round((billDebt - remainingCredit) * 100) / 100;
-                    const nextStatus = { ...(oldBill.paidStatus || {}), [matchedKey]: true };
-                    batch.update(oldBDoc, { paidStatus: nextStatus });
+                    statusOverrides[oldBill.id] = { ...effectiveStatus(oldBill), [matchedKey]: true };
 
                     const partAdjRef = basePath.collection('adjustments').doc();
                     batch.set(partAdjRef, {
                       friendName: friendPayerName,
                       amount: remainingDebt,
                       displayAmount: remainingDebt,
+                      sourceBillId: billDocRef.id,
                       isPaymentRecord: false,
                       isSettled: false,
                       note: `⚙️ ยอดคงเหลือบิล: ${oldBill.name} (หักล้างอัตโนมัติด้วยบิล ${newBillName} ไป ${remainingCredit.toFixed(2)} RM)`,
@@ -1888,6 +1911,11 @@
               }
             }
 
+            // เขียนสถานะบิลเก่าทั้งหมด (ทั้งที่ถูกย้อนคืนและที่ถูกหักใหม่) ครั้งเดียวต่อบิล
+            Object.entries(statusOverrides).forEach(([bId, status]) => {
+              batch.update(basePath.collection('bills').doc(bId), { paidStatus: status });
+            });
+
             await batch.commit();
             showToast("บันทึกบิลและคำนวณยอดเรียบร้อย! 🎉");
           } catch (err) {
@@ -1930,7 +1958,7 @@
                 isPaymentRecord: true,
                 isSettled: true,
                 note: `✓ ชำระแล้ว: ${bill.name}`,
-                date: new Date().toISOString().split('T')[0],
+                date: localDateStr(),
                 createdAt: Date.now()
               });
             } else if (!newPaidStatus) {
@@ -1980,7 +2008,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `KraiMaiJay_Backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `KraiMaiJay_Backup_${localDateStr()}.json`;
         a.click();
         URL.revokeObjectURL(url);
         showToast("JSON Backup downloaded successfully! 📦");
@@ -2007,7 +2035,7 @@
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `KraiMaiJay_Bills_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute("download", `KraiMaiJay_Bills_${localDateStr()}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -2241,27 +2269,27 @@
 
       const totalOwedAmount = Object.keys(friendBalances).reduce((acc, name) => {
         const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
-        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        const isMe = fObj?.isSelf || isSelfName(name);
         if (!isMe) return acc + Math.max(0, friendBalances[name].totalOwed);
         return acc;
       }, 0);
 
       const pendingDebtorsCount = Object.keys(friendBalances).filter(name => {
         const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
-        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        const isMe = fObj?.isSelf || isSelfName(name);
         return !isMe && friendBalances[name].totalOwed > 0;
       }).length;
 
       // ตัวแปรคำนวณจำนวนลูกหนี้/เจ้าหนี้สำหรับปุ่มฟิลเตอร์
       const receivableCount = Object.keys(friendBalances).filter(name => {
         const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
-        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        const isMe = fObj?.isSelf || isSelfName(name);
         return !isMe && friendBalances[name].totalOwed > 0;
       }).length;
 
       const payableCount = Object.keys(friendBalances).filter(name => {
         const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
-        const isMe = fObj?.isSelf || /me|dom/i.test(name);
+        const isMe = fObj?.isSelf || isSelfName(name);
         return !isMe && friendBalances[name].totalOwed < 0;
       }).length;
 
@@ -2270,7 +2298,7 @@
       // กรองรายชื่อเพื่อนเฉพาะที่มียอดค้างชำระจริง (ไม่แสดงคนยอด 0 และไม่แสดงตัวเอง)
       const unsettledFriendList = useMemo(() => {
         return friends.filter(f => {
-          const isMe = f.isSelf || /me|dom/i.test(f.name);
+          const isMe = f.isSelf || isSelfName(f.name);
           const bal = friendBalances[f.name]?.totalOwed || 0;
           if (isMe || bal === 0) return false;
           if (dashboardDebtFilter === 'receivable') return bal > 0;
@@ -3826,32 +3854,11 @@
                   <span>Sign in with Google</span>
                 </button>
 
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-[1px] bg-line"></div>
-                  <span className="text-[10px] text-textMuted uppercase font-mono">OR USE PIN</span>
-                  <div className="flex-1 h-[1px] bg-line"></div>
-                </div>
+                <p className="text-[11px] text-textMuted text-center">
+                  เฉพาะบัญชี Google ที่ได้รับสิทธิ์เท่านั้นที่แก้ไขข้อมูลได้
+                </p>
 
-                <form onSubmit={handleVerifyPin} className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-textSecondary mb-1 font-medium">{t('pinPrompt')}</label>
-                    <input 
-                      type="password"
-                      pattern="[0-9]*"
-                      inputMode="numeric"
-                      maxLength="6"
-                      placeholder="PIN"
-                      value={inputPin}
-                      onChange={(e) => setInputPin(e.target.value)}
-                      className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-center text-lg tracking-widest font-mono focus:border-accent outline-none"
-                    />
-                  </div>
-
-                  <div className="flex gap-2 pt-1">
-                    <button type="submit" className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2 rounded-xl text-xs transition shadow-md shadow-accent/20">{t('unlock')}</button>
-                    <button type="button" onClick={() => setShowAuthModal(false)} className="bg-subtle border border-line text-textPrimary py-2 px-3 rounded-xl text-xs hover:bg-line">{t('cancel')}</button>
-                  </div>
-                </form>
+                <button type="button" onClick={() => setShowAuthModal(false)} className="w-full bg-subtle border border-line text-textPrimary py-2 rounded-xl text-xs hover:bg-line">{t('cancel')}</button>
               </div>
             </div>
           )}
