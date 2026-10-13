@@ -9,7 +9,7 @@
 // (ไม่ได้ผ่าน fetch ของหน้านี้) service worker ตัวนี้จึง "ไม่แคชข้อมูลเงิน" เด็ดขาด
 // ไม่ต้องกลัวเห็นยอดเก่าค้างเพราะแคช
 
-const CACHE_NAME = 'kraimaijay-shell-v1';
+const CACHE_NAME = 'kraimaijay-shell-v2';
 
 // ปรับรายชื่อไฟล์ตรงนี้ให้ตรงกับไฟล์จริงที่คุณ deploy คู่กับ index.html
 const APP_SHELL = [
