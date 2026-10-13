@@ -66,9 +66,6 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- Tesseract.js (Client-side Offline OCR) -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
   <!-- html2canvas & jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -806,14 +803,9 @@ Rules:
         { id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }
       ]);
 
-      // OCR States
-      const [selectedImages, setSelectedImages] = useState([]);
-      const [imageRotation, setImageRotation] = useState(0);
-      const [ocrProcessing, setOcrProcessing] = useState(false);
-      const [ocrProgress, setOcrProgress] = useState(0);
+      // Paste-receipt States
       const [showRawTextInput, setShowRawTextInput] = useState(false);
       const [rawOrderText, setRawOrderText] = useState('');
-      const fileInputRef = useRef(null);
 
       // Friends & Adjustment Modals
       const [newFriendName, setNewFriendName] = useState('');
@@ -1620,46 +1612,6 @@ Rules:
         handleCancelRenameFriend();
       };
 
-      // OCR Canvas Rotation & Pre-processing
-      const preprocessImageWithRotation = (file, angle) => {
-        return new Promise((resolve) => {
-          const img = new Image();
-          const objectUrl = URL.createObjectURL(file);
-          img.onload = () => {
-            URL.revokeObjectURL(objectUrl);
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            if (angle === 90 || angle === 270) {
-              canvas.width = img.height;
-              canvas.height = img.width;
-            } else {
-              canvas.width = img.width;
-              canvas.height = img.height;
-            }
-
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.rotate((angle * Math.PI) / 180);
-            ctx.drawImage(img, -img.width / 2, -img.height / 2);
-
-            // Binarization thresholding
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-              const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-              const v = gray > 145 ? 255 : 0;
-              d[i] = v;
-              d[i + 1] = v;
-              d[i + 2] = v;
-            }
-            ctx.putImageData(imgData, 0, 0);
-
-            canvas.toBlob((blob) => resolve(blob || file), 'image/png');
-          };
-          img.src = objectUrl;
-        });
-      };
-
       // ใส่ผลอ่านใบเสร็จลงฟอร์ม: รายการ, service charge, ภาษี, ค่าส่ง, ค่าธรรมเนียม, ส่วนลด และยอดปัดเศษ
       const applyParsedReceipt = (r) => {
         const form = receiptToForm(r);
@@ -1702,79 +1654,22 @@ Rules:
         return true;
       };
 
-      const copyReceiptPrompt = () => {
-        navigator.clipboard.writeText(RECEIPT_AI_PROMPT).then(() => {
-          showToast('📋 คัดลอกคำสั่งแล้ว — วางใน Gemini พร้อมรูปใบเสร็จ แล้วคัดลอกคำตอบกลับมาวางที่นี่');
-        }).catch(() => showToast('คัดลอกไม่สำเร็จ', 'error'));
-      };
-
-      const handleAddImages = (e) => {
-        const files = Array.from(e.target.files);
-        if (!files.length) return;
-        setSelectedImages(prev => [...prev, ...files]);
-      };
-
-      const handleRemoveImage = (index) => {
-        setSelectedImages(prev => prev.filter((_, idx) => idx !== index));
-      };
-
-      const handleProcessAllImages = async () => {
-        if (!selectedImages.length) return;
-        setOcrProcessing(true);
-        setOcrProgress(0);
-
-        const combined = emptyReceipt();
-        let extractedRideFare = 0;
-
-        try {
-          showToast("⚡ กำลังประมวลผล OCR & สแกนบิล...");
-          for (let i = 0; i < selectedImages.length; i++) {
-            const rawFile = selectedImages[i];
-            const processedBlob = await preprocessImageWithRotation(rawFile, imageRotation);
-
-            const { data: { text } } = await Tesseract.recognize(
-              processedBlob,
-              'eng+tha',
-              {
-                logger: m => {
-                  if (m.status === 'recognizing text') {
-                    const singleProgress = m.progress || 0;
-                    setOcrProgress(Math.round(((i + singleProgress) / selectedImages.length) * 100));
-                  }
-                }
-              }
-            );
-
-            // หลายรูป (เช่น แคปหน้าจอต่อกัน): รวมรายการที่ไม่ซ้ำ และใช้ค่าธรรมเนียม/ยอดรวมจากรูปที่เจอ
-            const parsed = parseReceiptLines(text);
-            parsed.items.forEach(item => {
-              if (!combined.items.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) combined.items.push(item);
-            });
-            ['subtotal', 'scPercent', 'scAmount', 'taxPercent', 'taxAmount', 'deliveryFee', 'packaging', 'otherFees', 'discount', 'rounding', 'total', 'toll'].forEach(k => {
-              if (parsed[k]) combined[k] = parsed[k];
-            });
-
-            if (billType === 'ride') {
-              const prices = text.split('\n').map(l => lastMoney(l) || 0).filter(p => p > 0);
-              if (prices.length > 0) extractedRideFare = Math.max(extractedRideFare, ...prices);
-            }
-          }
-
-          if (billType === 'ride' && extractedRideFare > 0) {
-            setRideFare(extractedRideFare);
-            if (combined.toll) setTollFee(combined.toll);
-            if (combined.discount) setDiscountAmount(combined.discount);
-            showToast("สแกนค่าโดยสารสำเร็จ!");
-          } else if (!applyParsedReceipt(combined)) {
-            showToast("OCR อ่านรายการไม่ชัดเจน แนะนำให้ใช้ '📝 Paste Text' กับคำสั่งสำหรับ Gemini", "error");
-          }
-        } catch (err) {
-          console.error("Scanning Error:", err);
-          showToast(`เกิดข้อผิดพลาดในการสแกน: ${err.message}`, "error");
-        } finally {
-          setOcrProcessing(false);
-          setSelectedImages([]);
-          if (fileInputRef.current) fileInputRef.current.value = '';
+      // อ่านคำตอบจากคลิปบอร์ดแล้วแกะใส่ฟอร์มทันที (ถ้าเบราว์เซอร์ไม่ให้อ่าน ให้เปิดช่องวางเอง)
+      const handlePasteFromClipboard = async () => {
+        let text = '';
+        try { text = await navigator.clipboard.readText(); } catch (e) { text = ''; }
+        if (!text || !text.trim()) {
+          setShowRawTextInput(true);
+          showToast('อ่านคลิปบอร์ดไม่ได้ — กดค้างที่ช่องด้านล่างแล้วเลือก "วาง"', 'error');
+          return;
+        }
+        if (applyParsedReceipt(parseReceipt(text))) {
+          setShowRawTextInput(false);
+          setRawOrderText('');
+        } else {
+          setRawOrderText(text);
+          setShowRawTextInput(true);
+          showToast('ข้อความที่คัดลอกมาไม่ใช่ใบเสร็จ ลองคัดลอกคำตอบของ AI ทั้งหมดอีกครั้ง', 'error');
         }
       };
 
@@ -2601,7 +2496,6 @@ Rules:
         setRideRoute('');
         setLoanAmount('');
         setLoanBorrower('');
-        setSelectedImages([]);
         setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
         setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
         setActiveTab('new-bill');
@@ -2894,63 +2788,29 @@ Rules:
 
                   {/* SMART SCANNER WITH ROTATION */}
                   {billType !== 'loan' && (
-                    <div className="bg-subtle border border-line p-4 rounded-xl space-y-3">
-                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                        <div>
-                          <p className="text-sm font-bold text-textPrimary flex items-center gap-2">
-                            <span>📸 Offline Smart Scanner (100% Free)</span>
-                          </p>
-                          <p className="text-xs text-textSecondary mt-0.5">Canvas Pre-processing + Smart Regex for Grab, Aeon & 7-11</p>
-                        </div>
-                        <div className="flex gap-2 items-center">
-                          <button
-                            type="button"
-                            onClick={() => setImageRotation(prev => (prev + 90) % 360)}
-                            className="bg-subtle hover:bg-line text-textPrimary border border-line px-2.5 py-1.5 rounded-xl text-xs font-bold transition"
-                            title="Rotate Image 90 Degrees"
-                          >
-                            🔄 {imageRotation}°
-                          </button>
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            multiple 
-                            ref={fileInputRef} 
-                            onChange={handleAddImages} 
-                            className="hidden" 
-                          />
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                            className="bg-accent hover:bg-accent-hover text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
-                          >
-                            + Select Photo ({selectedImages.length})
-                          </button>
+                    <div className="bg-subtle border border-line px-3 py-2.5 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs text-textSecondary">วางคำตอบจากแชท AI เพื่อกรอกบิลอัตโนมัติ</p>
+                        <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
                             onClick={() => setShowRawTextInput(!showRawTextInput)}
-                            className="bg-subtle hover:bg-line text-textPrimary border border-line font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition"
+                            className="text-xs font-semibold text-textSecondary hover:text-textPrimary underline underline-offset-2 px-1"
                           >
-                            📝 Paste Text
+                            {showRawTextInput ? 'ซ่อน' : 'พิมพ์เอง'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handlePasteFromClipboard}
+                            className="h-9 px-4 rounded-lg bg-accent hover:bg-accent-hover font-bold text-xs transition"
+                          >
+                            📋 วาง
                           </button>
                         </div>
                       </div>
 
                       {showRawTextInput && (
                         <div className="pt-2 border-t border-line/40 space-y-2">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-surface border border-line rounded-xl p-2.5">
-                            <p className="text-[11px] text-textSecondary leading-relaxed">
-                              แม่นที่สุด: กดคัดลอกคำสั่ง → วางใน Gemini พร้อมรูปใบเสร็จ → คัดลอกคำตอบทั้งหมดมาวางด้านล่าง
-                              (ข้อความจากแอป Grab / อีเมลใบเสร็จก็วางได้เหมือนกัน)
-                            </p>
-                            <button
-                              type="button"
-                              onClick={copyReceiptPrompt}
-                              className="shrink-0 bg-accent hover:bg-accent-hover font-bold px-3 py-1.5 rounded-lg text-xs transition"
-                            >
-                              📋 คัดลอกคำสั่งสำหรับ Gemini
-                            </button>
-                          </div>
                           <textarea
                             value={rawOrderText}
                             onChange={(e) => setRawOrderText(e.target.value)}
@@ -2976,32 +2836,6 @@ Rules:
                         </div>
                       )}
 
-                      {selectedImages.length > 0 && (
-                        <div className="flex flex-wrap gap-2 pt-2 border-t border-line/40 items-center">
-                          {selectedImages.map((file, index) => (
-                            <div key={index} className="relative group bg-surface border border-line rounded-lg p-1 flex items-center gap-1.5">
-                              <span className="text-[10px] font-mono text-textMuted px-1">#{index + 1}</span>
-                              <span className="text-xs text-textPrimary max-w-[100px] truncate">{file.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveImage(index)}
-                                className="text-coral text-xs px-1 hover:font-bold"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-                          
-                          <button
-                            type="button"
-                            disabled={ocrProcessing}
-                            onClick={handleProcessAllImages}
-                            className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition disabled:opacity-50 ml-auto"
-                          >
-                            {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
-                          </button>
-                        </div>
-                      )}
                     </div>
                   )}
 
