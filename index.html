@@ -1,63 +1,64 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="th">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>KraiMaiJayMeeReung - Split, Loan & Settle</title>
+
+  <!-- ตั้งธีมก่อนหน้าเว็บวาด เพื่อไม่ให้จอกระพริบ: 'light' | 'dark' | ไม่ได้ตั้ง = ตามเครื่อง -->
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('kraimaijay_theme'); } catch (e) {}
+      var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.classList.toggle('dark', dark);
+    })();
+  </script>
   
   <!-- Web App & Home Screen Icons -->
   <link rel="apple-touch-icon" href="cat.jpg">
   <link rel="icon" type="image/jpeg" href="cat.jpg">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="KraiMaiJay">
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0B0F17">
+  <meta name="theme-color" content="#E9E8E3">
 
-  <!-- Tailwind CSS -->
+  <!-- Tailwind CSS: สีทุกตัวอ่านจากตัวแปร CSS ด้านล่าง จึงสลับโหมดสว่าง/มืดได้ทั้งแอป -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
+    tailwind.config = (function () {
+      const v = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+      return {
       darkMode: 'class',
       theme: {
         extend: {
           colors: {
-            bg: '#0B0F17',
-            surface: '#151C28',
-            subtle: '#1E293B',
-            line: '#27354A',
-            accent: {
-              DEFAULT: '#6366F1',
-              hover: '#4F46E5',
-              subtle: '#1E1B4B',
-            },
-            mint: {
-              DEFAULT: '#10B981',
-              subtle: '#064E3B',
-            },
-            coral: {
-              DEFAULT: '#F43F5E',
-              subtle: '#4C0519',
-            },
-            amber: {
-              DEFAULT: '#F59E0B',
-              subtle: '#451A03',
-            },
-            grab: '#00B14F',
-            bolt: '#34D186',
+            bg: v('bg'),
+            surface: v('surface'),
+            subtle: v('subtle'),
+            line: v('line'),
+            ink: v('text-primary'),
+            accent: { DEFAULT: v('accent'), hover: v('accent-hover'), subtle: v('accent-subtle') },
+            mint: { DEFAULT: v('mint'), subtle: v('mint-subtle') },
+            coral: { DEFAULT: v('coral'), subtle: v('coral-subtle') },
+            amber: { DEFAULT: v('amber'), subtle: v('amber-subtle') },
+            grab: v('grab'),
+            bolt: v('bolt'),
             whatsapp: '#25D366',
             instagram: '#E1306C',
-            textPrimary: '#F8FAFC',
-            textSecondary: '#94A3B8',
-            textMuted: '#64748B',
+            textPrimary: v('text-primary'),
+            textSecondary: v('text-secondary'),
+            textMuted: v('text-muted'),
           },
           fontFamily: {
-            mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
-            sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+            sans: ['"Bai Jamjuree"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
           },
         }
       }
-    }
+    };
+    })();
   </script>
 
   <!-- React & Babel -->
@@ -77,39 +78,103 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <!-- IBM Plex Mono Font -->
+  <!-- Fonts: Bai Jamjuree (ไทย/อังกฤษ) + JetBrains Mono (ตัวเลข) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 
   <style>
+    /* ===== ชุดสี (ค่า R G B) — โหมดสว่างโทนหินอุ่น ===== */
+    :root {
+      --bg: 233 232 227;          /* #E9E8E3 พื้นหลัง */
+      --surface: 246 245 241;     /* #F6F5F1 การ์ด */
+      --subtle: 238 236 231;      /* #EEECE7 กล่องย่อยในการ์ด / ช่องกรอก */
+      --line: 220 218 211;        /* #DCDAD3 เส้นขอบ */
+      --accent: 198 244 50;       /* #C6F432 เขียวมะนาว (ปุ่มหลัก) */
+      --accent-hover: 178 222 38;
+      --accent-subtle: 234 244 204;
+      --on-accent: 28 27 24;      /* ตัวอักษรบนปุ่มเขียวมะนาว */
+      --accent-text: 63 98 18;    /* เขียวมะนาวแบบตัวอักษร (อ่านออกบนพื้นสว่าง) */
+      --mint: 63 98 18;           /* #3F6212 จ่ายแล้ว / ได้รับเงิน */
+      --mint-subtle: 226 238 196;
+      --coral: 185 60 11;         /* #B93C0B ค้าง / ติดหนี้ */
+      --coral-subtle: 248 222 208;
+      --on-coral: 255 255 255;
+      --amber: 154 88 8;
+      --amber-subtle: 245 228 196;
+      --grab: 21 128 61;
+      --bolt: 13 108 101;
+      --text-primary: 28 27 24;   /* #1C1B18 */
+      --text-secondary: 79 77 70; /* #4F4D46 */
+      --text-muted: 100 98 92;   /* #64625C */
+      --nav-active-bg: 28 27 24;
+      --nav-active-fg: 198 244 50;
+      --shadow: 60 50 30;
+      color-scheme: light;
+    }
+    /* ===== โหมดมืด ===== */
+    html.dark {
+      --bg: 14 15 17;             /* #0E0F11 */
+      --surface: 23 25 29;        /* #17191D */
+      --subtle: 30 33 38;         /* #1E2126 */
+      --line: 44 48 54;           /* #2C3036 */
+      --accent: 198 244 50;
+      --accent-hover: 214 255 90;
+      --accent-subtle: 38 48 20;
+      --on-accent: 14 15 17;
+      --accent-text: 198 244 50;
+      --mint: 198 244 50;
+      --mint-subtle: 38 48 20;
+      --coral: 255 155 122;       /* #FF9B7A */
+      --coral-subtle: 58 34 25;
+      --on-coral: 14 15 17;
+      --amber: 245 180 70;
+      --amber-subtle: 58 42 15;
+      --grab: 74 222 128;
+      --bolt: 94 234 212;
+      --text-primary: 236 237 239;
+      --text-secondary: 154 160 168;
+      --text-muted: 138 144 152;
+      --nav-active-bg: 198 244 50;
+      --nav-active-fg: 14 15 17;
+      --shadow: 0 0 0;
+      color-scheme: dark;
+    }
+
+    /* ปุ่มพื้นเขียวมะนาว/ส้ม ใช้สีตัวอักษรที่อ่านออกเสมอ (แทน text-white เดิม) */
+    .bg-accent, .hover\:bg-accent:hover, .bg-accent-hover, .hover\:bg-accent-hover:hover { color: rgb(var(--on-accent)) !important; }
+    .bg-coral, .hover\:bg-coral:hover { color: rgb(var(--on-coral)) !important; }
+    /* ตัวอักษรสี accent ใช้เฉดที่อ่านออกบนพื้นของแต่ละโหมด */
+    .text-accent { color: rgb(var(--accent-text)) !important; }
+    .border-accent { border-color: rgb(var(--accent-text)) !important; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: "Bai Jamjuree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      transition: background-color .2s ease;
     }
     .tabular {
       font-variant-numeric: tabular-nums;
       letter-spacing: 0.01em;
     }
+    .card-shadow { box-shadow: 0 1px 2px rgb(var(--shadow) / 0.06); }
+    .float-shadow { box-shadow: 0 8px 24px rgb(var(--shadow) / 0.16); }
     ::selection {
-      background: #6366F1;
-      color: #FFFFFF;
+      background: rgb(var(--accent));
+      color: rgb(var(--on-accent));
     }
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
     }
     ::-webkit-scrollbar-track {
-      background: #0B0F17;
+      background: rgb(var(--bg));
     }
     ::-webkit-scrollbar-thumb {
-      background: #27354A;
+      background: rgb(var(--line));
       border-radius: 9999px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #3B4E6B;
     }
   </style>
 </head>
-<body class="bg-bg text-textPrimary min-h-screen selection:bg-accent selection:text-white relative">
+<body class="bg-bg text-textPrimary min-h-screen relative">
 
   <div id="root">
     <div class="min-h-screen flex items-center justify-center text-textMuted text-sm font-mono">
@@ -247,6 +312,18 @@
         allDebts: "All ({n})",
         receivableDebts: "They Owe Me ({n})",
         payableDebts: "I Owe Them ({n})",
+        helloAdmin: "Hi Dom · Admin",
+        newBill: "New bill",
+        lightMode: "Switch to light mode",
+        darkMode: "Switch to dark mode",
+        totalToCollect: "Total to collect",
+        theyOweMe: "They owe me",
+        iOwe: "I owe",
+        iOweThem: "I owe them",
+        peopleCount: "{n} people",
+        segAll: "All {n}",
+        segTheyOwe: "Owe me {n}",
+        segIOwe: "I owe {n}",
       },
       th: {
         appTitle: "ใครไม่จ่ายมีเรื่อง",
@@ -346,6 +423,18 @@
         allDebts: "ทั้งหมด ({n})",
         receivableDebts: "เพื่อนค้างเรา ({n})",
         payableDebts: "เราค้างเพื่อน ({n})",
+        helloAdmin: "สวัสดี Dom · แอดมิน",
+        newBill: "สร้างบิลใหม่",
+        lightMode: "เปลี่ยนเป็นโหมดสว่าง",
+        darkMode: "เปลี่ยนเป็นโหมดมืด",
+        totalToCollect: "ยอดรอเก็บทั้งหมด",
+        theyOweMe: "เพื่อนค้างเรา",
+        iOwe: "เราค้าง",
+        iOweThem: "เราค้างเขา",
+        peopleCount: "{n} คน",
+        segAll: "ทั้งหมด {n}",
+        segTheyOwe: "ค้างเรา {n}",
+        segIOwe: "เราค้าง {n}",
       }
     };
 
@@ -359,6 +448,16 @@
       } catch (e) {
         return str;
       }
+    };
+
+    const PLUS_ICON = (
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+    );
+
+    // สีพื้นหลังของธีมปัจจุบัน (ใช้ตอนส่งออกรูป/PDF ให้ตรงกับที่เห็นบนจอ)
+    const themeColor = (name) => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
+      return raw ? `rgb(${raw.split(/\s+/).join(',')})` : '#0E0F11';
     };
 
     // --- BOTTOM NAV ICONS (เส้น outline แบบ Instagram ไม่ใช้อิโมจิ) ---
@@ -410,6 +509,19 @@
         const nextLang = lang === 'en' ? 'th' : 'en';
         setLang(nextLang);
         localStorage.setItem('kraimaijay_lang', nextLang);
+      };
+
+      // ธีม: ค่าเริ่มต้นตามที่สคริปต์ใน <head> ตั้งไว้ (ที่บันทึกไว้ หรือตามเครื่อง)
+      const [theme, setTheme] = useState(() => document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+      useEffect(() => {
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', themeColor('bg'));
+      }, [theme]);
+      const handleThemeToggle = () => {
+        const next = theme === 'dark' ? 'light' : 'dark';
+        setTheme(next);
+        try { localStorage.setItem('kraimaijay_theme', next); } catch (e) {}
       };
 
       const [cloudConfig] = useState(DEFAULT_FIREBASE_CONFIG);
@@ -2194,7 +2306,7 @@
           showToast("Generating PDF document...");
           const canvas = await html2canvas(ref.current, {
             scale: 2,
-            backgroundColor: '#0B0F17'
+            backgroundColor: themeColor('surface')
           });
           const imgData = canvas.toDataURL('image/png');
           const { jsPDF } = window.jspdf;
@@ -2230,7 +2342,7 @@
           showToast("Generating image...");
           const canvas = await html2canvas(ref.current, {
             scale: 2,
-            backgroundColor: '#0B0F17'
+            backgroundColor: themeColor('surface')
           });
           const image = canvas.toDataURL('image/png');
           const link = document.createElement('a');
@@ -2293,6 +2405,36 @@
         return !isMe && friendBalances[name].totalOwed < 0;
       }).length;
 
+      const totalWeOweAmount = Object.keys(friendBalances).reduce((acc, name) => {
+        const fObj = friends.find(f => f.name.toLowerCase() === name.toLowerCase());
+        const isMe = fObj?.isSelf || isSelfName(name);
+        if (!isMe && friendBalances[name].totalOwed < 0) return acc + Math.abs(friendBalances[name].totalOwed);
+        return acc;
+      }, 0);
+
+      const startNewBill = () => {
+        setEditingBillId(null);
+        setNewBillName('');
+        setBillType('delivery');
+        setPaidBy('Me (Dom)');
+        setRemainderMode('distribute');
+        setTaxMode('inclusive');
+        setDeliveryFee(0);
+        setPackagingCharge(0);
+        setDiscountAmount(0);
+        setServiceChargeRate(0);
+        setRoundingAdj(0);
+        setRideFare('');
+        setTollFee('');
+        setRideRoute('');
+        setLoanAmount('');
+        setLoanBorrower('');
+        setSelectedImages([]);
+        setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
+        setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
+        setActiveTab('new-bill');
+      };
+
       const currentSelectedBalance = selectedFriendForAdjust ? (friendBalances[selectedFriendForAdjust] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 }) : null;
 
       // กรองรายชื่อเพื่อนเฉพาะที่มียอดค้างชำระจริง (ไม่แสดงคนยอด 0 และไม่แสดงตัวเอง)
@@ -2310,100 +2452,75 @@
       return (
         <div className="pb-16 min-h-screen">
           {/* Header */}
-          <header className="bg-surface/80 border-b border-line sticky top-0 z-40 backdrop-blur-md">
-            <div className="max-w-4xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3">
-              <div className="flex items-center justify-between w-full sm:w-auto">
-                <h1 className="text-lg font-black tracking-tight text-textPrimary flex items-center gap-2.5">
-                  <img 
-                    src="cat.jpg" 
-                    alt="Pilot Cat" 
-                    className="w-9 h-9 rounded-xl object-cover ring-2 ring-coral/40 shadow-md shadow-coral/20"
-                    onError={(e) => { e.target.style.display='none'; }}
-                  />
-                  <div className="flex flex-col">
-                    <span className="leading-none bg-gradient-to-r from-textPrimary via-coral to-amber bg-clip-text text-transparent font-black tracking-wide text-base sm:text-lg">
-                      {t('appTitle')}
-                    </span>
-                    <span className="text-[10px] text-coral font-bold tracking-widest uppercase mt-0.5">
-                      Made by Dom 🔥
-                    </span>
-                  </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ml-1 ${isAdmin ? 'bg-mint/15 border-mint/40 text-mint' : 'bg-subtle border-line text-textMuted'}`}>
-                    {isAdmin ? t('adminMode') : t('viewOnly')}
+          <header className="bg-bg/85 sticky top-0 z-40 backdrop-blur-md">
+            <div className="max-w-4xl mx-auto px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <img 
+                  src="cat.jpg" 
+                  alt="" 
+                  className="w-10 h-10 rounded-full object-cover bg-subtle shrink-0"
+                  onError={(e) => { e.target.style.visibility='hidden'; }}
+                />
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-textSecondary truncate">
+                    {isAdmin ? t('helloAdmin') : t('viewOnly')}
                   </span>
-                </h1>
-
-                <div className="flex items-center gap-1.5 sm:hidden">
-                  <button
-                    onClick={handleLangToggle}
-                    className="bg-subtle border border-line text-xs font-bold px-2.5 py-1 rounded-lg text-textPrimary"
-                  >
-                    {lang === 'en' ? '🇹🇭 TH' : '🇬🇧 EN'}
-                  </button>
+                  <h1 className="text-base font-bold text-textPrimary leading-tight truncate">{t('appTitle')}</h1>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <div className="flex items-center gap-2 shrink-0">
+                {isAdmin && (
+                  <button
+                    onClick={startNewBill}
+                    className="hidden sm:flex bg-accent hover:bg-accent-hover font-bold px-4 h-11 rounded-xl transition text-sm items-center gap-1.5"
+                  >
+                    {PLUS_ICON} {t('newBill')}
+                  </button>
+                )}
+                <button
+                  onClick={handleThemeToggle}
+                  aria-label={theme === 'dark' ? t('lightMode') : t('darkMode')}
+                  title={theme === 'dark' ? t('lightMode') : t('darkMode')}
+                  className="w-11 h-11 rounded-xl border border-line bg-surface hover:bg-subtle text-textPrimary flex items-center justify-center transition"
+                >
+                  {theme === 'dark' ? (
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+                  ) : (
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+                  )}
+                </button>
                 <button
                   onClick={handleLangToggle}
-                  className="hidden sm:flex bg-subtle hover:bg-line border border-line text-xs font-bold px-3 py-2 rounded-xl text-textPrimary transition"
+                  className="h-11 min-w-[44px] px-3 rounded-xl border border-line bg-surface hover:bg-subtle text-xs font-bold text-textPrimary transition"
                 >
-                  {lang === 'en' ? '🇹🇭 TH' : '🇬🇧 EN'}
+                  {lang === 'en' ? 'TH' : 'EN'}
                 </button>
-
                 {isAdmin ? (
-                  <>
-                    <button 
-                      onClick={() => {
-                        setEditingBillId(null);
-                        setNewBillName('');
-                        setBillType('delivery');
-                        setPaidBy('Me (Dom)');
-                        setRemainderMode('distribute');
-                        setTaxMode('inclusive');
-                        setDeliveryFee(0);
-                        setPackagingCharge(0);
-                        setDiscountAmount(0);
-                        setServiceChargeRate(0);
-                        setRoundingAdj(0);
-                        setRideFare('');
-                        setTollFee('');
-                        setRideRoute('');
-                        setLoanAmount('');
-                        setLoanBorrower('');
-                        setSelectedImages([]);
-                        setBillItems([{ id: '1', name: '', price: '', qty: 1, taxRate: 0, sharedWith: [] }]);
-                        setBillFriends(friends.filter(f => !f.isArchived).map(f => f.name));
-                        setActiveTab('new-bill');
-                      }}
-                      className="flex-1 sm:flex-initial bg-accent hover:bg-accent-hover active:scale-[0.98] text-white font-bold px-4 py-2 rounded-xl transition text-sm flex justify-center items-center gap-1.5 shadow-lg shadow-accent/20"
-                    >
-                      {t('createTx')}
-                    </button>
-                    <button 
-                      onClick={handleLogoutAdmin}
-                      className="bg-subtle hover:bg-coral/20 text-textSecondary hover:text-coral border border-line px-3 py-2 rounded-xl text-xs font-semibold transition"
-                      title="Lock Admin Mode"
-                    >
-                      {t('lock')}
-                    </button>
-                  </>
+                  <button 
+                    onClick={handleLogoutAdmin}
+                    aria-label={t('lock')}
+                    title={t('lock')}
+                    className="w-11 h-11 rounded-xl border border-line bg-surface hover:bg-coral-subtle text-textSecondary hover:text-coral flex items-center justify-center transition"
+                  >
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+                  </button>
                 ) : (
                   <button 
                     onClick={() => setShowAuthModal(true)}
-                    className="flex-1 sm:flex-initial bg-accent/15 hover:bg-accent text-accent hover:text-white border border-accent/40 font-semibold px-4 py-2 rounded-xl transition text-xs flex justify-center items-center gap-1.5 shadow-sm"
+                    className="h-11 px-4 rounded-xl bg-accent hover:bg-accent-hover font-bold text-xs transition"
                   >
-                    <span>{t('adminSignIn')}</span>
+                    {t('adminSignIn')}
                   </button>
                 )}
               </div>
             </div>
           </header>
 
-          <main className="max-w-4xl mx-auto px-4 mt-6 pb-24 sm:pb-6">
+          <main className="max-w-4xl mx-auto px-4 sm:px-5 mt-3 pb-28 sm:pb-8">
 
-            {/* Tabs — บนจอใหญ่ (sm ขึ้นไป) แสดงแบบแถบด้านบนเหมือนเดิม บนมือถือซ่อนไว้ ใช้ Bottom Nav แทน */}
-            <div className="hidden sm:flex bg-surface p-1 rounded-2xl gap-1 mb-6 border border-line overflow-x-auto">
+            {/* Tabs — จอใหญ่แสดงแถบด้านบน มือถือใช้ Bottom Nav แทน */}
+            <div className="hidden sm:grid grid-cols-5 bg-subtle p-1 rounded-2xl gap-1 mb-6 border border-line">
               {[
                 { id: 'dashboard', label: t('dashboard') },
                 { id: 'bills', label: `${t('history')} (${bills.length})` },
@@ -2414,7 +2531,7 @@
                 <button 
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 py-2 px-3 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 whitespace-nowrap ${activeTab === tab.id ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
+                  className={`py-2 px-3 text-center rounded-xl font-semibold text-xs sm:text-sm transition duration-150 truncate ${activeTab === tab.id ? 'bg-surface text-textPrimary card-shadow' : 'text-textSecondary hover:text-textPrimary'}`}
                 >
                   {tab.label}
                 </button>
@@ -2423,111 +2540,94 @@
 
             {/* --- 1. DASHBOARD --- */}
             {activeTab === 'dashboard' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="bg-surface border border-coral/30 bg-gradient-to-br from-coral-subtle/30 to-surface p-5 rounded-2xl relative overflow-hidden">
-                    <div className="absolute right-2 top-2 text-5xl opacity-10 pointer-events-none select-none">💸</div>
-                    <p className="text-xs text-coral font-bold uppercase tracking-wider font-mono">{t('totalOutstanding')}</p>
-                    <p className="text-3xl font-black text-coral mt-1 font-mono tabular">{totalOwedAmount.toFixed(2)} <span className="text-sm font-sans font-medium text-coral/80">RM</span></p>
-                    <p className="text-xs text-textSecondary mt-1">{t('pendingFriends', { n: pendingDebtorsCount })}</p>
+              <div className="space-y-4 max-w-xl mx-auto">
+                {/* ยอดรวม + แถบเทียบ ค้างเรา / เราค้าง */}
+                <div className="bg-surface rounded-[20px] p-5 card-shadow space-y-3.5">
+                  <p className="text-[13px] text-textSecondary">{t('totalToCollect')}</p>
+                  <div className="flex items-baseline gap-2 -mt-2">
+                    <span className="font-mono text-[44px] leading-tight font-bold tracking-tight text-textPrimary tabular">{totalOwedAmount.toFixed(2)}</span>
+                    <span className="text-[15px] text-textSecondary">RM</span>
                   </div>
-
-                  <div className="bg-surface border border-mint/30 bg-gradient-to-br from-mint-subtle/30 to-surface p-5 rounded-2xl relative overflow-hidden">
-                    <div className="absolute right-2 top-2 text-5xl opacity-10 pointer-events-none select-none">💳</div>
-                    <p className="text-xs text-mint font-bold uppercase tracking-wider font-mono">{t('myExpenseToday')}</p>
-                    <p className="text-3xl font-black text-mint mt-1 font-mono tabular">{todayMyExpense.toFixed(2)} <span className="text-sm font-sans font-medium text-mint/80">RM</span></p>
-                    <p className="text-xs text-textSecondary mt-1">{t('calculatedToday', { n: todayBillsCount })}</p>
+                  {(totalOwedAmount > 0 || totalWeOweAmount > 0) && (
+                    <div className="flex h-2 gap-[3px]" aria-hidden="true">
+                      {totalOwedAmount > 0 && <div className="bg-accent rounded-full" style={{ flex: totalOwedAmount }}></div>}
+                      {totalWeOweAmount > 0 && <div className="bg-coral rounded-full" style={{ flex: totalWeOweAmount }}></div>}
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs text-textSecondary gap-3">
+                    <span>{t('theyOweMe')} · {t('peopleCount', { n: receivableCount })} <b className="font-mono text-mint">{totalOwedAmount.toFixed(2)}</b></span>
+                    <span>{t('iOwe')} <b className="font-mono text-coral">{totalWeOweAmount.toFixed(2)}</b></span>
                   </div>
                 </div>
 
-                <div className="bg-surface rounded-2xl p-6 border border-line">
-                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
-                    <div>
-                      <h2 className="text-xs font-bold text-textMuted uppercase tracking-wider font-mono">
-                        {t('unsettledFriends')}
-                      </h2>
-                    </div>
-
-                    <div className="flex bg-subtle p-1 rounded-xl border border-line gap-1 text-xs">
-                      <button
-                        onClick={() => setDashboardDebtFilter('all')}
-                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'all' ? 'bg-accent text-white shadow-sm' : 'text-textSecondary hover:text-textPrimary'}`}
-                      >
-                        {t('allDebts', { n: receivableCount + payableCount })}
-                      </button>
-                      <button
-                        onClick={() => setDashboardDebtFilter('receivable')}
-                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'receivable' ? 'bg-coral text-white shadow-sm' : 'text-textSecondary hover:text-coral'}`}
-                      >
-                        {t('receivableDebts', { n: receivableCount })}
-                      </button>
-                      <button
-                        onClick={() => setDashboardDebtFilter('payable')}
-                        className={`px-2.5 py-1 rounded-lg font-semibold transition ${dashboardDebtFilter === 'payable' ? 'bg-mint text-bg font-bold shadow-sm' : 'text-textSecondary hover:text-mint'}`}
-                      >
-                        {t('payableDebts', { n: payableCount })}
-                      </button>
-                    </div>
+                {/* ปุ่มสร้างบิล + ยอดวันนี้ */}
+                <div className={`grid gap-2.5 ${isAdmin ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'}`}>
+                  {isAdmin && (
+                    <button
+                      onClick={startNewBill}
+                      className="h-[52px] rounded-2xl bg-accent hover:bg-accent-hover active:scale-[0.99] font-bold text-[15px] flex items-center justify-center gap-2 transition"
+                    >
+                      {PLUS_ICON} {t('newBill')}
+                    </button>
+                  )}
+                  <div className="h-[52px] rounded-2xl bg-surface card-shadow px-3.5 flex flex-col justify-center" title={t('calculatedToday', { n: todayBillsCount })}>
+                    <span className="text-[11px] text-textSecondary">{t('myExpenseToday')}</span>
+                    <span className="font-mono text-[15px] font-bold tabular">{todayMyExpense.toFixed(2)}</span>
                   </div>
+                </div>
 
-                  <div className="space-y-3">
-                    {unsettledFriendList.length === 0 ? (
-                      <div className="py-8 text-center text-textMuted text-sm">{t('allSettled')}</div>
-                    ) : (
-                      unsettledFriendList.map(friend => {
-                        const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
-                        const isDebtor = balance.totalOwed > 0;
+                {/* ตัวกรอง */}
+                <div className="grid grid-cols-3 gap-1 bg-subtle p-1 rounded-xl border border-line">
+                  {[
+                    { id: 'all', label: t('segAll', { n: receivableCount + payableCount }) },
+                    { id: 'receivable', label: t('segTheyOwe', { n: receivableCount }) },
+                    { id: 'payable', label: t('segIOwe', { n: payableCount }) },
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setDashboardDebtFilter(f.id)}
+                      className={`h-9 rounded-[9px] text-[13px] transition ${dashboardDebtFilter === f.id ? 'bg-surface text-textPrimary font-semibold card-shadow' : 'text-textSecondary hover:text-textPrimary'}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
 
-                        return (
-                          <div key={friend.id} className="bg-subtle border border-line/80 hover:border-accent/40 p-4 rounded-xl flex justify-between items-center transition duration-150">
-                            <div 
-                              className="cursor-pointer group flex-1"
-                              onClick={() => setSelectedFriendForHistory(friend.name)}
-                            >
-                              <span className="font-bold text-textPrimary group-hover:text-accent transition flex items-center gap-1.5">
-                                {friend.name}
-                                {friend.isArchived && <span className="text-[10px] bg-line text-textMuted px-1.5 py-0.2 rounded">{t('archivedBadge')}</span>}
-                                <span className="text-[10px] text-accent font-normal underline group-hover:opacity-100 opacity-80">{t('viewHistory')}</span>
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${isDebtor ? 'text-coral bg-coral-subtle/50' : 'text-mint bg-mint-subtle/50'}`}>
-                                  {isDebtor ? 'ค้างจ่ายเรา' : 'เราค้างเพื่อน'}
-                                </span>
-                              </span>
-                              <div className="flex gap-4 mt-1 text-xs text-textSecondary font-mono tabular">
-                                <span>{t('bills')}: {balance.billsOwed.toFixed(2)} RM</span>
-                                {balance.adjustedOwed !== 0 && (
-                                  <span className={balance.adjustedOwed > 0 ? 'text-amber' : 'text-mint'}>
-                                    {t('adj')}: {balance.adjustedOwed.toFixed(2)} RM
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => copyStatementTextToClipboard(friend.name)}
-                                className="bg-surface hover:bg-line text-textSecondary hover:text-textPrimary p-2 rounded-lg border border-line transition"
-                                title={t('copyText')}
-                              >
-                                📋
-                              </button>
-
-                              <span className={`text-lg font-extrabold font-mono tabular mr-1 ${isDebtor ? 'text-coral' : 'text-mint'}`}>
-                                {Math.abs(balance.totalOwed).toFixed(2)} RM
-                              </span>
-                              
-                              {isAdmin && (
-                                <button
-                                  onClick={() => { setSelectedFriendForAdjust(friend.name); setAdjustAmount(''); }}
-                                  className="bg-surface hover:bg-line text-textPrimary text-xs font-semibold px-3 py-1.5 rounded-lg border border-line transition ml-1"
-                                >
-                                  {t('adjust')}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+                {/* รายชื่อเพื่อนที่ยังไม่เคลียร์ — แตะเพื่อดูสเตตเมนต์ */}
+                <div className="bg-surface rounded-[20px] px-4 py-1 card-shadow">
+                  {unsettledFriendList.length === 0 ? (
+                    <div className="py-10 text-center text-textMuted text-sm">{t('allSettled')}</div>
+                  ) : (
+                    unsettledFriendList.map((friend, idx) => {
+                      const balance = friendBalances[friend.name] || { billsOwed: 0, adjustedOwed: 0, totalOwed: 0 };
+                      const isDebtor = balance.totalOwed > 0;
+                      return (
+                        <button
+                          key={friend.id}
+                          onClick={() => setSelectedFriendForHistory(friend.name)}
+                          className={`w-full flex items-center gap-3 h-[60px] text-left ${idx < unsettledFriendList.length - 1 ? 'border-b border-line' : ''}`}
+                        >
+                          <span className={`w-[38px] h-[38px] rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${isDebtor ? 'bg-subtle text-textPrimary' : 'bg-coral-subtle text-coral'}`}>
+                            {(friend.name || '?').trim().charAt(0).toUpperCase()}
+                          </span>
+                          <span className="flex-1 min-w-0 flex flex-col">
+                            <span className="text-[15px] font-semibold text-textPrimary truncate">
+                              {friend.name}
+                              {friend.isArchived && <span className="ml-1.5 text-[10px] font-normal bg-subtle text-textMuted px-1.5 py-0.5 rounded">{t('archivedBadge')}</span>}
+                            </span>
+                            <span className={`text-xs truncate ${isDebtor ? 'text-textSecondary' : 'text-coral'}`}>
+                              {isDebtor
+                                ? `${t('bills')} ${balance.billsOwed.toFixed(2)}${balance.adjustedOwed !== 0 ? ` · ${t('adj')} ${balance.adjustedOwed > 0 ? '+' : '−'}${Math.abs(balance.adjustedOwed).toFixed(2)}` : ''}`
+                                : t('iOweThem')}
+                            </span>
+                          </span>
+                          <span className={`font-mono text-base font-bold tabular ${isDebtor ? 'text-mint' : 'text-coral'}`}>
+                            {Math.abs(balance.totalOwed).toFixed(2)}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}
@@ -2551,7 +2651,7 @@
                         setTaxMode('inclusive');
                         setServiceChargeRate(0);
                       }}
-                      className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'delivery' ? 'bg-grab/15 border-grab text-emerald-400 shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
+                      className={`py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${billType === 'delivery' ? 'bg-grab/15 border-grab text-mint shadow-sm' : 'bg-subtle border-line text-textSecondary'}`}
                     >
                       🛵 Delivery
                     </button>
@@ -2602,7 +2702,7 @@
                               key={friend.id}
                               type="button"
                               onClick={() => setPaidBy(friend.name)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${isPayer ? 'bg-mint text-bg shadow-md shadow-mint/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${isPayer ? 'bg-mint text-bg' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
                             >
                               {isPayer ? '✓ ' : ''} {friend.name}
                             </button>
@@ -2619,7 +2719,7 @@
 
                   {/* SMART SCANNER WITH ROTATION */}
                   {billType !== 'loan' && (
-                    <div className="bg-gradient-to-r from-accent-subtle/40 to-mint-subtle/30 border border-accent/20 p-4 rounded-xl space-y-3">
+                    <div className="bg-subtle border border-line p-4 rounded-xl space-y-3">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                         <div>
                           <p className="text-sm font-bold text-textPrimary flex items-center gap-2">
@@ -2708,7 +2808,7 @@
                             type="button"
                             disabled={ocrProcessing}
                             onClick={handleProcessAllImages}
-                            className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-md shadow-accent/20 disabled:opacity-50 ml-auto"
+                            className="bg-accent hover:bg-accent-hover text-white font-bold px-4 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition disabled:opacity-50 ml-auto"
                           >
                             {ocrProcessing ? `Processing (${ocrProgress}%)...` : `⚡ Scan All (${selectedImages.length} Photos)`}
                           </button>
@@ -2753,7 +2853,7 @@
                         type="date" 
                         value={newBillDate}
                         onChange={(e) => setNewBillDate(e.target.value)}
-                        className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none color-scheme-dark"
+                        className="w-full bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
                       />
                     </div>
                   </div>
@@ -2819,7 +2919,7 @@
                                   setBillFriends([...billFriends, friend.name]);
                                 }
                               }}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 ${isSelected ? 'bg-accent text-white shadow-md shadow-accent/20' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition duration-150 ${isSelected ? 'bg-accent text-white' : 'bg-surface text-textSecondary border border-line hover:border-textSecondary'}`}
                             >
                               {isSelected ? '✓ ' : '+ '} {friend.name}
                             </button>
@@ -2943,7 +3043,7 @@
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
                           <div>
-                            <label className="block text-xs text-emerald-400 mb-1 font-bold">🛵 Delivery Fee</label>
+                            <label className="block text-xs text-mint mb-1 font-bold">🛵 Delivery Fee</label>
                             <input 
                               type="text" 
                               inputMode="decimal"
@@ -3151,7 +3251,7 @@
                   )}
 
                   <div className="pt-4 border-t border-line">
-                    <button type="submit" disabled={isProcessing} className="w-full bg-mint hover:bg-emerald-600 text-bg font-bold py-3 rounded-xl transition text-sm shadow-md shadow-mint/20 disabled:opacity-50">
+                    <button type="submit" disabled={isProcessing} className="w-full bg-mint hover:bg-emerald-600 text-bg font-bold py-3 rounded-xl transition text-sm disabled:opacity-50">
                       {isProcessing ? 'กำลังบันทึกข้อมูล...' : t('save')}
                     </button>
                   </div>
@@ -3250,7 +3350,7 @@
                                   </span>
                                 )}
                                 {bill.deliveryFee > 0 && (
-                                  <span className="text-[10px] bg-grab/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded">Delivery</span>
+                                  <span className="text-[10px] bg-grab/20 text-mint font-bold px-1.5 py-0.5 rounded">Delivery</span>
                                 )}
                                 {bill.packagingCharge > 0 && (
                                   <span className="text-[10px] bg-amber/20 text-amber font-bold px-1.5 py-0.5 rounded">+Packaging</span>
@@ -3289,7 +3389,7 @@
                                         (bill.billType === 'loan' ? `- ผู้ยืม: ${bill.loanBorrower}` : (bill.items || []).map(i => `- ${i.name} (x${i.qty}): ${i.price} RM`).join('\n'));
                                       shareToSocial(text, 'whatsapp');
                                     }}
-                                    className="bg-whatsapp/20 hover:bg-whatsapp text-emerald-400 hover:text-bg text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
+                                    className="bg-whatsapp/20 hover:bg-whatsapp text-mint hover:text-bg text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
                                   >
                                     {t('whatsapp')}
                                   </button>
@@ -3305,7 +3405,7 @@
                                   </button>
                                   <button
                                     onClick={() => setActiveBreakdown({ bill, selectedFriend: null })}
-                                    className="bg-accent hover:bg-accent-hover text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95 shadow-sm shadow-accent/20"
+                                    className="bg-accent hover:bg-accent-hover text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95"
                                   >
                                     {t('viewExport')}
                                   </button>
@@ -3383,7 +3483,7 @@
                         onChange={(e) => setNewFriendName(e.target.value)}
                         className="flex-1 bg-subtle border border-line rounded-xl px-4 py-2.5 text-textPrimary text-sm focus:border-accent outline-none"
                       />
-                      <button type="submit" className="bg-accent hover:bg-accent-hover text-white font-bold px-5 py-2.5 rounded-xl text-sm transition shadow-md shadow-accent/20">{t('add')}</button>
+                      <button type="submit" className="bg-accent hover:bg-accent-hover text-white font-bold px-5 py-2.5 rounded-xl text-sm transition">{t('add')}</button>
                     </form>
                   </div>
                 )}
@@ -3574,8 +3674,8 @@
                       <p className="text-[10px] text-textSecondary mt-0.5">{monthlyStats.count} Transactions</p>
                     </div>
                     <div className="bg-subtle p-4 rounded-xl border border-line">
-                      <p className="text-[10px] text-emerald-400 uppercase font-bold">{t('totalFoodSpend')}</p>
-                      <p className="text-xl font-black text-emerald-400 mt-1 font-mono tabular">{monthlyStats.foodTotal.toFixed(2)} RM</p>
+                      <p className="text-[10px] text-mint uppercase font-bold">{t('totalFoodSpend')}</p>
+                      <p className="text-xl font-black text-mint mt-1 font-mono tabular">{monthlyStats.foodTotal.toFixed(2)} RM</p>
                       <p className="text-[10px] text-textSecondary mt-0.5">{monthlyStats.foodPct}% of month</p>
                     </div>
                     <div className="bg-subtle p-4 rounded-xl border border-line">
@@ -3740,30 +3840,33 @@
 
           </main>
 
-          {/* --- BOTTOM NAV สไตล์ Instagram: ลอยเป็นแคปซูล ไอคอนล้วนไม่มีตัวหนังสือ (มือถือเท่านั้น) --- */}
+          {/* --- BOTTOM NAV: แคปซูลลอย ไอคอนล้วน (มือถือเท่านั้น) --- */}
           <nav
-            className="sm:hidden fixed left-4 right-4 z-40 bg-[#111318]/90 backdrop-blur-xl rounded-full shadow-2xl shadow-black/40 border border-white/10 flex items-center justify-between px-2"
-            style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))', height: '60px' }}
+            className="sm:hidden fixed left-4 right-4 z-40 bg-surface/95 backdrop-blur-xl rounded-full float-shadow border border-line grid grid-cols-5 items-center justify-items-center"
+            style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))', height: '64px' }}
           >
             {[
-              { id: 'dashboard' },
-              { id: 'bills' },
-              { id: 'friends' },
-              { id: 'adjustments', badge: adjustments.filter(a => !a.isSettled).length },
-              { id: 'analytics' }
+              { id: 'dashboard', label: t('dashboard') },
+              { id: 'bills', label: t('history') },
+              { id: 'friends', label: t('friends') },
+              { id: 'adjustments', label: t('adjustments'), badge: adjustments.filter(a => !a.isSettled).length },
+              { id: 'analytics', label: t('analytics') }
             ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className="relative flex-1 flex items-center justify-center h-full"
+                aria-label={tab.label}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
+                className="relative w-12 h-12 flex items-center justify-center"
               >
                 <span
-                  className={`w-11 h-11 rounded-full flex items-center justify-center leading-none transition ${activeTab === tab.id ? 'bg-white text-black scale-100' : 'text-white/60 scale-95'}`}
+                  className="w-12 h-12 rounded-full flex items-center justify-center transition"
+                  style={activeTab === tab.id ? { background: 'rgb(var(--nav-active-bg))', color: 'rgb(var(--nav-active-fg))' } : { color: 'rgb(var(--text-secondary))' }}
                 >
                   {NAV_ICONS[tab.id]}
                 </span>
                 {tab.badge > 0 && (
-                  <span className="absolute top-1.5 right-[22%] min-w-[18px] h-[18px] px-1 rounded-full bg-coral text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                  <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 rounded-full bg-coral text-[10px] font-bold flex items-center justify-center leading-none">
                     {tab.badge > 9 ? '9+' : tab.badge}
                   </span>
                 )}
@@ -3774,10 +3877,11 @@
           {/* --- FLOATING CALCULATOR BUTTON --- */}
           <button
             onClick={() => setShowCalc(!showCalc)}
-            className="fixed bottom-24 right-5 sm:bottom-5 z-40 bg-accent hover:bg-accent-hover text-white w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-xl transition active:scale-90"
+            aria-label={t('calculator')}
+            className="fixed bottom-28 right-5 sm:bottom-5 z-40 bg-surface border border-line text-textPrimary w-12 h-12 rounded-full float-shadow flex items-center justify-center transition active:scale-90"
             title={t('calculator')}
           >
-            🧮
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>
           </button>
 
           {/* --- FLOATING CALCULATOR MODAL --- */}
@@ -3888,7 +3992,7 @@
                 </div>
 
                 <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-                  <div ref={friendSlipRef} className="bg-[#0B0F17] border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
+                  <div ref={friendSlipRef} className="bg-surface border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
                     <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
                       <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
                       <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 {t('appTitle')} • Statement</p>
@@ -3947,7 +4051,7 @@
                                       {b.date} • {isFriendPayer ? `👑 ${selectedFriendForHistory} เป็นคนจ่าย (รวม ${b.total?.toFixed(2)} RM)` : (b.billType === 'ride' ? (b.rideRoute || 'Shared equally') : b.billType === 'loan' ? 'Cash Loan' : `ส่วนของเพื่อน: ${userShare.toFixed(2)} RM`)}
                                     </p>
                                     {fifoTag && (
-                                      <p className="text-[10px] text-indigo-400 font-sans mt-0.5 font-bold">
+                                      <p className="text-[10px] text-accent font-sans mt-0.5 font-bold">
                                         ℹ️ {fifoTag}
                                       </p>
                                     )}
@@ -4058,13 +4162,13 @@
 
                   <button
                     onClick={() => handleExportElement(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
-                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 shadow-md shadow-accent/20"
+                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95"
                   >
                     {t('savePng')}
                   </button>
                   <button
                     onClick={() => handleExportPDF(friendSlipRef, `Statement_${selectedFriendForHistory}`)}
-                    className="flex-1 bg-coral hover:bg-coral/90 text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95 shadow-md shadow-coral/20"
+                    className="flex-1 bg-coral hover:bg-coral/90 text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 transition active:scale-95"
                   >
                     {t('downloadPdf')}
                   </button>
@@ -4073,7 +4177,7 @@
                       const bal = (friendBalances[selectedFriendForHistory]?.totalOwed || 0).toFixed(2);
                       shareToSocial(`แจ้งยอดค้างชำระ: ${selectedFriendForHistory} มียอดคงเหลือ ${bal} RM`, 'whatsapp');
                     }}
-                    className="bg-whatsapp/15 hover:bg-whatsapp text-emerald-400 hover:text-bg font-bold py-2.5 px-3 rounded-xl text-xs transition border border-whatsapp/30 flex items-center gap-1"
+                    className="bg-whatsapp/15 hover:bg-whatsapp text-mint hover:text-bg font-bold py-2.5 px-3 rounded-xl text-xs transition border border-whatsapp/30 flex items-center gap-1"
                   >
                     {t('whatsapp')}
                   </button>
@@ -4126,7 +4230,7 @@
                 </div>
 
                 <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-                  <div ref={receiptCardRef} className="bg-[#0B0F17] border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
+                  <div ref={receiptCardRef} className="bg-surface border border-line/60 p-5 sm:p-6 rounded-2xl text-textPrimary space-y-4 font-mono text-xs shadow-inner">
                     <div className="text-center pb-3 border-b border-dashed border-line space-y-1">
                       <img src="cat.jpg" alt="Logo" className="w-10 h-10 rounded-full mx-auto mb-1 ring-1 ring-coral/50 object-cover" onError={(e) => { e.target.style.display='none'; }} />
                       <p className="text-xs text-coral font-bold tracking-widest uppercase">👊 {t('appTitle')}</p>
@@ -4139,7 +4243,7 @@
                         💳 Paid By: {activeBreakdown.bill.paidBy || 'Me (Dom)'}
                       </p>
                       {activeBreakdown.selectedFriend && (
-                        <p className="text-emerald-400 font-bold font-sans text-sm mt-1">
+                        <p className="text-mint font-bold font-sans text-sm mt-1">
                           Participant: {activeBreakdown.selectedFriend}
                         </p>
                       )}
@@ -4219,7 +4323,7 @@
                       )}
 
                       {activeBreakdown.bill.deliveryFee > 0 && (
-                        <div className="flex justify-between text-emerald-400">
+                        <div className="flex justify-between text-mint">
                           <span>Delivery Fee</span>
                           <span className="tabular font-mono">+{activeBreakdown.bill.deliveryFee.toFixed(2)} RM</span>
                         </div>
@@ -4243,13 +4347,13 @@
                 <div className="p-4 border-t border-line bg-surface flex gap-3">
                   <button
                     onClick={() => handleExportElement(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
-                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-accent/20"
+                    className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
                   >
                     {t('savePng')}
                   </button>
                   <button
                     onClick={() => handleExportPDF(receiptCardRef, `Bill_${activeBreakdown.bill.name}`)}
-                    className="flex-1 bg-coral hover:bg-coral/90 text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95 shadow-md shadow-coral/20"
+                    className="flex-1 bg-coral hover:bg-coral/90 text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 transition active:scale-95"
                   >
                     {t('downloadPdf')}
                   </button>
@@ -4365,7 +4469,7 @@
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button type="submit" disabled={isProcessing} className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-accent/20 disabled:opacity-50">{t('save')}</button>
+                  <button type="submit" disabled={isProcessing} className="flex-1 bg-accent hover:bg-accent-hover text-white font-bold py-2.5 rounded-xl text-sm transition disabled:opacity-50">{t('save')}</button>
                   <button type="button" onClick={() => setSelectedFriendForAdjust(null)} className="bg-subtle border border-line text-textPrimary py-2.5 px-4 rounded-xl text-sm hover:bg-line">{t('cancel')}</button>
                 </div>
               </form>
@@ -4374,7 +4478,7 @@
 
           {/* OCR / Sanity Check Warning */}
           {isMismatch && (
-            <div className="fixed bottom-40 left-4 right-4 sm:bottom-20 max-w-md mx-auto bg-amber-950/90 border border-amber-500 text-amber-200 p-3 rounded-xl text-xs font-bold shadow-2xl flex items-center justify-between z-50 backdrop-blur-md">
+            <div className="fixed bottom-40 left-4 right-4 sm:bottom-20 max-w-md mx-auto bg-amber-subtle border border-amber text-amber p-3 rounded-xl text-xs font-bold shadow-2xl flex items-center justify-between z-50 backdrop-blur-md">
               <span>⚠️ ยอดรวมสินค้า ({itemsSum.toFixed(2)}) ไม่ตรงกับ Net Total ({calculatedNetTotal.toFixed(2)})</span>
             </div>
           )}
