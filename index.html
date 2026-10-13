@@ -450,6 +450,225 @@
       }
     };
 
+    // ===================== RECEIPT PARSER =====================
+    // คำสั่งให้ Gemini/ChatGPT อ่านรูปใบเสร็จแล้วตอบเป็น JSON — แม่นกว่า OCR ในเครื่องมาก
+    const RECEIPT_AI_PROMPT = `Read this receipt image. Reply with ONLY one JSON object (no explanation, no markdown) in exactly this shape:
+{"merchant":"","items":[{"name":"","qty":1,"unitPrice":0}],"subtotal":0,"serviceChargePercent":0,"serviceChargeAmount":0,"taxPercent":0,"taxAmount":0,"deliveryFee":0,"packagingFee":0,"otherFees":0,"discount":0,"rounding":0,"total":0}
+Rules:
+- unitPrice = price of ONE unit before service charge and tax. If the receipt only shows the line total, divide it by qty.
+- Copy item names exactly as printed (any language).
+- serviceChargePercent / taxPercent: the % printed on the receipt (e.g. 10, 6, 8), else 0. serviceChargeAmount / taxAmount: the money amounts.
+- If prices already include tax and there is no separate tax line, set taxPercent and taxAmount to 0.
+- Delivery apps (Grab, Foodpanda, ShopeeFood): put platform fee / service fee / small order fee in otherFees.
+- discount is a positive number (total of all promos/vouchers). rounding may be negative.
+- Numbers only, no currency symbols. Use 0 for anything not on the receipt.`;
+
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+    // "1,234.50" / "12,50" / "RM 9.90" -> number
+    const MONEY_RE = /([-−]\s*)?(?:RM|MYR|THB|฿)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)[.,]([0-9]{2})(?![0-9])/gi;
+    const moneyValues = (line) => {
+      const out = [];
+      let m;
+      MONEY_RE.lastIndex = 0;
+      while ((m = MONEY_RE.exec(line)) !== null) {
+        const v = parseFloat(`${m[2].replace(/,/g, '')}.${m[3]}`);
+        out.push(m[1] ? -v : v);
+      }
+      // ตัวเลขในวงเล็บ เช่น (5.00) = ติดลบ
+      if (out.length && /\(\s*(?:RM\s*)?[0-9.,]+\s*\)\s*$/.test(line)) out[out.length - 1] = -Math.abs(out[out.length - 1]);
+      return out;
+    };
+    const lastMoney = (line) => { const v = moneyValues(line); return v.length ? v[v.length - 1] : null; };
+    const percentOf = (line) => { const m = line.match(/([0-9]+(?:\.[0-9]+)?)\s*%/); return m ? parseFloat(m[1]) : 0; };
+
+    const emptyReceipt = () => ({
+      merchant: '', items: [], subtotal: 0, scPercent: 0, scAmount: 0, taxPercent: 0, taxAmount: 0,
+      deliveryFee: 0, packaging: 0, otherFees: 0, discount: 0, rounding: 0, total: 0, toll: 0, source: 'text'
+    });
+
+    // 1) ข้อความที่เป็น JSON (จากคำสั่ง RECEIPT_AI_PROMPT)
+    const parseReceiptJson = (text) => {
+      const cleaned = text.replace(/```(?:json)?/gi, '');
+      const a = cleaned.indexOf('{'), b = cleaned.lastIndexOf('}');
+      if (a < 0 || b <= a) return null;
+      let data;
+      try { data = JSON.parse(cleaned.slice(a, b + 1)); } catch (e) { return null; }
+      if (!data || !Array.isArray(data.items)) return null;
+      const num = (v) => {
+        if (typeof v === 'number') return v;
+        const n = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, ''));
+        return isNaN(n) ? 0 : n;
+      };
+      const r = emptyReceipt();
+      r.source = 'json';
+      r.merchant = String(data.merchant || '').trim();
+      r.items = data.items
+        .map(it => {
+          const qty = Math.max(1, Math.round(num(it.qty) || 1));
+          let unit = num(it.unitPrice ?? it.price);
+          if (!unit && it.lineTotal) unit = num(it.lineTotal) / qty;
+          return { name: String(it.name || '').trim(), qty, unitPrice: round2(unit) };
+        })
+        .filter(it => it.name && it.unitPrice > 0);
+      r.subtotal = num(data.subtotal);
+      r.scPercent = num(data.serviceChargePercent);
+      r.scAmount = num(data.serviceChargeAmount);
+      r.taxPercent = num(data.taxPercent);
+      r.taxAmount = num(data.taxAmount);
+      r.deliveryFee = num(data.deliveryFee);
+      r.packaging = num(data.packagingFee);
+      r.otherFees = num(data.otherFees);
+      r.discount = Math.abs(num(data.discount));
+      r.rounding = num(data.rounding);
+      r.total = num(data.total);
+      return r;
+    };
+
+    // 2) ข้อความธรรมดา (copy จากแอป/อีเมล หรือจาก OCR)
+    const parseReceiptLines = (fullText) => {
+      const r = emptyReceipt();
+      const lines = fullText
+        .replace(/[—–]/g, '-')
+        .replace(/[oO](?=[0-9]{1,3}[.,][0-9]{2})/g, '0')
+        .split('\n')
+        .map(l => l.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+
+      let totalPriority = -1;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const low = line.toLowerCase();
+        const amt = lastMoney(line);
+
+        // ภาษี — เช็กก่อน service charge เพราะ "Service Tax" (SST มาเลเซีย) คือภาษี
+        if (/service\s*tax|\bsst\b|\bgst\b|\bvat\b|\btax\b|ภาษี|cukai/.test(low)) {
+          if (/incl|inclusive|included|รวมแล้ว|termasuk/.test(low)) continue; // แค่บอกว่ารวมภาษีแล้ว
+          const pct = percentOf(line);
+          if (pct) r.taxPercent = pct;
+          if (amt !== null && !(pct && Math.abs(amt - pct) < 0.001)) r.taxAmount = round2(r.taxAmount + Math.abs(amt));
+          continue;
+        }
+
+        if (/platform\s*fee|small\s*order|service\s*fee|convenience\s*fee|ค่าธรรมเนียม/.test(low)) {
+          if (amt !== null) r.otherFees = round2(r.otherFees + Math.abs(amt));
+          continue;
+        }
+
+        if (/service\s*(charge|chg)|svc\.?\s*(charge|chg)|\bs\/c\b|caj\s*perkhidmatan|ค่าบริการ/.test(low)) {
+          const pct = percentOf(line);
+          if (pct) r.scPercent = pct;
+          if (amt !== null && !(pct && Math.abs(amt - pct) < 0.001)) r.scAmount = round2(r.scAmount + Math.abs(amt));
+          continue;
+        }
+
+        if (/round|ปัดเศษ|pembundaran/.test(low)) {
+          if (amt !== null) r.rounding = round2(amt);
+          continue;
+        }
+
+        if (/sub\s*-?\s*total|ยอดรวมก่อน|jumlah\s*kecil/.test(low)) {
+          if (amt !== null) r.subtotal = Math.abs(amt);
+          continue;
+        }
+
+        if (/delivery\s*fee|delivery\s*charge|rider\s*fee|driver\s*fee|shipping|ค่าส่ง|ค่าจัดส่ง/.test(low)) {
+          if (amt !== null) r.deliveryFee = round2(r.deliveryFee + Math.abs(amt));
+          continue;
+        }
+
+        if (/packaging|packing|takeaway\s*(box|fee|charge)|container|ค่าแพ็ก|ค่ากล่อง|bag\s*(fee|charge)/.test(low)) {
+          if (amt !== null) r.packaging = round2(r.packaging + Math.abs(amt));
+          continue;
+        }
+
+        if (/discount|promo|voucher|coupon|\boff\b|cashback|rebate|ส่วนลด|โปรโมชั่น|diskaun/.test(low)) {
+          if (amt !== null) r.discount = round2(r.discount + Math.abs(amt));
+          continue;
+        }
+
+        if (/toll|expressway|highway|ทางด่วน/.test(low)) {
+          if (amt !== null) r.toll = Math.abs(amt);
+          continue;
+        }
+
+        // ยอดรวมสุทธิ (เก็บไว้เทียบความถูกต้อง)
+        if (/grand\s*total|net\s*total|amount\s*(due|payable)|total\s*(amount|payable|due)|^total\b|^jumlah|ยอดสุทธิ|รวมทั้งสิ้น|ยอดชำระ|ยอดรวม/.test(low)) {
+          if (amt !== null) {
+            const pr = /grand|net|due|payable|สุทธิ|ทั้งสิ้น|ชำระ/.test(low) ? 2 : 1;
+            if (pr > totalPriority) { r.total = Math.abs(amt); totalPriority = pr; }
+          }
+          continue;
+        }
+
+        if (/visa|master\s*card|amex|debit|credit|cash|change\b|tender|paid\s*by|payment|grabcoins|points|order\s*summary|note\s*to|reorder|contact|profile|cutlery|invoice|receipt\s*no|cashier|terminal|table\b|tel\b|phone|www\.|http|เงินทอน|เงินสด|บัตร/.test(low)) continue;
+
+        // ---- รายการอาหาร ----
+        const values = moneyValues(line);
+        if (!values.length) continue;
+        let qty = 1, name = '', unit = 0;
+        const firstMoneyAt = line.search(/(?:[-−]\s*)?(?:RM|MYR|THB|฿)?\s*(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)[.,][0-9]{2}(?![0-9])/i);
+        let label = line.slice(0, firstMoneyAt).trim();
+
+        let m;
+        if ((m = label.match(/^([0-9]{1,3})\s*[xX×*]\s*(.+)$/))) { qty = parseInt(m[1]); label = m[2]; }        // 2x Burger
+        else if ((m = label.match(/^(.+?)\s*[xX×*]\s*([0-9]{1,3})$/))) { label = m[1]; qty = parseInt(m[2]); } // Burger x2
+        else if ((m = label.match(/^(.+?)\s+([0-9]{1,3})$/)) && values.length >= 2) { label = m[1]; qty = parseInt(m[2]); } // Burger 2 12.50 25.00
+        else if ((m = label.match(/^([0-9]{1,2})\s+(\D.+)$/))) { qty = parseInt(m[1]); label = m[2]; }        // 2 Burger 25.00
+        if ((m = label.match(/^[0-9]{6,14}\s+(.+)$/))) label = m[1]; // ตัดบาร์โค้ด/SKU
+        name = label.replace(/[:\-–|]+$/, '').trim();
+        qty = Math.max(1, qty || 1);
+
+        // บรรทัดถัดไปเป็นแค่ "2x" (รูปแบบของบางแอป)
+        if (i + 1 < lines.length && /^[0-9]{1,3}\s*[xX×]$/.test(lines[i + 1])) { qty = parseInt(lines[i + 1]) || qty; i++; }
+
+        if (values.length >= 2) unit = Math.abs(values[0]);               // มีทั้งราคาต่อชิ้นและราคารวม
+        else unit = Math.abs(values[0]) / qty;                              // ราคาที่เห็นคือราคารวมของบรรทัด
+
+        if (values[values.length - 1] < 0) { r.discount = round2(r.discount + Math.abs(values[values.length - 1])); continue; }
+        if (unit > 0 && name.length >= 2 && !/total|amount|balance|jumlah/i.test(name)) {
+          r.items.push({ name, qty, unitPrice: round2(unit) });
+        }
+      }
+      return r;
+    };
+
+    const parseReceipt = (text) => parseReceiptJson(text) || parseReceiptLines(text);
+
+    // แปลงผลอ่านใบเสร็จ -> ค่าที่ใส่ในฟอร์ม (อัตรา service charge/ภาษี และยอดปัดเศษให้ยอดรวมตรงใบเสร็จ)
+    const TAX_OPTIONS = [0, 6, 7, 8, 10];
+    const receiptToForm = (r) => {
+      const itemsSum = round2(r.items.reduce((s, it) => s + it.unitPrice * it.qty, 0));
+      const base = itemsSum || r.subtotal;
+
+      let scRate = r.scPercent || (r.scAmount && base ? round2((r.scAmount / base) * 100) : 0);
+      const scAmt = base * scRate / 100;
+
+      let taxRate = 0;
+      if (r.taxPercent || r.taxAmount) {
+        if (r.taxPercent) taxRate = r.taxPercent;
+        else {
+          // แอปคิดภาษีจาก (ค่าอาหาร + service charge) เหมือนใบเสร็จร้านส่วนใหญ่ แล้วปัดเข้าอัตรามาตรฐานถ้าใกล้
+          const raw = (base + scAmt) ? (r.taxAmount / (base + scAmt)) * 100 : 0;
+          const snap = TAX_OPTIONS.find(o => o && Math.abs(o - raw) < 0.3);
+          taxRate = snap || round2(raw);
+        }
+      }
+
+      const fees = round2(r.otherFees + r.packaging);
+      const expected = itemsSum + scAmt + (itemsSum + scAmt) * taxRate / 100 + r.deliveryFee + fees - r.discount;
+      let rounding = round2(r.rounding);
+      let mismatch = 0;
+      if (r.total > 0 && itemsSum > 0) {
+        const diff = round2(r.total - expected);
+        if (Math.abs(diff) <= Math.max(1, r.total * 0.03)) rounding = diff; // เศษเล็กน้อย -> ใส่ช่อง Rounding ให้ยอดตรงใบเสร็จ
+        else mismatch = diff;
+      }
+      return { itemsSum, scRate, taxRate, fees, rounding, mismatch };
+    };
+    // =================== END RECEIPT PARSER ===================
+
     const PLUS_ICON = (
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
     );
@@ -671,8 +890,9 @@
 
       const isMismatch = useMemo(() => {
         if (billType === 'ride' || billType === 'loan') return false;
-        return itemsSum > 0 && Math.abs(calculatedNetTotal - (itemsSum + (parseFloat(deliveryFee) || 0) + (parseFloat(packagingCharge) || 0) - (parseFloat(discountAmount) || 0))) > 0.05;
-      }, [billType, calculatedNetTotal, itemsSum, deliveryFee, packagingCharge, discountAmount]);
+        // เตือนเมื่อช่อง Rounding ถูกใช้ชดเชยยอดมากผิดปกติ (มักแปลว่ารายการหรือค่าธรรมเนียมกรอกไม่ครบ)
+        return itemsSum > 0 && Math.abs(parseFloat(roundingAdj) || 0) > 1;
+      }, [billType, itemsSum, roundingAdj]);
 
       const quickMerchantPresets = useMemo(() => {
         const defaults = ['Kaen Mama Mee', 'Sandwich City', 'Oriental Kopi', 'Burger King', 'Thai Ori', 'KFC', '7-Eleven', 'Aeon'];
@@ -1440,83 +1660,52 @@
         });
       };
 
-      const parseTextContent = (fullText) => {
-        const cleanLines = fullText
-          .replace(/[—–]/g, '-')
-          .replace(/[oO](?=[0-9])/g, '0')
-          .split('\n')
-          .map(l => l.trim())
-          .filter(Boolean);
+      // ใส่ผลอ่านใบเสร็จลงฟอร์ม: รายการ, service charge, ภาษี, ค่าส่ง, ค่าธรรมเนียม, ส่วนลด และยอดปัดเศษ
+      const applyParsedReceipt = (r) => {
+        const form = receiptToForm(r);
+        const hasAnything = r.items.length > 0 || r.deliveryFee || r.packaging || r.otherFees || r.discount || r.scAmount || r.scPercent || r.taxAmount || r.taxPercent;
+        if (!hasAnything) return false;
 
-        let extractedItems = [];
-        let rFare = 0, tFee = 0, dFee = 0, pCharge = 0, dAmount = 0;
-
-        for (let i = 0; i < cleanLines.length; i++) {
-          const line = cleanLines[i];
-
-          if (/delivery\s*fee|rider\s*fee|driver\s*fee|shipping/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              dFee = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
-            }
-            continue;
-          }
-
-          if (/packaging|packing|takeaway\s*box|container|bag/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              pCharge = parseFloat(matches[matches.length - 1].replace(/RM\s*/i, '').replace(',', '.'));
-            }
-            continue;
-          }
-
-          if (/discount|promo|voucher|off\b|cashback|rebate/i.test(line)) {
-            const matches = line.match(/[-−]?\s*(?:RM\s*)?([0-9]+[.,][0-9]{2})/gi);
-            if (matches && matches.length > 0) {
-              const rawVal = matches[matches.length - 1].replace(/[-−\sRM]/gi, '').replace(',', '.');
-              dAmount = Math.abs(parseFloat(rawVal) || 0);
-            }
-            continue;
-          }
-
-          if (/toll|expressway|highway/i.test(line)) {
-            const matches = line.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
-            if (matches) tFee = parseFloat(matches[1].replace(',', '.'));
-            continue;
-          }
-
-          const isNoise = /subtotal|total\s*\(|incl\.\s*tax|tax\b|sst\b|service|visa|mastercard|grabcoins|order summary|note to driver|reorder|contact|profile|cutlery|invoice|receipt|cashier|terminal|change\b|rounding/i.test(line);
-          if (isNoise) continue;
-
-          const itemRegex = /^(?:[0-9]{8,14}\s+)?(?:([0-9]+)\s*[xX*]\s+)?(.+?)\s+(?:RM\s*)?([0-9]+[.,][0-9]{2})$/i;
-          const match = line.match(itemRegex);
-
-          if (match) {
-            let qty = parseInt(match[1]) || 1;
-            let itemName = match[2].replace(/^[0-9]+x?\s*/i, '').trim();
-            let itemPrice = parseFloat(match[3].replace(',', '.'));
-
-            if (i + 1 < cleanLines.length && /^[0-9]+\s*[xX]$/i.test(cleanLines[i + 1])) {
-              qty = parseInt(cleanLines[i + 1]) || qty;
-            }
-
-            if (itemPrice > 0 && itemName.length >= 2 && !/total|amount|cash|balance/i.test(itemName)) {
-              const exists = extractedItems.some(it => it.name.toLowerCase() === itemName.toLowerCase());
-              if (!exists) {
-                extractedItems.push({
-                  id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-                  name: itemName,
-                  price: itemPrice.toFixed(2),
-                  qty: qty,
-                  taxRate: 0,
-                  sharedWith: [...billFriends]
-                });
-              }
-            }
-          }
+        if (r.items.length > 0) {
+          setBillItems(r.items.map(it => ({
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+            name: it.name,
+            price: it.unitPrice.toFixed(2),
+            qty: it.qty,
+            taxRate: form.taxRate,
+            sharedWith: [...billFriends]
+          })));
         }
+        if (r.merchant && !newBillName.trim()) setNewBillName(r.merchant);
 
-        return { extractedItems, rFare, tFee, dFee, pCharge, dAmount };
+        const isDineInStyle = (form.scRate > 0 || form.taxRate > 0) && !r.deliveryFee;
+        if (isDineInStyle && billType === 'delivery') setBillType('dinein');
+        if (form.taxRate > 0) setTaxMode('addon');
+
+        setServiceChargeRate(form.scRate);
+        setDeliveryFee(r.deliveryFee || 0);
+        setPackagingCharge(form.fees || 0);
+        setDiscountAmount(r.discount || 0);
+        setRoundingAdj(form.rounding || 0);
+
+        const parts = [`${r.items.length} รายการ`];
+        if (form.scRate) parts.push(`Service ${form.scRate}%`);
+        if (form.taxRate) parts.push(`ภาษี ${form.taxRate}%`);
+        if (r.deliveryFee) parts.push(`ค่าส่ง ${r.deliveryFee.toFixed(2)}`);
+        if (form.fees) parts.push(`ค่าธรรมเนียม/แพ็ก ${form.fees.toFixed(2)}`);
+        if (r.discount) parts.push(`ส่วนลด ${r.discount.toFixed(2)}`);
+        if (form.mismatch) {
+          showToast(`แกะได้ ${parts.join(' · ')} — แต่ยอดรวมต่างจากใบเสร็จ ${form.mismatch.toFixed(2)} RM ลองเช็กรายการอีกครั้ง`, 'error');
+        } else {
+          showToast(`🎉 ${parts.join(' · ')}${r.total ? ' · ยอดตรงใบเสร็จ ✓' : ''}`);
+        }
+        return true;
+      };
+
+      const copyReceiptPrompt = () => {
+        navigator.clipboard.writeText(RECEIPT_AI_PROMPT).then(() => {
+          showToast('📋 คัดลอกคำสั่งแล้ว — วางใน Gemini พร้อมรูปใบเสร็จ แล้วคัดลอกคำตอบกลับมาวางที่นี่');
+        }).catch(() => showToast('คัดลอกไม่สำเร็จ', 'error'));
       };
 
       const handleAddImages = (e) => {
@@ -1534,8 +1723,8 @@
         setOcrProcessing(true);
         setOcrProgress(0);
 
-        let combinedExtractedItems = [];
-        let extractedRideFare = 0, detectedToll = 0, detectedDiscount = 0, detectedDelivery = 0, detectedPackaging = 0;
+        const combined = emptyReceipt();
+        let extractedRideFare = 0;
 
         try {
           showToast("⚡ กำลังประมวลผล OCR & สแกนบิล...");
@@ -1556,40 +1745,28 @@
               }
             );
 
-            const parsed = parseTextContent(text);
-            parsed.extractedItems.forEach(item => {
-              if (!combinedExtractedItems.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) {
-                combinedExtractedItems.push(item);
-              }
+            // หลายรูป (เช่น แคปหน้าจอต่อกัน): รวมรายการที่ไม่ซ้ำ และใช้ค่าธรรมเนียม/ยอดรวมจากรูปที่เจอ
+            const parsed = parseReceiptLines(text);
+            parsed.items.forEach(item => {
+              if (!combined.items.some(ci => ci.name.toLowerCase() === item.name.toLowerCase())) combined.items.push(item);
+            });
+            ['subtotal', 'scPercent', 'scAmount', 'taxPercent', 'taxAmount', 'deliveryFee', 'packaging', 'otherFees', 'discount', 'rounding', 'total', 'toll'].forEach(k => {
+              if (parsed[k]) combined[k] = parsed[k];
             });
 
-            if (parsed.dFee) detectedDelivery = parsed.dFee;
-            if (parsed.pCharge) detectedPackaging = parsed.pCharge;
-            if (parsed.dAmount) detectedDiscount = parsed.dAmount;
-            if (parsed.tFee) detectedToll = parsed.tFee;
-
             if (billType === 'ride') {
-              const prices = text.split('\n').map(l => {
-                const m = l.match(/(?:RM\s*)?([0-9]+[.,][0-9]{2})/i);
-                return m ? parseFloat(m[1].replace(',', '.')) : 0;
-              }).filter(p => p > 0);
+              const prices = text.split('\n').map(l => lastMoney(l) || 0).filter(p => p > 0);
               if (prices.length > 0) extractedRideFare = Math.max(extractedRideFare, ...prices);
             }
           }
 
           if (billType === 'ride' && extractedRideFare > 0) {
             setRideFare(extractedRideFare);
-            if (detectedToll) setTollFee(detectedToll);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
+            if (combined.toll) setTollFee(combined.toll);
+            if (combined.discount) setDiscountAmount(combined.discount);
             showToast("สแกนค่าโดยสารสำเร็จ!");
-          } else if (combinedExtractedItems.length > 0 || detectedDelivery > 0 || detectedPackaging > 0 || detectedDiscount > 0) {
-            if (combinedExtractedItems.length > 0) setBillItems(combinedExtractedItems);
-            if (detectedPackaging) setPackagingCharge(detectedPackaging);
-            if (detectedDelivery) setDeliveryFee(detectedDelivery);
-            if (detectedDiscount) setDiscountAmount(detectedDiscount);
-            showToast(`🎉 สแกนสำเร็จ ${combinedExtractedItems.length} รายการ!`);
-          } else {
-            showToast("OCR อ่านรายการไม่ชัดเจน แนะนำให้ลองหมุนภาพหรือใช้ '📝 วางข้อความ'", "error");
+          } else if (!applyParsedReceipt(combined)) {
+            showToast("OCR อ่านรายการไม่ชัดเจน แนะนำให้ใช้ '📝 Paste Text' กับคำสั่งสำหรับ Gemini", "error");
           }
         } catch (err) {
           console.error("Scanning Error:", err);
@@ -1603,17 +1780,11 @@
 
       const handleParseRawText = () => {
         if (!rawOrderText.trim()) return;
-        const parsed = parseTextContent(rawOrderText);
-        if (parsed.extractedItems.length > 0 || parsed.dFee || parsed.pCharge || parsed.dAmount) {
-          if (parsed.extractedItems.length > 0) setBillItems(parsed.extractedItems);
-          if (parsed.dFee) setDeliveryFee(parsed.dFee);
-          if (parsed.pCharge) setPackagingCharge(parsed.pCharge);
-          if (parsed.dAmount) setDiscountAmount(parsed.dAmount);
-          showToast(`แกะข้อมูลได้ ${parsed.extractedItems.length} รายการ! 🎉`);
+        if (applyParsedReceipt(parseReceipt(rawOrderText))) {
           setShowRawTextInput(false);
           setRawOrderText('');
         } else {
-          showToast("ไม่พบรายการสินค้าที่ระบุราคาชัดเจน", "error");
+          showToast("ไม่พบรายการที่มีราคาชัดเจน ลองใช้คำสั่งสำหรับ Gemini", "error");
         }
       };
 
@@ -1699,7 +1870,8 @@
 
           let itemTaxAmount = 0;
           if (currentTaxMode === 'addon') {
-            itemTaxAmount = itemTotal * (taxRate / 100);
+            // ภาษีคิดจาก (ค่าอาหาร + service charge) ตามใบเสร็จร้านอาหารทั่วไป (SST มาเลเซีย / VAT ไทย)
+            itemTaxAmount = itemTotal * (1 + (parseFloat(scRate) || 0) / 100) * (taxRate / 100);
           } else {
             itemTaxAmount = itemTotal - (itemTotal / (1 + (taxRate / 100)));
           }
@@ -2452,7 +2624,10 @@
       return (
         <div className="pb-16 min-h-screen">
           {/* Header */}
-          <header className="bg-bg/85 sticky top-0 z-40 backdrop-blur-md">
+          <header
+            className="bg-bg/85 sticky top-0 z-40 backdrop-blur-md"
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingLeft: 'env(safe-area-inset-left, 0px)', paddingRight: 'env(safe-area-inset-right, 0px)' }}
+          >
             <div className="max-w-4xl mx-auto px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <img 
@@ -2763,11 +2938,24 @@
 
                       {showRawTextInput && (
                         <div className="pt-2 border-t border-line/40 space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-surface border border-line rounded-xl p-2.5">
+                            <p className="text-[11px] text-textSecondary leading-relaxed">
+                              แม่นที่สุด: กดคัดลอกคำสั่ง → วางใน Gemini พร้อมรูปใบเสร็จ → คัดลอกคำตอบทั้งหมดมาวางด้านล่าง
+                              (ข้อความจากแอป Grab / อีเมลใบเสร็จก็วางได้เหมือนกัน)
+                            </p>
+                            <button
+                              type="button"
+                              onClick={copyReceiptPrompt}
+                              className="shrink-0 bg-accent hover:bg-accent-hover font-bold px-3 py-1.5 rounded-lg text-xs transition"
+                            >
+                              📋 คัดลอกคำสั่งสำหรับ Gemini
+                            </button>
+                          </div>
                           <textarea
                             value={rawOrderText}
                             onChange={(e) => setRawOrderText(e.target.value)}
-                            placeholder="Paste order text summary from Grab / Email receipt here..."
-                            className="w-full h-24 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
+                            placeholder="วางคำตอบจาก Gemini หรือข้อความใบเสร็จที่นี่..."
+                            className="w-full h-40 bg-surface border border-line rounded-xl p-2.5 text-xs text-textPrimary font-mono outline-none focus:border-accent"
                           />
                           <div className="flex justify-end gap-2">
                             <button
@@ -2782,7 +2970,7 @@
                               onClick={handleParseRawText}
                               className="bg-mint text-bg font-bold px-4 py-1 rounded-lg text-xs"
                             >
-                              Extract Items From Text
+                              แกะข้อมูลใส่ฟอร์ม
                             </button>
                           </div>
                         </div>
@@ -3213,6 +3401,10 @@
                                     <option value="6">SST / Tax 6%</option>
                                     <option value="7">VAT 7%</option>
                                     <option value="8">Tax 8%</option>
+                                    <option value="10">Tax 10%</option>
+                                    {!TAX_OPTIONS.includes(Number(item.taxRate)) && (
+                                      <option value={item.taxRate}>Tax {item.taxRate}%</option>
+                                    )}
                                   </select>
                                 </div>
                               </div>
@@ -4477,9 +4669,9 @@
           )}
 
           {/* OCR / Sanity Check Warning */}
-          {isMismatch && (
+          {isMismatch && activeTab === 'new-bill' && (
             <div className="fixed bottom-40 left-4 right-4 sm:bottom-20 max-w-md mx-auto bg-amber-subtle border border-amber text-amber p-3 rounded-xl text-xs font-bold shadow-2xl flex items-center justify-between z-50 backdrop-blur-md">
-              <span>⚠️ ยอดรวมสินค้า ({itemsSum.toFixed(2)}) ไม่ตรงกับ Net Total ({calculatedNetTotal.toFixed(2)})</span>
+              <span>⚠️ ช่อง Rounding ปรับยอดไป {(parseFloat(roundingAdj) || 0).toFixed(2)} RM ซึ่งเยอะผิดปกติ ลองเช็กรายการหรือค่าธรรมเนียมอีกครั้ง</span>
             </div>
           )}
 
